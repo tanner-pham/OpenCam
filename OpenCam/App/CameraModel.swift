@@ -39,6 +39,8 @@ final class CameraModel {
     private(set) var isSweeping = false
     /// Options that failed the last sweep of each lens on this OS build; loaded on the device only.
     private(set) var failedCombinations = FailedCombinations(osBuild: "", failedByLens: [:])
+    /// Every clip a sweep started whose result has not arrived yet; it stays a sweep clip whenever the result comes.
+    @ObservationIgnored private var sweepClips: Set<URL> = []
 
     @ObservationIgnored private let defaults: UserDefaults
     /// `-keepSweepClips on` keeps each sweep clip; otherwise only its sidecar stays.
@@ -245,7 +247,7 @@ final class CameraModel {
     var canChangeLensOrMode: Bool { !isRecording && !isScanningFormats && !isSweeping }
 
     func selectLens(_ id: String) {
-        guard id != lensID, !isSweeping,capabilities.lenses.contains(where: { $0.id == id }) else { return }
+        guard id != lensID, !isSweeping, capabilities.lenses.contains(where: { $0.id == id }) else { return }
         lensID = id
         settleSelections()
     }
@@ -366,6 +368,7 @@ final class CameraModel {
         guard let cameraSession, let option = currentVideoOption,
               let store = store(failureNotice: RecordingOutcome.failedNotice) else { return nil }
         let url = store.url(sequence: store.reserveSequence(), kind: .mov)
+        if isSweeping { recordSweepClip(url) }
         let minFreeBytes = recordingReserveBytes()
         let pendingConfigure = configureTask
         isRecording = true
@@ -618,6 +621,8 @@ extension CameraModel {
     /// the outcome's notice, else dropped frames, else nothing (clearing an earlier recording notice).
     /// A selection change held back while recording is applied now.
     /// During a sweep the result goes to the sweep instead, which reports it in its own rows and drives the next configure.
+    /// A sweep clip whose result arrives after the sweep ended never becomes the last capture or a notice, and is deleted
+    /// unless `-keepSweepClips on` (its sidecar stays).
     func recordingDidFinish(_ result: RecordingResult) {
         isRecording = false
         recordingStart = nil
@@ -625,9 +630,16 @@ extension CameraModel {
         if case .failed(let message) = result.outcome {
             Self.logger.error("\(message, privacy: .public)")
         }
+        let isSweepClip = sweepClips.remove(result.url) != nil
         if isSweeping, let sweep {
             refreshFreeBytes()
             sweep.recordingDidFinish(result)
+            return
+        }
+        if isSweepClip {
+            if !keepsSweepClips { removeSweepClip(result.url) }
+            refreshFreeBytes()
+            enqueueConfigure()
             return
         }
         if result.outcome.isPlayable { lastCapture = result.url }
@@ -848,7 +860,11 @@ extension CameraModel: SweepDriver {
         // A selection still queued behind a stuck configure or recording applies when that ends, and is the user's, so it is
         // saved; after a failed restore the selection is a sweep option, which never is.
         if record == userRecord { persist() }
-        failedCombinations = failedCombinations.replacing(lensID: lensID, with: sweep.rows.filter { $0.status == .fail }.map(\.requested))
+        // Only rows with a real answer change the list; a row that timed out, or one never reached, keeps its earlier entry.
+        let answered = sweep.rows.filter(\.hasAnswer)
+        failedCombinations = failedCombinations.updating(lensID: lensID,
+                                                         passed: answered.filter { $0.status == .pass }.map(\.requested),
+                                                         failed: answered.filter { $0.status == .fail }.map(\.requested))
         do throws(CapabilityError) {
             try failedCombinations.save(directory: capabilitySource.cacheDirectory)
         } catch {
@@ -858,6 +874,21 @@ extension CameraModel: SweepDriver {
 
     func cancelSweep() {
         sweep?.cancel()
+    }
+
+    /// Marks `url` as a sweep clip; `startRecording` calls it for every clip it starts during a sweep.
+    func recordSweepClip(_ url: URL) {
+        sweepClips.insert(url)
+    }
+
+    private func removeSweepClip(_ url: URL) {
+        let path = url.path(percentEncoded: false)
+        guard FileManager.default.fileExists(atPath: path) else { return }
+        do {
+            try FileManager.default.removeItem(at: url)
+        } catch {
+            Self.logger.error("\(SweepError.clipNotDeleted(path: path, reason: error.localizedDescription).description, privacy: .public)")
+        }
     }
 
     // MARK: SweepDriver

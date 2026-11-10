@@ -26,6 +26,16 @@ import Testing
         #expect(failed.caption(for: front) != nil); #expect(failed.caption(for: bad) != nil)
         #expect(failed.replacing(lensID: "wide", with: []).caption(for: front) != nil)
     }
+    @Test func updatingKeepsEntriesThisSweepDidNotAnswer() {
+        let slow = VideoOption(lensID: "wide", codec: good.codec, resolution: .named(width: 1920, height: 1080), frameRate: 30, colour: .rec709)
+        let before = FailedCombinations(osBuild: "B", failedByLens: ["wide": [bad, slow]])
+        // `bad` now passes, `good` now fails, `slow` timed out or was never reached: it keeps its entry.
+        let after = before.updating(lensID: "wide", passed: [bad], failed: [good])
+        #expect(after.failedByLens["wide"] == [slow, good])
+        #expect(after.updating(lensID: "wide", passed: [], failed: [good]).failedByLens["wide"] == [slow, good])
+        #expect(after.updating(lensID: "wide", passed: [slow, good], failed: []).failedByLens["wide"] == nil)
+    }
+
     @Test func missingFileLoadsEmpty() {
         let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let loaded = FailedCombinations.load(directory: dir, osBuild: "B")

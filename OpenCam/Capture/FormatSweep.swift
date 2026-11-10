@@ -64,7 +64,12 @@ import OSLog
         var isEndedEarly = false
         for option in options {
             if isCancelled { break }
-            let (row, isTimedOut) = await sweep(option)
+            let (attempted, isTimedOut) = await sweep(option)
+            guard let row = attempted else {
+                // An earlier clip is still recording, so the camera has stopped responding; this option was never tried.
+                isEndedEarly = true
+                break
+            }
             rows.append(row)
             done += 1
             timeoutsInARow = isTimedOut ? timeoutsInARow + 1 : 0
@@ -102,8 +107,9 @@ import OSLog
         }
     }
 
-    /// The row, and whether it passed a deadline.
-    private func sweep(_ option: VideoOption) async -> (SweepRow, Bool) {
+    /// The row, and whether it passed a deadline. No row when the option could not be applied because an earlier clip
+    /// is still recording.
+    private func sweep(_ option: VideoOption) async -> (SweepRow?, Bool) {
         currentOption = option
         arrivedResult = nil
         guard let driver else {
@@ -120,6 +126,7 @@ import OSLog
         }
         guard let applied else { return timedOut(option, step: "configure", driver: driver) }
         if case .failure(let error) = applied {
+            if case .recordingInProgress = error { return (nil, false) }
             return (SweepRow.evaluate(requested: option, facts: nil, error: error.description), false)
         }
         let startWait = BoundedWait<Bool>()
@@ -163,7 +170,7 @@ import OSLog
     }
 
     /// Stops any recording still running and fails the row.
-    private func timedOut(_ option: VideoOption, step: String, driver: any SweepDriver) -> (SweepRow, Bool) {
+    private func timedOut(_ option: VideoOption, step: String, driver: any SweepDriver) -> (SweepRow?, Bool) {
         let detail = SweepError.deadlinePassed(step: step, codec: option.codec.codecType).description
         Self.logger.error("\(detail, privacy: .public)")
         driver.endSweepClip()

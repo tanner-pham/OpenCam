@@ -32,6 +32,9 @@ nonisolated struct SweepRow: Codable, Sendable, Equatable {
         return SweepRow(requested: requested, actual: facts, status: reason == nil ? .pass : .fail, error: reason, detail: nil)
     }
 
+    /// False for a row that passed its deadline: it says nothing about whether the option works.
+    var hasAnswer: Bool { error != Self.didNotFinish }
+
     /// A step that passed its deadline; `detail` names the step.
     static func timedOut(requested: VideoOption, detail: String) -> SweepRow {
         SweepRow(requested: requested, actual: nil, status: .fail, error: didNotFinish, detail: detail)

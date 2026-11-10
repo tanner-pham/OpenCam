@@ -39,6 +39,16 @@ nonisolated struct FailedCombinations: Codable, Sendable, Equatable {
         return copy
     }
 
+    /// Applies one sweep's answers to that lens: `passed` options leave the list, `failed` ones join it, and every other
+    /// option of the lens (timed out or never reached) keeps its earlier entry.
+    func updating(lensID: String, passed: [VideoOption], failed: [VideoOption]) -> FailedCombinations {
+        var list = (failedByLens[lensID] ?? []).filter { !passed.contains($0) }
+        for option in failed where !list.contains(option) {
+            list.append(option)
+        }
+        return replacing(lensID: lensID, with: list)
+    }
+
     /// The caption when `option` failed the last sweep of its lens, else nil.
     func caption(for option: VideoOption?) -> String? {
         guard let option, failedByLens[option.lensID]?.contains(option) == true else { return nil }
