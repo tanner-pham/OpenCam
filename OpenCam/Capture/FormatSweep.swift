@@ -4,18 +4,24 @@ import OSLog
 
 /// Records a short clip in each option, one at a time, compares each file with the request, and writes a report.
 /// Every camera step goes through `driver`, so the model's configure queue and recording rules stay in charge.
+/// No step waits without a limit: a step that passes its deadline fails the row with "The clip did not finish.",
+/// any recording still running is stopped, and the sweep moves on; two such rows in a row end the sweep early.
 /// A failing option is recorded and the sweep moves on; restoring the user's selection is the model's job.
 @MainActor @Observable final class FormatSweep {
     private static let logger = Logger(subsystem: "local.opencam.app", category: "FormatSweep")
+    /// Rows in a row that may pass their deadline before the sweep stops itself.
+    static let timeoutsBeforeStopping = 2
 
     private(set) var done = 0
     let total: Int
     private(set) var rows: [SweepRow] = []
     private(set) var isRunning = false
     private(set) var reportURL: URL?
-    /// Nil until the sweep ends; then "Done. 80 passed, 4 failed. Saved sweep-….json." or "Cancelled after 12 of 84. Saved sweep-….json."
+    /// Nil until the sweep ends; then "Done. 80 passed, 4 failed. Saved sweep-….json.", "Cancelled after 12 of 84. Saved
+    /// sweep-….json." or "Stopped after 12 of 84. The camera stopped responding. Saved sweep-….json.".
     private(set) var resultText: String?
 
+    let deadlines: SweepDeadlines
     @ObservationIgnored private weak var driver: (any SweepDriver)?
     @ObservationIgnored private let store: CaptureStore
     @ObservationIgnored private let lens: Lens
@@ -24,12 +30,17 @@ import OSLog
     @ObservationIgnored private let clipDuration: Duration
     @ObservationIgnored private var isCancelled = false
     @ObservationIgnored private var hasStarted = false
-    /// A result that arrived before the sweep waited for it, such as a recording that failed to start.
+    /// The option being recorded; a result for any other option is a late one from a row that already timed out.
+    @ObservationIgnored private var currentOption: VideoOption?
+    /// A result for `currentOption` that arrived before the sweep waited for it, such as a recording that failed to start.
     @ObservationIgnored private var arrivedResult: RecordingResult?
-    @ObservationIgnored private var resultWaiter: CheckedContinuation<RecordingResult, Never>?
+    /// The wait for `currentOption`'s result, while it runs.
+    @ObservationIgnored private var resultWait: BoundedWait<RecordingResult>?
+    /// Shortens whichever wait is running, so Cancel never waits on a full deadline.
+    @ObservationIgnored private var shortenActiveWait: ((Duration) -> Void)?
 
     init(driver: any SweepDriver, store: CaptureStore, lens: Lens, options: [VideoOption], keepsClips: Bool,
-         clipDuration: Duration = .seconds(SweepRow.clipSeconds)) {
+         clipDuration: Duration = .seconds(SweepRow.clipSeconds), deadlines: SweepDeadlines = .standard) {
         self.driver = driver
         self.store = store
         self.lens = lens
@@ -37,6 +48,7 @@ import OSLog
         self.total = options.count
         self.keepsClips = keepsClips
         self.clipDuration = clipDuration
+        self.deadlines = deadlines
     }
 
     /// "12 of 84"
@@ -48,46 +60,74 @@ import OSLog
         hasStarted = true
         isRunning = true
         let startedAt = Date()
+        var timeoutsInARow = 0
+        var isEndedEarly = false
         for option in options {
             if isCancelled { break }
-            rows.append(await sweep(option))
+            let (row, isTimedOut) = await sweep(option)
+            rows.append(row)
             done += 1
+            timeoutsInARow = isTimedOut ? timeoutsInARow + 1 : 0
+            if timeoutsInARow >= Self.timeoutsBeforeStopping {
+                isEndedEarly = true
+                break
+            }
         }
+        currentOption = nil
         let report = SweepReport(startedAt: startedAt, finishedAt: Date(), lensID: lens.id, osBuild: DeviceIdentity.osBuild(),
-                                 modelIdentifier: DeviceIdentity.modelIdentifier(), cancelled: done < total, rows: rows)
+                                 modelIdentifier: DeviceIdentity.modelIdentifier(), cancelled: !isEndedEarly && done < total,
+                                 endedEarly: isEndedEarly, rows: rows)
         reportURL = write(report)
         resultText = Self.resultText(report: report, done: done, total: total, reportURL: reportURL)
         isRunning = false
     }
 
-    /// The clip being recorded finishes and is reported; no further option starts.
+    /// No further option starts. The clip being recorded still finishes, but any wait now ends within `cancelGrace`.
     func cancel() {
-        guard isRunning else { return }
+        guard isRunning, !isCancelled else { return }
         isCancelled = true
+        shortenActiveWait?(deadlines.cancelGrace)
     }
 
-    /// The model forwards every recording result while the sweep runs.
+    /// The model forwards every recording result while the sweep runs. A late result from a row that timed out is dropped.
     func recordingDidFinish(_ result: RecordingResult) {
-        if let resultWaiter {
-            self.resultWaiter = nil
-            resultWaiter.resume(returning: result)
+        guard let currentOption, result.option == currentOption else {
+            removeClip(result)
+            return
+        }
+        if let resultWait {
+            resultWait.finish(result)
         } else {
             arrivedResult = result
         }
     }
 
-    private func sweep(_ option: VideoOption) async -> SweepRow {
-        guard let driver else {
-            return SweepRow.evaluate(requested: option, facts: nil, error: SweepError.cameraGone(lensID: lens.id).description)
-        }
-        do throws(CameraSessionError) {
-            try await driver.applySweepOption(option)
-        } catch {
-            return SweepRow.evaluate(requested: option, facts: nil, error: error.description)
-        }
+    /// The row, and whether it passed a deadline.
+    private func sweep(_ option: VideoOption) async -> (SweepRow, Bool) {
+        currentOption = option
         arrivedResult = nil
-        guard await driver.beginSweepClip() else {
-            return SweepRow.evaluate(requested: option, facts: nil, error: SweepError.recordingDidNotStart(codec: option.codec.codecType).description)
+        guard let driver else {
+            return (SweepRow.evaluate(requested: option, facts: nil, error: SweepError.cameraGone(lensID: lens.id).description), false)
+        }
+        let applyWait = BoundedWait<Result<Void, CameraSessionError>>()
+        let applied = await bounded(applyWait, limit: deadlines.start) {
+            do throws(CameraSessionError) {
+                try await driver.applySweepOption(option)
+                return .success(())
+            } catch {
+                return .failure(error)
+            }
+        }
+        guard let applied else { return timedOut(option, step: "configure", driver: driver) }
+        if case .failure(let error) = applied {
+            return (SweepRow.evaluate(requested: option, facts: nil, error: error.description), false)
+        }
+        let startWait = BoundedWait<Bool>()
+        guard let started = await bounded(startWait, limit: deadlines.start, { await driver.beginSweepClip() }) else {
+            return timedOut(option, step: "start", driver: driver)
+        }
+        guard started else {
+            return (SweepRow.evaluate(requested: option, facts: nil, error: SweepError.recordingDidNotStart(codec: option.codec.codecType).description), false)
         }
         // A clip that failed to start has already reported; otherwise record for the full length, even when cancelled.
         if arrivedResult == nil {
@@ -98,17 +138,36 @@ import OSLog
             }
             if arrivedResult == nil { driver.endSweepClip() }
         }
-        let result = await nextResult()
-        removeClip(result)
-        return SweepRow.evaluate(requested: option, facts: result.sidecar?.actual, error: Self.errorText(result))
-    }
-
-    private func nextResult() async -> RecordingResult {
+        let result: RecordingResult
         if let arrivedResult {
             self.arrivedResult = nil
-            return arrivedResult
+            result = arrivedResult
+        } else {
+            let wait = BoundedWait<RecordingResult>()
+            resultWait = wait
+            let finished = await bounded(wait, limit: deadlines.finish)
+            resultWait = nil
+            guard let finished else { return timedOut(option, step: "finish", driver: driver) }
+            result = finished
         }
-        return await withCheckedContinuation { resultWaiter = $0 }
+        removeClip(result)
+        return (SweepRow.evaluate(requested: option, facts: result.sidecar?.actual, error: Self.errorText(result)), false)
+    }
+
+    /// Runs `wait`, ending it early when the sweep is or becomes cancelled.
+    private func bounded<Value: Sendable>(_ wait: BoundedWait<Value>, limit: Duration,
+                                          _ operation: (@MainActor () async -> Value)? = nil) async -> Value? {
+        shortenActiveWait = { [weak wait] grace in wait?.shorten(to: grace) }
+        defer { shortenActiveWait = nil }
+        return await wait.run(limit: isCancelled ? min(limit, deadlines.cancelGrace) : limit, operation)
+    }
+
+    /// Stops any recording still running and fails the row.
+    private func timedOut(_ option: VideoOption, step: String, driver: any SweepDriver) -> (SweepRow, Bool) {
+        let detail = SweepError.deadlinePassed(step: step, codec: option.codec.codecType).description
+        Self.logger.error("\(detail, privacy: .public)")
+        driver.endSweepClip()
+        return (SweepRow.timedOut(requested: option, detail: detail), true)
     }
 
     /// Nil for a completed clip that could be read back; otherwise the error the row keeps in `detail`.
@@ -150,7 +209,13 @@ import OSLog
     }
 
     private static func resultText(report: SweepReport, done: Int, total: Int, reportURL: URL?) -> String {
-        let outcome = report.cancelled ? "Cancelled after \(done) of \(total)." : "Done. \(report.summary)"
+        let outcome = if report.endedEarly {
+            "Stopped after \(done) of \(total). The camera stopped responding."
+        } else if report.cancelled {
+            "Cancelled after \(done) of \(total)."
+        } else {
+            "Done. \(report.summary)"
+        }
         let saved = reportURL.map { "Saved \($0.lastPathComponent)." } ?? "The report could not be saved."
         return "\(outcome) \(saved)"
     }

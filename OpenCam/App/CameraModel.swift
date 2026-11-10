@@ -812,29 +812,43 @@ extension CameraModel: SweepDriver {
         sheet = .sweep
     }
 
-    /// Sweeps the current lens one option at a time, then puts the user's selection back, waits for it to apply, and keeps
-    /// the failed options for this lens. The user's saved selection is untouched throughout.
+    /// Sweeps the current lens one option at a time with the model as the sweep's driver.
     func startSweep() async {
         guard canStartSweep, let lens = currentLens,
               let store = store(failureNotice: RecordingOutcome.failedNotice) else { return }
+        await runSweep(FormatSweep(driver: self, store: store, lens: lens, options: sweepOptions, keepsClips: keepsSweepClips),
+                       lensID: lens.id)
+    }
+
+    /// Holds the controls while `sweep` runs, then puts the user's selection back (waiting at most the sweep's start
+    /// deadline for it to apply), unlocks the controls whatever happened, and keeps the failed options for `lensID`.
+    /// The user's saved selection is untouched throughout.
+    func runSweep(_ sweep: FormatSweep, lensID: String) async {
         let userRecord = record
-        let sweep = FormatSweep(driver: self, store: store, lens: lens, options: sweepOptions, keepsClips: keepsSweepClips)
         self.sweep = sweep
         isSweeping = true
         await sweep.run()
         record = userRecord
-        let isRestored: Bool
-        do throws(CameraSessionError) {
-            try await applySelection()
-            isRestored = true
-        } catch {
-            // The session stays on the last option that worked, and the notice says the format could not be used.
-            Self.logger.error("[CameraModel:startSweep] The user's selection could not be restored — {lens: \(lens.id, privacy: .public), error: \(error.description, privacy: .public)}")
-            isRestored = false
+        let restore = BoundedWait<Bool>()
+        let isRestored = await restore.run(limit: sweep.deadlines.start) { [weak self] in
+            guard let self else { return false }
+            do throws(CameraSessionError) {
+                try await applySelection()
+                return true
+            } catch {
+                // The session stays on the last option that worked, and the notice says the format could not be used.
+                Self.logger.error("[CameraModel:runSweep] The user's selection could not be restored — {lens: \(lensID, privacy: .public), error: \(error.description, privacy: .public)}")
+                return false
+            }
+        } ?? false
+        if !isRestored {
+            Self.logger.error("[CameraModel:runSweep] The user's selection was not applied — {lens: \(lensID, privacy: .public)}")
         }
         isSweeping = false
-        if isRestored { persist() }
-        failedCombinations = failedCombinations.replacing(lensID: lens.id, with: sweep.rows.filter { $0.status == .fail }.map(\.requested))
+        // A selection still queued behind a stuck configure or recording applies when that ends, and is the user's, so it is
+        // saved; after a failed restore the selection is a sweep option, which never is.
+        if record == userRecord { persist() }
+        failedCombinations = failedCombinations.replacing(lensID: lensID, with: sweep.rows.filter { $0.status == .fail }.map(\.requested))
         do throws(CapabilityError) {
             try failedCombinations.save(directory: capabilitySource.cacheDirectory)
         } catch {
@@ -848,7 +862,9 @@ extension CameraModel: SweepDriver {
 
     // MARK: SweepDriver
 
+    /// A recording still running (one that passed its deadline) would hold the configure back, so the option fails at once.
     func applySweepOption(_ option: VideoOption) async throws(CameraSessionError) {
+        guard !isRecording else { throw .recordingInProgress }
         record = Self.selection(from: option)
         try await applySelection()
     }

@@ -44,7 +44,7 @@ import Testing
         let pass = SweepRow.evaluate(requested: ask, facts: facts(), error: nil)
         let fail = SweepRow.evaluate(requested: ask, facts: nil, error: "x")
         func report(_ rows: [SweepRow]) -> SweepReport {
-            SweepReport(startedAt: Date(), finishedAt: Date(), lensID: "wide", osBuild: "B", modelIdentifier: "M", cancelled: false, rows: rows)
+            SweepReport(startedAt: Date(), finishedAt: Date(), lensID: "wide", osBuild: "B", modelIdentifier: "M", cancelled: false, endedEarly: false, rows: rows)
         }
         #expect(report([pass, fail]).summary == "1 passed, 1 failed.")
         #expect(report([pass, pass, fail, fail, fail]).summary == "2 passed, 3 failed.")

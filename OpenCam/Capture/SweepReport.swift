@@ -7,7 +7,10 @@ nonisolated struct SweepReport: Codable, Sendable {
     let lensID: String
     let osBuild: String
     let modelIdentifier: String
+    /// The user cancelled before every option ran.
     let cancelled: Bool
+    /// The sweep stopped itself after two rows in a row passed their deadline.
+    let endedEarly: Bool
     let rows: [SweepRow]
 
     /// "sweep-2026-11-09-143005.json", from `date` in `timeZone`.

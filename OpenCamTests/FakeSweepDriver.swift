@@ -6,6 +6,8 @@ import Foundation
 @MainActor final class FakeSweepDriver: SweepDriver {
     let directory: URL
     let failingCodecs: Set<String>
+    /// Clips of these codecs never report a result, as a camera that stopped responding.
+    let hangingCodecs: Set<String>
     weak var sweep: FormatSweep?
     /// Called once a clip has started, so a test can cancel mid-clip.
     var onClipStarted: () -> Void = {}
@@ -15,9 +17,10 @@ import Foundation
     private var sequence = 0
     private var clipURL: URL?
 
-    init(directory: URL, failingCodecs: Set<String>) {
+    init(directory: URL, failingCodecs: Set<String>, hangingCodecs: Set<String> = []) {
         self.directory = directory
         self.failingCodecs = failingCodecs
+        self.hangingCodecs = hangingCodecs
     }
 
     func applySweepOption(_ option: VideoOption) async throws(CameraSessionError) {
@@ -37,7 +40,7 @@ import Foundation
 
     func endSweepClip() {
         stopCount += 1
-        guard let option = current, let url = clipURL else { return }
+        guard let option = current, let url = clipURL, !hangingCodecs.contains(option.codec.codecType) else { return }
         let facts = ClipFacts(codecFourCC: option.codec.codecType, width: option.resolution.width, height: option.resolution.height,
                               nominalFrameRate: Double(option.frameRate), durationSeconds: 3, frameCount: 90, droppedFrames: 0,
                               colour: option.colour, megabitsPerSecond: 100, hasAudio: true)

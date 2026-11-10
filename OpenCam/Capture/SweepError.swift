@@ -8,6 +8,7 @@ nonisolated enum SweepError: Error, CustomStringConvertible {
     case stoppedEarly(file: String, outcome: String)
     case reportUnwritable(path: String, reason: String)
     case clipNotDeleted(path: String, reason: String)
+    case deadlinePassed(step: String, codec: String)
 
     var description: String {
         switch self {
@@ -23,6 +24,8 @@ nonisolated enum SweepError: Error, CustomStringConvertible {
             "[FormatSweep:writeReport] Cannot write the report — {path: \(path), reason: \(reason)}"
         case .clipNotDeleted(let path, let reason):
             "[FormatSweep:removeClip] Cannot delete the clip — {path: \(path), reason: \(reason)}"
+        case .deadlinePassed(let step, let codec):
+            "[FormatSweep:run] No answer before the deadline — {step: \(step), codec: \(codec)}"
         }
     }
 }

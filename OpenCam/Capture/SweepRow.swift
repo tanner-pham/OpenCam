@@ -9,6 +9,7 @@ nonisolated struct SweepRow: Codable, Sendable, Equatable {
     /// The file's nominal frame rate may differ from the request by this much.
     static let frameRateTolerance = 0.5
     static let recordingFailed = "Recording failed."
+    static let didNotFinish = "The clip did not finish."
 
     let requested: VideoOption
     let actual: ClipFacts?
@@ -29,6 +30,11 @@ nonisolated struct SweepRow: Codable, Sendable, Equatable {
         }
         let reason = mismatch(requested: requested, facts: facts)
         return SweepRow(requested: requested, actual: facts, status: reason == nil ? .pass : .fail, error: reason, detail: nil)
+    }
+
+    /// A step that passed its deadline; `detail` names the step.
+    static func timedOut(requested: VideoOption, detail: String) -> SweepRow {
+        SweepRow(requested: requested, actual: nil, status: .fail, error: didNotFinish, detail: detail)
     }
 
     private static func mismatch(requested: VideoOption, facts: ClipFacts) -> String? {

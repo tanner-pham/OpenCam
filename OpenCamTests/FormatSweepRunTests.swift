@@ -37,6 +37,71 @@ import Testing
         #expect(sweep.resultText == "Done. 1 passed, 1 failed. Saved \(name).")
     }
 
+    let h264 = VideoOption(lensID: "wide", codec: VideoCodec(family: .h264, quality: "High", codecType: "avc1", bitrateTier: .high), resolution: .named(width: 1920, height: 1080), frameRate: 30, colour: .rec709)
+    let fast = SweepDeadlines(start: .milliseconds(200), finish: .milliseconds(50), cancelGrace: .milliseconds(10))
+
+    @Test func aClipWhoseResultNeverArrivesFailsAndTheSweepContinues() async throws {
+        let store = try makeStore()
+        let driver = FakeSweepDriver(directory: store.directory, failingCodecs: [], hangingCodecs: ["apch"])
+        let sweep = FormatSweep(driver: driver, store: store, lens: lens, options: [proRes, hevc], keepsClips: false,
+                                clipDuration: .milliseconds(10), deadlines: fast)
+        driver.sweep = sweep
+        await sweep.run()
+        #expect(sweep.rows.map(\.status) == [.fail, .pass]); #expect(sweep.done == 2)
+        #expect(sweep.rows[0].error == "The clip did not finish."); #expect(sweep.rows[0].detail?.hasPrefix("[FormatSweep:run]") == true)
+        // The hung clip is stopped once when its time is up and once more when its deadline passes.
+        #expect(driver.stopCount == 3)
+        let report = try readReport(sweep.reportURL)
+        #expect(!report.cancelled); #expect(!report.endedEarly)
+    }
+
+    @Test func twoTimeoutsInARowEndTheSweepAndUnlockTheControls() async throws {
+        let store = try makeStore()
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults(),
+                                capabilitySource: tempSource())
+        let userRecord = model.record
+        let driver = FakeSweepDriver(directory: store.directory, failingCodecs: [], hangingCodecs: ["apch", "hvc1"])
+        let sweep = FormatSweep(driver: driver, store: store, lens: lens, options: [proRes, hevc, h264], keepsClips: false,
+                                clipDuration: .milliseconds(10), deadlines: fast)
+        driver.sweep = sweep
+        await model.runSweep(sweep, lensID: lens.id)
+        #expect(sweep.rows.map(\.error) == ["The clip did not finish.", "The clip did not finish."]); #expect(sweep.done == 2)
+        let report = try readReport(sweep.reportURL)
+        #expect(report.endedEarly); #expect(!report.cancelled); #expect(report.rows.count == 2)
+        let name = try #require(sweep.reportURL?.lastPathComponent)
+        #expect(sweep.resultText == "Stopped after 2 of 3. The camera stopped responding. Saved \(name).")
+        #expect(!sweep.isRunning); #expect(!model.isSweeping); #expect(model.canChangeLensOrMode); #expect(model.record == userRecord)
+        #expect(model.failedCombinations.caption(for: proRes) != nil)
+    }
+
+    @Test func cancelDuringAHungClipEndsTheWaitAndUnlocks() async throws {
+        let store = try makeStore()
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults(),
+                                capabilitySource: tempSource())
+        let driver = FakeSweepDriver(directory: store.directory, failingCodecs: [], hangingCodecs: ["apch"])
+        // A finish deadline far longer than the test: only Cancel can end this wait quickly.
+        let slow = SweepDeadlines(start: .seconds(60), finish: .seconds(60), cancelGrace: .milliseconds(10))
+        let sweep = FormatSweep(driver: driver, store: store, lens: lens, options: [proRes, hevc], keepsClips: false,
+                                clipDuration: .milliseconds(10), deadlines: slow)
+        driver.sweep = sweep
+        // Cancel once the clip has been stopped and the sweep is waiting on its result.
+        driver.onClipStarted = { Task { try? await Task.sleep(for: .milliseconds(100)); sweep.cancel() } }
+        let started = ContinuousClock.now
+        await model.runSweep(sweep, lensID: lens.id)
+        #expect(ContinuousClock.now - started < .seconds(5))
+        #expect(sweep.rows.map(\.error) == ["The clip did not finish."])
+        let report = try readReport(sweep.reportURL)
+        #expect(report.cancelled); #expect(!report.endedEarly)
+        let name = try #require(sweep.reportURL?.lastPathComponent)
+        #expect(sweep.resultText == "Cancelled after 1 of 2. Saved \(name).")
+        #expect(!model.isSweeping); #expect(model.canChangeLensOrMode)
+    }
+
+    func tempSource() -> CapabilitySource {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        return CapabilitySource(cacheDirectory: directory, documentsDirectory: nil, discoverLenses: { [] }, scan: { _ in [] })
+    }
+
     @Test func theSimulatorCannotStartASweepOrRescan() throws {
         let model = CameraModel(config: .parse(["app", "-screen", "sweep"]), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
         #expect(model.sheet == .sweep); #expect(!model.canStartSweep); #expect(!model.canRescanCapabilities)
