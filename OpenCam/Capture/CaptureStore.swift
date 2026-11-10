@@ -60,14 +60,12 @@ final class CaptureStore {
         return Self.latestCaptureName(names).map { directory.appending(path: $0, directoryHint: .notDirectory) }
     }
 
-    /// The photo or clip with the highest number; within one number HEIC comes first, then MOV, then DNG.
-    /// Sidecars and every other file, such as a sweep's report, are never offered.
+    /// The photo or clip with the highest number; within one number HEIC comes first, then JPG (imports and Simulator
+    /// samples), PNG, MOV and DNG. Sidecars, edit files and every other file, such as a sweep's report, are never offered.
     static func latestCaptureName(_ names: [String]) -> String? {
-        let kinds: [CaptureFileKind] = [.heic, .mov, .dng]
+        let kinds: [CaptureFileKind] = [.heic, .jpg, .png, .mov, .dng]
         let candidates = names.compactMap { name -> (sequence: Int, rank: Int, name: String)? in
-            guard name.hasPrefix("OC_"), let dot = name.firstIndex(of: ".") else { return nil }
-            let stem = name[name.index(name.startIndex, offsetBy: 3)..<dot]
-            guard !stem.isEmpty, stem.allSatisfy({ $0.isASCII && $0.isNumber }), let sequence = Int(stem) else { return nil }
+            guard let dot = name.firstIndex(of: "."), let sequence = number(of: name) else { return nil }
             let fileExtension = name[name.index(after: dot)...].uppercased()
             guard let rank = kinds.firstIndex(where: { $0.rawValue == fileExtension }) else { return nil }
             return (sequence, rank, name)
@@ -75,14 +73,15 @@ final class CaptureStore {
         return candidates.max { ($0.sequence, -$0.rank) < ($1.sequence, -$1.rank) }?.name
     }
 
-    /// One above the highest number among `OC_<digits>.<extension>` names; 1 when there is none.
+    /// One above the highest number among `OC_<digits>.<extension>` names, edit files included; 1 when there is none.
     static func nextSequence(existingNames: [String]) -> Int {
-        let numbers = existingNames.compactMap { name -> Int? in
-            guard name.hasPrefix("OC_"), let dot = name.firstIndex(of: ".") else { return nil }
-            let stem = name[name.index(name.startIndex, offsetBy: 3)..<dot]
-            guard !stem.isEmpty, stem.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
-            return Int(stem)
-        }
-        return (numbers.max() ?? 0) + 1
+        (existingNames.compactMap(number(of:)).max() ?? 0) + 1
+    }
+
+    /// The `OC_` number of a file name with an extension, read from its stem (the name up to the first dot) by the
+    /// Library's parser, so capture numbering and the Library agree.
+    private static func number(of name: String) -> Int? {
+        guard let dot = name.firstIndex(of: ".") else { return nil }
+        return LibraryScanner.sequence(ofStem: String(name[..<dot]))
     }
 }

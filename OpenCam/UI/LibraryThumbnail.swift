@@ -1,10 +1,9 @@
 import OSLog
-import QuickLook
 import QuickLookThumbnailing
 import SwiftUI
 
-/// The strip's Library item: a thumbnail of the newest photo or clip that opens it in Quick Look,
-/// or the dimmed Library symbol while the captures folder has none.
+/// The strip's Library item: a thumbnail of the newest photo or clip, or the Library symbol while the captures folder has
+/// none. It opens the Library, which previews photos and clips, whenever the camera allows it.
 struct LibraryThumbnail: View {
     private static let logger = Logger(subsystem: "local.opencam.app", category: "LibraryThumbnail")
     private static let side: CGFloat = 30
@@ -13,10 +12,9 @@ struct LibraryThumbnail: View {
 
     @Environment(\.displayScale) private var displayScale
     @State private var thumbnail: UIImage?
-    @State private var previewURL: URL?
 
     var body: some View {
-        Button { previewURL = model.lastCapture } label: {
+        Button { model.openLibrary() } label: {
             if let thumbnail {
                 Image(uiImage: thumbnail)
                     .resizable()
@@ -27,9 +25,8 @@ struct LibraryThumbnail: View {
                 Image(systemName: "photo.on.rectangle")
             }
         }
-        .disabled(model.lastCapture == nil)
+        .disabled(!model.canOpenLibrary)
         .accessibilityLabel("Library")
-        .quickLookPreview($previewURL)
         .task(id: model.lastCapture) {
             model.loadLastCapture()
             thumbnail = await makeThumbnail(for: model.lastCapture)

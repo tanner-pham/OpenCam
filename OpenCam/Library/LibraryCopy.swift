@@ -6,6 +6,7 @@ nonisolated enum LibraryCopy {
     static let cannotOpen = "This photo could not be opened.", clipCannotOpen = "This video could not be opened."
     static let deleteFailed = "The items could not be deleted."
     static let saveFailed = "The edit could not be saved."
+    static let exportFailed = "The photo could not be exported."
     /// Shown for any save or remove that meets `EditStoreError.newerVersion`.
     static let newerEdit = "This photo was edited by a newer version of OpenCam."
     static let deleteMessage = "The files and their edits are removed from OpenCam. This cannot be undone."

@@ -247,7 +247,9 @@ final class CameraModel {
         sheet = .record
     }
 
-    var canOpenLibrary: Bool { !isRecording && !isSweeping }
+    /// The Library covers the camera, so it opens under the same rule as the strip's Lens and Mode items: never while
+    /// recording, sweeping or scanning formats.
+    var canOpenLibrary: Bool { canChangeLensOrMode }
 
     func openLibrary() {
         guard canOpenLibrary else { return }
@@ -316,6 +318,11 @@ final class CameraModel {
     /// Offers the newest photo or clip already in the captures folder; a capture made since then stays.
     func loadLastCapture() {
         guard lastCapture == nil else { return }
+        refreshLastCapture()
+    }
+
+    /// Reads the newest photo or clip again, so one deleted in the Library stops showing and an import counts.
+    func refreshLastCapture() {
         if captureStore == nil {
             do throws(CaptureStoreError) {
                 captureStore = try CaptureStore.appDefault()

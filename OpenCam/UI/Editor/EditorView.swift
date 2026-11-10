@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The editor: the photo beside or above the panel of sliders, with Done and Reset all in the toolbar.
+/// The editor: the photo beside or above the panel of sliders, with Done, Reset all and Export in the toolbar.
 struct EditorView: View {
     @Bindable var model: EditorModel
     let onDone: () -> Void
@@ -8,6 +8,8 @@ struct EditorView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var isConfirmingDiscard = false
+    /// The file being shared; removed when the share sheet closes.
+    @State private var exportedURL: URL?
 
     /// Stacked, the picture never takes so much height that less than this is left for the panel.
     private static let minPanelHeight: CGFloat = 240
@@ -29,6 +31,12 @@ struct EditorView: View {
             .confirmationDialog("Discard changes?", isPresented: $isConfirmingDiscard, titleVisibility: .visible) {
                 Button("Discard changes", role: .destructive, action: onDone)
                 Button("Keep editing", role: .cancel) {}
+            }
+            .sheet(isPresented: Binding(get: { exportedURL != nil }, set: { if !$0 { finishSharing() } })) {
+                if let exportedURL { ShareSheet(url: exportedURL) }
+            }
+            .alert(model.alertMessage ?? "", isPresented: Binding(get: { model.alertMessage != nil }, set: { if !$0 { model.alertMessage = nil } })) {
+                Button("OK") {}
             }
             .task {
                 guard model.phase == .loading else { return }
@@ -62,14 +70,38 @@ struct EditorView: View {
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
             Button(role: .cancel, action: leave)
+                .disabled(model.isExporting)
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            if model.isExporting {
+                ProgressView()
+                    .accessibilityLabel("Exporting")
+            } else {
+                // Exports the edit as shown, unsaved changes included; the saved edit and the original are not changed.
+                Button("Export", systemImage: "square.and.arrow.up", action: export)
+                    .disabled(!model.canExport)
+            }
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button("Reset all", action: model.resetAll)
                 .disabled(isFailed || (model.adjustments.isIdentity && model.lookName == nil))
         }
         ToolbarItem(placement: .confirmationAction) {
+            // Leaving waits for an export to finish, so its file is shared and then removed rather than left behind.
             Button("Done", action: done)
+                .disabled(model.isExporting)
         }
+    }
+
+    private func export() {
+        Task { exportedURL = await model.export() }
+    }
+
+    /// The share sheet has closed: whatever was saved or sent is a copy, so the temporary file goes.
+    private func finishSharing() {
+        guard let url = exportedURL else { return }
+        exportedURL = nil
+        model.discardExport(at: url)
     }
 
     /// A failed photo closes without saving, so it never traps the person; otherwise the edit is saved first.

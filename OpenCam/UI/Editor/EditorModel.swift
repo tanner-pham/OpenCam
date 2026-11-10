@@ -16,6 +16,7 @@ import OSLog
     private let edits: EditStore
     private let lookStore: LookStore
     private let renderer: LookRenderer
+    private let exporter: PhotoExporter
     /// The preview render; `renderer.renderedCGImage` unless a test replaces it.
     private let renderPreview: @Sendable (CIImage, Adjustments) async -> CGImage?
 
@@ -26,6 +27,10 @@ import OSLog
     private(set) var phase: EditorPhase = .loading
     /// The saved looks, as `LookStore.all()` orders them.
     private(set) var looks: [Look] = []
+    /// A message for the editor's alert; cleared when the alert closes.
+    var alertMessage: String?
+    /// True while `export()` renders and writes the file.
+    private(set) var isExporting = false
 
     /// The edit rendered on the proxy.
     private(set) var preview: CGImage?
@@ -55,12 +60,13 @@ import OSLog
 
     /// `renderPreview` is a test seam for a render that fails; the app never passes it.
     init(item: LibraryItem, edits: EditStore, looks: LookStore, group: EditorGroup = .light, renderer: LookRenderer = .shared,
-         renderPreview: (@Sendable (CIImage, Adjustments) async -> CGImage?)? = nil) {
+         exporter: PhotoExporter = .appDefault(), renderPreview: (@Sendable (CIImage, Adjustments) async -> CGImage?)? = nil) {
         self.item = item
         self.edits = edits
         self.lookStore = looks
         self.group = group
         self.renderer = renderer
+        self.exporter = exporter
         self.renderPreview = renderPreview ?? { image, adjustments in await renderer.renderedCGImage(image, adjustments: adjustments) }
     }
 
@@ -268,5 +274,38 @@ extension EditorModel {
     /// The unedited proxy redrawn at `tileLongSide`, off the main actor.
     @concurrent private static func makeTileSource(from image: CGImage) async -> CIImage? {
         PictureDecoder.capped(image, longSide: tileLongSide).map { CIImage(cgImage: $0) }
+    }
+}
+
+// MARK: - Export
+
+extension EditorModel {
+    /// Export works once the photo is loaded and editable. A read-only photo (edited by a newer version) does not export:
+    /// this version would bake in only the part of that edit it can read.
+    var canExport: Bool { phase == .ready && !isExporting }
+
+    /// Writes the edit as currently shown, unsaved changes included, to a new full-size file for sharing; the original and
+    /// the saved edit are not touched. The full-size render runs in `PhotoExporter`, never through the preview path.
+    /// Nil on failure: a missing original fails the editor, anything else sets `alertMessage`.
+    func export() async -> URL? {
+        guard canExport else { return nil }
+        isExporting = true
+        defer { isExporting = false }
+        do {
+            return try await exporter.export(item, edit: PhotoEdit(adjustments: adjustments, lookName: lookName))
+        } catch {
+            Self.logger.error("\(error.description, privacy: .public)")
+            if case .sourceMissing = error { phase = .failed(LibraryCopy.cannotOpen) } else { alertMessage = LibraryCopy.exportFailed }
+            return nil
+        }
+    }
+
+    /// Removes an exported file once the share sheet has closed; whatever the person saved or sent is a copy.
+    func discardExport(at url: URL) {
+        do {
+            try FileManager.default.removeItem(at: url)
+        } catch {
+            Self.logger.error("[EditorModel:discardExport] The export file could not be removed — {file: \(url.lastPathComponent, privacy: .public), reason: \(error.localizedDescription, privacy: .public)}")
+        }
     }
 }

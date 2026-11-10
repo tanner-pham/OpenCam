@@ -9,5 +9,6 @@ import Testing
         #expect(LibraryCopy.duration(seconds: 42.5) == "0:42"); #expect(LibraryCopy.duration(seconds: 62) == "1:02"); #expect(LibraryCopy.duration(seconds: 3725) == "1:02:05")
         #expect(LibraryCopy.emptyTitle + ". " + LibraryCopy.emptyDetail == "No photos yet. Take one or import from Photos.")
         #expect(LibraryCopy.newerEdit == "This photo was edited by a newer version of OpenCam.")
+        #expect(LibraryCopy.exportFailed == "The photo could not be exported.")
     }
 }
