@@ -222,9 +222,10 @@ final class CameraModel {
         bottomNotice == StatusText.microphoneOff
     }
 
-    /// Record settings opens only once the device's formats are known.
+    /// Record settings, and the format sweep from the summary's long press, open only once the device's formats are
+    /// known and never while recording, so no control names a format the clip is not recording.
     var canOpenRecordSettings: Bool {
-        hasCamera && !isSweeping && !(capabilities.videoOptions.isEmpty && capabilities.photoOptions.isEmpty)
+        hasCamera && !isRecording && !isSweeping && !(capabilities.videoOptions.isEmpty && capabilities.photoOptions.isEmpty)
     }
 
     func openRecordSettings() {

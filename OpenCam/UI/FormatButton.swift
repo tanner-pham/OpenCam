@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Format summary that opens Record settings. With `onLongPress` (video mode), a long press offers the format sweep;
-/// the system menu keeps a tap and a long press apart. `isWarning` uses the remaining-time warning colour.
+/// the system menu keeps a tap and a long press apart; a `.disabled` button disables both. `isWarning` uses the
+/// remaining-time warning colour.
 struct FormatButton: View {
     let parts: [String]
     var isStacked = false

@@ -3,6 +3,16 @@ import Testing
 @testable import OpenCam
 
 @MainActor @Suite struct CameraModelRecordingTests {
+    @Test func recordSettingsAndTheSweepStayClosedWhileRecording() throws {
+        let model = CameraModel(config: .parse(["app", "-recording", "on"]), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
+        let option = try #require(model.currentVideoOption)
+        #expect(model.isRecording); #expect(!model.canOpenRecordSettings)
+        model.openRecordSettings(); #expect(model.sheet == nil)
+        model.openSweep(); #expect(model.sheet == nil)
+        model.recordingDidFinish(RecordingResult(url: URL(filePath: "/tmp/OC_0002.MOV"), option: option, outcome: .completed, sidecar: nil))
+        #expect(model.canOpenRecordSettings)
+        model.openSweep(); #expect(model.sheet == .sweep)
+    }
     @Test func interruptionResetsUI() throws {
         let model = CameraModel(config: .parse(["app", "-recording", "on"]), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
         let option = try #require(model.currentVideoOption)
