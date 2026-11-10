@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreImage
+import OSLog
 import Synchronization
 
 /// Turns the data output's frames into the selected look for the viewfinder, on its own serial queue. Each frame becomes a
@@ -15,11 +16,16 @@ nonisolated final class FramePipeline: NSObject, AVCaptureVideoDataOutputSampleB
         var isFront = false
         var slot = FrameSlot<CIImage>()
         var deliveredCount = 0
+        var droppedCount = 0
+        /// Set by the first drop after a configuration, so drops are logged at most once per configuration.
+        var hasLoggedDrop = false
 
         var orientation: FrameOrientation {
             FrameOrientation.plan(angle: angle, isFront: isFront)
         }
     }
+
+    private static let logger = Logger(subsystem: "local.opencam.app", category: "FramePipeline")
 
     let queue = DispatchSerialQueue(label: "opencam.frames")
     private let renderer: LookRenderer
@@ -67,9 +73,12 @@ nonisolated final class FramePipeline: NSObject, AVCaptureVideoDataOutputSampleB
         state.withLock { $0.angle = angle }
     }
 
-    /// Whether the camera now attached faces the user; from `CameraSession.apply`.
+    /// Whether the camera now attached faces the user; from `CameraSession.apply`, once per configuration.
     func setCamera(isFront: Bool) {
-        state.withLock { $0.isFront = isFront }
+        state.withLock { state in
+            state.isFront = isFront
+            state.hasLoggedDrop = false
+        }
     }
 
     /// The newest drawn-ready frame, once.
@@ -82,10 +91,26 @@ nonisolated final class FramePipeline: NSObject, AVCaptureVideoDataOutputSampleB
         state.withLock { $0.deliveredCount }
     }
 
+    /// Every frame the output dropped before delivering it.
+    var droppedCount: Int {
+        state.withLock { $0.droppedCount }
+    }
+
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         state.withLock { $0.deliveredCount += 1 }
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         receive(CIImage(cvPixelBuffer: pixelBuffer))
+    }
+
+    func captureOutput(_ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        let firstDrop = state.withLock { state -> Int? in
+            state.droppedCount += 1
+            guard !state.hasLoggedDrop else { return nil }
+            state.hasLoggedDrop = true
+            return state.droppedCount
+        }
+        guard let firstDrop else { return }
+        Self.logger.error("[FramePipeline:captureOutput] Frame dropped — {dropped: \(firstDrop), delivered: \(self.deliveredCount)}")
     }
 
     /// One camera frame, already a `CIImage`: turned upright, drawn through the look and put in the slot. Nothing is kept
