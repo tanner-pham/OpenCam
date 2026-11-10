@@ -11,7 +11,8 @@ nonisolated enum StatusText {
         case .cameraDenied: ViewfinderStatus(message: "Camera access is off.", offersSettings: true)
         case .cameraRestricted: ViewfinderStatus(message: "Camera access is restricted on this iPhone.", offersSettings: false)
         case .failed(let message): ViewfinderStatus(message: message, offersSettings: false)
-        case .ready, .simulator: nil
+        // Released, the Library covers the camera; it comes back as the Library closes, so there is nothing to explain.
+        case .ready, .simulator, .released: nil
         }
     }
 

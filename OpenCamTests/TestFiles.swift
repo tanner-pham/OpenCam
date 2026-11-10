@@ -33,7 +33,8 @@ enum TestFiles {
 
     /// A picture of `type` whose stored pixels are red on the left half and blue on the right, tagged with EXIF `orientation`.
     /// Orientation 6 shows it turned a quarter clockwise: upright, red is the top half.
-    static func writeOrientedPicture(width: Int, height: Int, orientation: Int, type: UTType, to url: URL) throws -> URL {
+    /// `metadata` is written as the picture's properties beside the orientation, such as an Exif dictionary.
+    static func writeOrientedPicture(width: Int, height: Int, orientation: Int, type: UTType, metadata: [CFString: Any] = [:], to url: URL) throws -> URL {
         let space = LookRenderer.shared.displayP3
         guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
                                       bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue),
@@ -47,7 +48,9 @@ enum TestFiles {
         guard let image = context.makeImage(),
               let destination = CGImageDestinationCreateWithURL(url as CFURL, type.identifier as CFString, 1, nil)
         else { throw TestFileError.encoderUnavailable(type: type.identifier) }
-        CGImageDestinationAddImage(destination, image, [kCGImagePropertyOrientation: orientation] as CFDictionary)
+        var properties = metadata
+        properties[kCGImagePropertyOrientation] = orientation
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw TestFileError.encoderUnavailable(type: type.identifier) }
         return url
     }

@@ -38,7 +38,7 @@ struct CameraRootView: View {
         // Apple's Camera app. When capture is not allowed the model ignores the press.
         .onCameraCaptureEvent { model.handleCaptureEvent(phase: $0.phase) }
         .fullScreenCover(isPresented: Binding(get: { model.isLibraryPresented && library != nil }, set: { model.isLibraryPresented = $0 }),
-                         onDismiss: model.refreshLastCapture) {
+                         onDismiss: { Task { await model.closeLibrary() } }) {
             if let library { LibraryView(library: library, launch: launch) }
         }
         .sheet(item: $model.sheet) { sheet in

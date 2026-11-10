@@ -62,6 +62,56 @@ import Testing
         #expect(bottom.z > 0.9); #expect(bottom.x < 0.1)
     }
 
+    /// The original's capture metadata travels with the export; orientation and pixel dimensions are the export's own,
+    /// and nothing that describes the unedited pixels (maker notes, a thumbnail) survives.
+    @Test(arguments: [ExportFormat.jpeg, .heif])
+    func exportKeepsTheOriginalsMetadata(format: ExportFormat) async throws {
+        let captures = try TestFiles.directory()
+        let exif: [CFString: Any] = [kCGImagePropertyExifDateTimeOriginal: "2026:11:09 18:42:07", kCGImagePropertyExifExposureTime: 0.004,
+                                     kCGImagePropertyExifLensModel: "iPhone Duo back camera", kCGImagePropertyExifPixelXDimension: 1600,
+                                     kCGImagePropertyExifPixelYDimension: 1200, kCGImagePropertyExifSubjectArea: [800, 600, 200, 200]]
+        let tiff: [CFString: Any] = [kCGImagePropertyTIFFMake: "Apple", kCGImagePropertyTIFFModel: "iPhone Duo", kCGImagePropertyTIFFOrientation: 6]
+        let gps: [CFString: Any] = [kCGImagePropertyGPSLatitude: 37.33, kCGImagePropertyGPSLatitudeRef: "N",
+                                    kCGImagePropertyGPSLongitude: 122.03, kCGImagePropertyGPSLongitudeRef: "W"]
+        _ = try TestFiles.writeOrientedPicture(width: 1600, height: 1200, orientation: 6, type: format == .jpeg ? .jpeg : .heic,
+                                               metadata: [kCGImagePropertyExifDictionary: exif, kCGImagePropertyTIFFDictionary: tiff,
+                                                          kCGImagePropertyGPSDictionary: gps, kCGImageDestinationEmbedThumbnail: true],
+                                               to: captures.appending(path: "OC_0009." + format.rawValue))
+        let item = try #require(LibraryScanner.items(in: captures).first)
+        let url = try await PhotoExporter(directory: try TestFiles.directory()).export(item, edit: PhotoEdit(adjustments: Adjustments().setting(.exposure, to: 1)))
+
+        let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
+        let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        let readExif = try #require(properties[kCGImagePropertyExifDictionary] as? [CFString: Any])
+        #expect(readExif[kCGImagePropertyExifDateTimeOriginal] as? String == "2026:11:09 18:42:07")
+        #expect(readExif[kCGImagePropertyExifExposureTime] as? Double == 0.004)
+        #expect(readExif[kCGImagePropertyExifLensModel] as? String == "iPhone Duo back camera")
+        #expect(readExif[kCGImagePropertyExifSubjectArea] == nil)
+        #expect(readExif[kCGImagePropertyExifPixelXDimension] as? Int == 1200); #expect(readExif[kCGImagePropertyExifPixelYDimension] as? Int == 1600)
+        let readTIFF = try #require(properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any])
+        #expect(readTIFF[kCGImagePropertyTIFFModel] as? String == "iPhone Duo")
+        #expect((readTIFF[kCGImagePropertyTIFFOrientation] as? Int ?? 1) == 1)
+        let readGPS = try #require(properties[kCGImagePropertyGPSDictionary] as? [CFString: Any])
+        #expect(readGPS[kCGImagePropertyGPSLatitude] as? Double == 37.33)
+        #expect((properties[kCGImagePropertyOrientation] as? Int ?? 1) == 1)
+        #expect(properties[kCGImagePropertyPixelWidth] as? Int == 1200); #expect(properties[kCGImagePropertyPixelHeight] as? Int == 1600)
+        #expect(properties[kCGImagePropertyMakerAppleDictionary] == nil)
+        // The original's thumbnail shows the unedited picture on its side (HEIF embeds a 320x240 one; for a JPEG, ImageIO
+        // hands back the stored picture itself). The export's is never the original's: none (HEIF), or its own upright
+        // pixels (JPEG).
+        let originalThumbnail = try #require(Self.embeddedThumbnail(of: item.pictureURL))
+        #expect(originalThumbnail.width > originalThumbnail.height)
+        if let exportThumbnail = Self.embeddedThumbnail(of: url) {
+            #expect(format == .jpeg); #expect(exportThumbnail.width == 1200); #expect(exportThumbnail.height == 1600)
+        }
+    }
+
+    private static func embeddedThumbnail(of url: URL) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageIfAbsent: false, kCGImageSourceCreateThumbnailFromImageAlways: false]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    }
+
     @Test func exportReplacesAnOlderExportOfTheSameName() async throws {
         let captures = try TestFiles.directory(), out = try TestFiles.directory()
         _ = try TestFiles.writeJPEG(width: 40, height: 30, rgb: SIMD3(0.5, 0.5, 0.5), to: captures.appending(path: "OC_0006.JPG"))

@@ -88,12 +88,19 @@ final class CameraModel {
     @ObservationIgnored var unreportedClips: Set<String> = []
     /// What put `notice` there; nil when no notice is shown.
     @ObservationIgnored var noticeSource: NoticeSource?
+    /// False when the Library could not be built at launch; its item then says so instead of opening it.
+    @ObservationIgnored let isLibraryAvailable: Bool
+    /// The tail of the serial chain that releases the camera for the Library and takes it back.
+    @ObservationIgnored var libraryHandoff: Task<Void, Never>?
+    /// True from the moment the session let go of its camera for the Library until it runs again.
+    @ObservationIgnored var isCameraReleasedForLibrary = false
 
     static let formatFailedNotice = "That format could not be used."
     static let formatSetupFailed = "This format could not be set up."
     init(config: LaunchConfig, capabilities: CaptureCapabilities, isSimulator: Bool, defaults: UserDefaults = .standard,
-         capabilitySource: CapabilitySource = .device, captureStore: CaptureStore? = nil) {
+         capabilitySource: CapabilitySource = .device, captureStore: CaptureStore? = nil, isLibraryAvailable: Bool = true) {
         self.captureStore = captureStore
+        self.isLibraryAvailable = isLibraryAvailable
         self.capabilities = capabilities
         self.defaults = defaults
         self.capabilitySource = capabilitySource
@@ -245,15 +252,6 @@ final class CameraModel {
     func openRecordSettings() {
         guard canOpenRecordSettings else { return }
         sheet = .record
-    }
-
-    /// The Library covers the camera, so it opens under the same rule as the strip's Lens and Mode items: never while
-    /// recording, sweeping or scanning formats.
-    var canOpenLibrary: Bool { canChangeLensOrMode }
-
-    func openLibrary() {
-        guard canOpenLibrary else { return }
-        isLibraryPresented = true
     }
 
     /// Audio meters and the remaining-time estimate describe video recording, so photo mode hides them.
@@ -632,8 +630,9 @@ extension CameraModel {
             phase = .failed("The camera stopped.")
         case .restarted:
             // The session runs again, so a pause notice is stale; any other notice stays. A clip recording before the
-            // reset is gone, and the movie output may never report it.
-            phase = .ready
+            // reset is gone, and the movie output may never report it. Released for the Library, the session holds no
+            // camera, so it stays released until the Library closes.
+            phase = isCameraReleasedForLibrary ? .released : .ready
             isInterrupted = false
             clearNotice(from: .interruption)
             endRecordingWithoutResult(clip: nil, context: "restarted")

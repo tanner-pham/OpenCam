@@ -35,8 +35,10 @@ nonisolated struct PhotoExporter: Sendable {
         }
         let format = ExportFormat.of(source)
         let url = directory.appending(path: "\(item.stem)-edited.\(format.rawValue)", directoryHint: .notDirectory)
-        // The rendered image carries none of the original's properties, so no orientation tag (or other metadata) is written.
-        let image = renderer.render(decoded, adjustments: edit.adjustments)
+        let rendered = renderer.render(decoded, adjustments: edit.adjustments)
+        // Core Image would otherwise write the decoded image's properties as they are, including the original's pixel
+        // dimensions and subject area; the export's metadata is chosen here instead.
+        let image = rendered.settingProperties(Self.carriedMetadata(from: source, size: rendered.extent.size))
         let options = [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): Self.quality]
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -54,5 +56,30 @@ nonisolated struct PhotoExporter: Sendable {
             throw .writeFailed(path: url.path(percentEncoded: false), reason: error.localizedDescription)
         }
         return url
+    }
+
+    /// The original's capture metadata for the export: Exif (date and time, exposure, lens), TIFF (make, model), GPS and
+    /// IPTC. Orientation and pixel dimensions are the export's own (upright, `size`). Whatever describes the unedited pixels
+    /// is left out: maker notes, the subject area (coordinates in the original's orientation), embedded thumbnails and the
+    /// colour profile, which is the export's Display P3.
+    private static func carriedMetadata(from source: URL, size: CGSize) -> [String: Any] {
+        guard let imageSource = CGImageSourceCreateWithURL(source as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [String: Any]
+        else { return [:] }
+        var metadata: [String: Any] = [:]
+        if var exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any] {
+            exif[kCGImagePropertyExifSubjectArea as String] = nil
+            exif[kCGImagePropertyExifPixelXDimension as String] = Int(size.width)
+            exif[kCGImagePropertyExifPixelYDimension as String] = Int(size.height)
+            metadata[kCGImagePropertyExifDictionary as String] = exif
+        }
+        if var tiff = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any] {
+            tiff[kCGImagePropertyTIFFOrientation as String] = nil
+            metadata[kCGImagePropertyTIFFDictionary as String] = tiff
+        }
+        for key in [kCGImagePropertyGPSDictionary, kCGImagePropertyIPTCDictionary] {
+            if let dictionary = properties[key as String] { metadata[key as String] = dictionary }
+        }
+        return metadata
     }
 }

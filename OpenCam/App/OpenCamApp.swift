@@ -24,7 +24,8 @@ struct OpenCamApp: App {
         // The fixture stands in for the scan in the Simulator only.
         do {
             let capabilities = try CaptureCapabilities.bundledFixture()
-            _model = State(initialValue: CameraModel(config: config, capabilities: capabilities, isSimulator: true, captureStore: captureStore))
+            _model = State(initialValue: CameraModel(config: config, capabilities: capabilities, isSimulator: true, captureStore: captureStore,
+                                                     isLibraryAvailable: library != nil))
         } catch {
             Self.logger.error("[OpenCamApp:init] Fixture failed to load — {error: \(String(describing: error), privacy: .public)}")
             _model = State(initialValue: nil)
@@ -33,7 +34,8 @@ struct OpenCamApp: App {
         #else
         // On the device nothing is known until the scan or the cache provides it.
         let empty = CaptureCapabilities(lenses: [], videoOptions: [], photoOptions: [], osBuild: "", modelIdentifier: "")
-        _model = State(initialValue: CameraModel(config: config, capabilities: empty, isSimulator: false, captureStore: captureStore))
+        _model = State(initialValue: CameraModel(config: config, capabilities: empty, isSimulator: false, captureStore: captureStore,
+                                                 isLibraryAvailable: library != nil))
         _session = State(initialValue: CameraSession())
         #endif
     }

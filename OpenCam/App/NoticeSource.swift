@@ -10,4 +10,6 @@ nonisolated enum NoticeSource: Sendable, Equatable {
     case configuration
     /// A format scan that failed or skipped cameras.
     case scan
+    /// The Library could not be built at launch, so its item cannot open it.
+    case library
 }
