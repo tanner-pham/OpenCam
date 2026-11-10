@@ -59,7 +59,8 @@ struct LooksPanel: View {
         return Button {
             model.applyLook(look)
         } label: {
-            LookTile(title: look?.name ?? "None", image: images[values], isSelected: LookSelection.isSelected(look, for: model.adjustments))
+            let isSelected = LookSelection.isSelected(look, among: model.looks, for: model.adjustments, lookName: model.lookName)
+            LookTile(title: look?.name ?? "None", image: images[values], isSelected: isSelected)
         }
         .buttonStyle(.plain)
         .task(id: isReady ? values : nil) {
