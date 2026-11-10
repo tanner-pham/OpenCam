@@ -629,10 +629,14 @@ extension CameraModel {
     }
 
     /// Ten times a second; the levels stay empty without a microphone.
+    /// While recording, free space is read again about once a second, so the remaining time counts down during a clip.
     private func pollMeters(of session: CameraSession) async {
+        var tick = 0
         while !Task.isCancelled {
             let levels = await session.audioLevels()
             if levels != meterLevels { meterLevels = levels }
+            tick = (tick + 1) % 10
+            if isRecording, tick == 0 { refreshFreeBytes() }
             do {
                 try await Task.sleep(for: .milliseconds(100))
             } catch {

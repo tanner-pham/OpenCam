@@ -47,6 +47,17 @@ import Testing
         #expect(denied.shownMeterLevels == [0, 0])
     }
 
+    @Test func remainingTimeFollowsFreeBytes() throws {
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
+        let option = try #require(model.currentVideoOption)
+        #expect(model.remainingText == "677 min")
+        let bytesPerMinute = DataRateEstimator.gigabytesPerMinute(for: option) * 1_000_000_000
+        model.freeBytes = DataRateEstimator.reserveBytes + Int64(10.5 * bytesPerMinute)
+        #expect(model.remainingText == "10 min"); #expect(!model.isStorageFull)
+        model.freeBytes = DataRateEstimator.reserveBytes
+        #expect(model.remainingText == "Storage full"); #expect(model.isStorageFull); #expect(!model.canCapture)
+    }
+
     @Test func launchScreenOpensItsSheet() throws {
         let caps = try Fixture.load()
         #expect(CameraModel(config: .parse(["app", "-screen", "record"]), capabilities: caps, isSimulator: true, defaults: try Fixture.freshDefaults()).sheet == .record)
