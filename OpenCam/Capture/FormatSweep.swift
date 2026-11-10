@@ -6,6 +6,7 @@ import OSLog
 /// Every camera step goes through `driver`, so the model's configure queue and recording rules stay in charge.
 /// No step waits without a limit: a step that passes its deadline fails the row with "The clip did not finish.",
 /// any recording still running is stopped, and the sweep moves on; two such rows in a row end the sweep early.
+/// The sweep also ends early when the driver's camera is interrupted or stopped; the row it was on then is no answer.
 /// A failing option is recorded and the sweep moves on; restoring the user's selection is the model's job.
 @MainActor @Observable final class FormatSweep {
     private static let logger = Logger(subsystem: "local.opencam.app", category: "FormatSweep")
@@ -64,14 +65,25 @@ import OSLog
         var isEndedEarly = false
         for option in options {
             if isCancelled { break }
+            // An interrupted or stopped camera fails every clip at once, so the sweep ends rather than record false failures.
+            if let driver, !driver.isCameraUsable {
+                isEndedEarly = true
+                break
+            }
             let (attempted, isTimedOut) = await sweep(option)
-            guard let row = attempted else {
+            guard var row = attempted else {
                 // An earlier clip is still recording, so the camera has stopped responding; this option was never tried.
                 isEndedEarly = true
                 break
             }
+            let isCameraUsable = driver?.isCameraUsable ?? true
+            if !isCameraUsable { row = row.recordedWithoutCamera() }
             rows.append(row)
             done += 1
+            if !isCameraUsable {
+                isEndedEarly = true
+                break
+            }
             timeoutsInARow = isTimedOut ? timeoutsInARow + 1 : 0
             if timeoutsInARow >= Self.timeoutsBeforeStopping {
                 isEndedEarly = true

@@ -18,6 +18,9 @@ nonisolated struct SweepRow: Codable, Sendable, Equatable {
     let error: String?
     /// The raw error description, kept in the report file only, never on screen.
     let detail: String?
+    /// False when the camera was interrupted or stopped while the row ran; such a row says nothing about the option.
+    /// Reports written before this field read as true.
+    var wasCameraUsable = true
 
     /// Fails on the first of: a recording error, an unreadable clip, codec, dimensions (either orientation), frame rate,
     /// colour (only when the file reports one), duration. Dropped frames stay in `actual` and never fail a row.
@@ -32,8 +35,16 @@ nonisolated struct SweepRow: Codable, Sendable, Equatable {
         return SweepRow(requested: requested, actual: facts, status: reason == nil ? .pass : .fail, error: reason, detail: nil)
     }
 
-    /// False for a row that passed its deadline: it says nothing about whether the option works.
-    var hasAnswer: Bool { error != Self.didNotFinish }
+    /// False for a row that passed its deadline, or that ran while the camera was unusable: it says nothing about
+    /// whether the option works.
+    var hasAnswer: Bool { error != Self.didNotFinish && wasCameraUsable }
+
+    /// This row, marked as recorded while the camera was unusable.
+    func recordedWithoutCamera() -> SweepRow {
+        var row = self
+        row.wasCameraUsable = false
+        return row
+    }
 
     /// A step that passed its deadline; `detail` names the step.
     static func timedOut(requested: VideoOption, detail: String) -> SweepRow {
@@ -65,5 +76,18 @@ nonisolated struct SweepRow: Codable, Sendable, Equatable {
     /// Always a full stop as the decimal mark, whatever the locale.
     private static func oneDecimal(_ value: Double) -> String {
         String(format: "%.1f", value)
+    }
+}
+
+nonisolated extension SweepRow {
+    /// Decodes reports written before `wasCameraUsable` existed.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        requested = try container.decode(VideoOption.self, forKey: .requested)
+        actual = try container.decodeIfPresent(ClipFacts.self, forKey: .actual)
+        status = try container.decode(SweepStatus.self, forKey: .status)
+        error = try container.decodeIfPresent(String.self, forKey: .error)
+        detail = try container.decodeIfPresent(String.self, forKey: .detail)
+        wasCameraUsable = try container.decodeIfPresent(Bool.self, forKey: .wasCameraUsable) ?? true
     }
 }

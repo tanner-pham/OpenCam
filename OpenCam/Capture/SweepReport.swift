@@ -9,7 +9,8 @@ nonisolated struct SweepReport: Codable, Sendable {
     let modelIdentifier: String
     /// The user cancelled before every option ran.
     let cancelled: Bool
-    /// The sweep stopped itself after two rows in a row passed their deadline.
+    /// The sweep stopped itself: two rows in a row passed their deadline, a clip was still recording, or the camera was
+    /// interrupted or stopped.
     let endedEarly: Bool
     let rows: [SweepRow]
 

@@ -87,6 +87,48 @@ import Testing
         #expect(model.failedCombinations.failedByLens["wide"] == nil)
     }
 
+    @Test func anInterruptionMidSweepEndsItAndLeavesTheFailedListUnchanged() async throws {
+        let store = try makeStore()
+        let model = try simulatorModel()
+        // A first sweep finds hvc1 failing.
+        let first = FakeSweepDriver(directory: store.directory, failingCodecs: ["hvc1"])
+        let firstSweep = FormatSweep(driver: first, store: store, lens: lens, options: [hevc], keepsClips: false,
+                                     clipDuration: .milliseconds(10), deadlines: fast)
+        first.sweep = firstSweep
+        await model.runSweep(firstSweep, lensID: lens.id)
+        #expect(model.failedCombinations.failedByLens["wide"] == [hevc])
+
+        // The second is interrupted during its first clip, which then fails at once; nothing after it is tried.
+        let driver = FakeSweepDriver(directory: store.directory, failingCodecs: [])
+        let sweep = FormatSweep(driver: driver, store: store, lens: lens, options: [h264, hevc, proRes], keepsClips: false,
+                                clipDuration: .milliseconds(10), deadlines: fast)
+        driver.sweep = sweep
+        driver.onClipStarted = { [weak driver] in driver?.isCameraUsable = false }
+        await model.runSweep(sweep, lensID: lens.id)
+        #expect(sweep.rows.map(\.status) == [.fail]); #expect(sweep.done == 1); #expect(driver.applied == [h264])
+        #expect(sweep.rows.allSatisfy { !$0.hasAnswer })
+        let report = try readReport(sweep.reportURL)
+        #expect(report.endedEarly); #expect(!report.cancelled)
+        let name = try #require(sweep.reportURL?.lastPathComponent)
+        #expect(sweep.resultText == "Stopped after 1 of 3. The camera stopped responding. Saved \(name).")
+        #expect(!model.isSweeping)
+        // The interrupted row is no answer: h264 is not listed, and hvc1 keeps its earlier entry.
+        #expect(model.failedCombinations.failedByLens["wide"] == [hevc])
+    }
+
+    @Test func aSweepThatStartsWithoutAUsableCameraTriesNothing() async throws {
+        let store = try makeStore()
+        let driver = FakeSweepDriver(directory: store.directory, failingCodecs: [])
+        driver.isCameraUsable = false
+        let sweep = FormatSweep(driver: driver, store: store, lens: lens, options: [proRes, hevc], keepsClips: false,
+                                clipDuration: .milliseconds(10), deadlines: fast)
+        driver.sweep = sweep
+        await sweep.run()
+        #expect(sweep.rows.isEmpty); #expect(driver.applied.isEmpty)
+        let name = try #require(sweep.reportURL?.lastPathComponent)
+        #expect(sweep.resultText == "Stopped after 0 of 2. The camera stopped responding. Saved \(name).")
+    }
+
     @Test func aLateSweepResultIsNeverTheLastCaptureOrANotice() throws {
         let store = try makeStore()
         let model = try simulatorModel()

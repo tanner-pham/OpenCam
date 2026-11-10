@@ -11,8 +11,10 @@ import Foundation
     let hangingCodecs: Set<String>
     let hangingApplyCodecs: Set<String>
     weak var sweep: FormatSweep?
-    /// Called once a clip has started, so a test can cancel mid-clip.
+    /// Called once a clip has started, so a test can cancel or interrupt mid-clip.
     var onClipStarted: () -> Void = {}
+    /// False stands for an interruption or a stopped camera: a clip stopped meanwhile fails at once, as on the device.
+    var isCameraUsable = true
     private(set) var applied: [VideoOption] = []
     private(set) var stopCount = 0
     private(set) var isRecording = false
@@ -55,7 +57,9 @@ import Foundation
                               nominalFrameRate: Double(option.frameRate), durationSeconds: 3, frameCount: 90, droppedFrames: 0,
                               colour: option.colour, megabitsPerSecond: 100, hasAudio: true)
         let sidecar = ClipSidecar(requested: option, actual: facts, outcome: "completed", recordedAt: Date(), error: nil)
-        let result = RecordingResult(url: url, option: option, outcome: .completed, sidecar: sidecar)
+        let result = isCameraUsable
+            ? RecordingResult(url: url, option: option, outcome: .completed, sidecar: sidecar)
+            : RecordingResult(url: url, option: option, outcome: .stopped(.interrupted, isPlayable: false), sidecar: nil)
         Task {
             isRecording = false
             sweep?.recordingDidFinish(result)

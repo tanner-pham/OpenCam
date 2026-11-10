@@ -894,6 +894,9 @@ extension CameraModel: SweepDriver {
 
     // MARK: SweepDriver
 
+    /// The session runs and no interruption notice is shown.
+    var isCameraUsable: Bool { phase == .ready && noticeSource != .interruption }
+
     /// A recording still running (one that passed its deadline) would hold the configure back, so the option fails at once.
     func applySweepOption(_ option: VideoOption) async throws(CameraSessionError) {
         guard !isRecording else { throw .recordingInProgress }

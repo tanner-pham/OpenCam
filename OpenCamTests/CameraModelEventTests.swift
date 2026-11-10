@@ -21,6 +21,15 @@ import Testing
         #expect(model.phase == .ready); #expect(model.notice == nil)
     }
 
+    @Test func theCameraIsUsableForASweepOnlyWhenReadyAndNotInterrupted() throws {
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: false, defaults: try Fixture.freshDefaults())
+        #expect(!model.isCameraUsable)
+        model.phase = .ready; #expect(model.isCameraUsable)
+        model.apply(.interrupted(.cameraInUse)); #expect(!model.isCameraUsable)
+        model.apply(.interruptionEnded); #expect(model.isCameraUsable)
+        model.apply(.runtimeError("[CameraSession:runtimeError] Session stopped — {code: -11800}")); #expect(!model.isCameraUsable)
+    }
+
     @Test func runtimeErrorThatDoesNotRecoverStaysFailed() throws {
         let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: false, defaults: try Fixture.freshDefaults())
         model.apply(.runtimeError("[CameraSession:runtimeError] Session stopped — {code: -11800}"))
