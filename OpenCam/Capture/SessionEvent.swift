@@ -5,5 +5,9 @@ nonisolated enum SessionEvent: Sendable, Equatable {
     case interruptionEnded
     /// Carries a log message only; it never reaches the screen.
     case runtimeError(String)
+    /// The session runs again after a media-services reset.
+    case restarted
+    /// The microphone could not attach; video continues without sound. Carries a log message only.
+    case microphoneUnavailable(String)
     case pressure(PressureLevel, isThermal: Bool)
 }

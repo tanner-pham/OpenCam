@@ -174,6 +174,13 @@ extension CameraModel {
         case .runtimeError(let message):
             Self.logger.error("\(message, privacy: .public)")
             phase = .failed("The camera stopped.")
+        case .restarted:
+            phase = .ready
+            notice = nil
+        case .microphoneUnavailable(let message):
+            // Reads the same as microphone denied: video still records, without sound.
+            Self.logger.error("\(message, privacy: .public)")
+            access.microphone = .denied
         case .pressure(let level, let isThermal):
             pressureLevel = level
             isThermalPressure = isThermal

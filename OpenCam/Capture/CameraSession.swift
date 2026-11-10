@@ -8,10 +8,13 @@ actor CameraSession {
     private let queue = DispatchSerialQueue(label: "opencam.session")
     private let session: AVCaptureSession
     private let continuation: AsyncStream<SessionEvent>.Continuation
-    private let notificationTokens: [any NSObjectProtocol]
+    /// Registered on the first `start()`, because the runtime-error observer needs a reference to this actor.
+    private var notificationTokens: [any NSObjectProtocol] = []
     private var videoInput: AVCaptureDeviceInput?
     private var audioInput: AVCaptureDeviceInput?
     private var pressureObservation: NSKeyValueObservation?
+    /// True from a media-services-reset restart until it succeeds, so a reset during that restart is not retried.
+    private var isRestartingAfterReset = false
 
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
@@ -24,7 +27,6 @@ actor CameraSession {
         self.previewSource = PreviewSource(session: session)
         self.events = events
         self.continuation = continuation
-        self.notificationTokens = Self.observeNotifications(of: session, continuation: continuation)
     }
 
     isolated deinit {
@@ -54,15 +56,34 @@ actor CameraSession {
         }
         session.beginConfiguration()
         defer { session.commitConfiguration() }
+        // Input priority: the device's activeFormat dictates quality, and the session never changes it
+        // (AVCaptureSessionPreset.h, AVCaptureSessionPresetInputPriority).
+        if session.canSetSessionPreset(.inputPriority) {
+            session.sessionPreset = .inputPriority
+        }
         try attachVideo(device, lensID: lens.id)
-        try attachAudio(configuration.includesAudio)
+        attachAudio(configuration.includesAudio)
         try applyFormat(configuration, to: device)
         pressureObservation = Self.observePressure(of: device, continuation: continuation)
     }
 
     func start() {
+        if notificationTokens.isEmpty {
+            notificationTokens = Self.observeNotifications(of: session, owner: self, continuation: continuation)
+        }
         guard !session.isRunning else { return }
         session.startRunning()
+        if session.isRunning { isRestartingAfterReset = false }
+    }
+
+    /// After `AVError.Code.mediaServicesWereReset` the session is restarted once; `.restarted` follows when it runs again.
+    private func restartAfterMediaServicesReset() {
+        guard !isRestartingAfterReset else { return }
+        isRestartingAfterReset = true
+        session.startRunning()
+        guard session.isRunning else { return }
+        isRestartingAfterReset = false
+        continuation.yield(.restarted)
     }
 
     func stop() {
@@ -84,7 +105,8 @@ actor CameraSession {
         videoInput = input
     }
 
-    private func attachAudio(_ includesAudio: Bool) throws(CameraSessionError) {
+    /// A microphone that cannot attach never stops video: the session continues without sound and says so.
+    private func attachAudio(_ includesAudio: Bool) {
         guard includesAudio else {
             if let audioInput { session.removeInput(audioInput) }
             audioInput = nil
@@ -92,10 +114,19 @@ actor CameraSession {
         }
         guard audioInput == nil else { return }
         guard let microphone = AVCaptureDevice.default(for: .audio) else {
-            throw .deviceMissing(lensID: "microphone")
+            continuation.yield(.microphoneUnavailable("[CameraSession:configure] Microphone not found — {device: default audio}"))
+            return
         }
-        guard let input = try? AVCaptureDeviceInput(device: microphone), session.canAddInput(input) else {
-            throw .cannotAddInput(lensID: "microphone")
+        let input: AVCaptureDeviceInput
+        do {
+            input = try AVCaptureDeviceInput(device: microphone)
+        } catch {
+            continuation.yield(.microphoneUnavailable("[CameraSession:configure] Cannot open the microphone — {device: \(microphone.localizedName), error: \(error)}"))
+            return
+        }
+        guard session.canAddInput(input) else {
+            continuation.yield(.microphoneUnavailable("[CameraSession:configure] Cannot add input — {lens: microphone}"))
+            return
         }
         session.addInput(input)
         audioInput = input
@@ -203,7 +234,7 @@ actor CameraSession {
     // MARK: Events
 
     private nonisolated static func observeNotifications(
-        of session: AVCaptureSession, continuation: AsyncStream<SessionEvent>.Continuation
+        of session: AVCaptureSession, owner: CameraSession, continuation: AsyncStream<SessionEvent>.Continuation
     ) -> [any NSObjectProtocol] {
         let center = NotificationCenter.default
         let interrupted = center.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: session, queue: nil) { notification in
@@ -213,10 +244,14 @@ actor CameraSession {
         let ended = center.addObserver(forName: AVCaptureSession.interruptionEndedNotification, object: session, queue: nil) { _ in
             continuation.yield(.interruptionEnded)
         }
-        let runtimeError = center.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: session, queue: nil) { notification in
+        let runtimeError = center.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: session, queue: nil) { [weak owner] notification in
             let error = notification.userInfo?[AVCaptureSessionErrorKey] as? NSError
             let detail = error.map { "domain: \($0.domain), code: \($0.code), \($0.localizedDescription)" } ?? "no error"
             continuation.yield(.runtimeError("[CameraSession:runtimeError] Session stopped — {\(detail)}"))
+            // AVError.h: AVErrorMediaServicesWereReset (-11819) in AVFoundationErrorDomain.
+            if let error, error.domain == AVFoundationErrorDomain, error.code == AVError.Code.mediaServicesWereReset.rawValue {
+                Task { await owner?.restartAfterMediaServicesReset() }
+            }
         }
         return [interrupted, ended, runtimeError]
     }
