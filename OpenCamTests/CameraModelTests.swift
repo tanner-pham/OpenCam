@@ -40,4 +40,11 @@ import Testing
         #expect(model.lensID == "bare"); #expect(model.record == before)
         #expect(model.currentVideoOption == nil); #expect(!model.canCapture)
     }
+
+    @Test func photoModeHidesVideoReadouts() throws {
+        let model = CameraModel(config: .parse(["app", "-mode", "video"]), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
+        #expect(model.showsVideoReadouts)
+        model.mode = .photo
+        #expect(!model.showsVideoReadouts)
+    }
 }

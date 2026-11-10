@@ -10,13 +10,15 @@ struct BottomBar: View {
             Spacer(minLength: 0)
             FormatButton(parts: model.summaryParts) { model.sheet = .record }
             Spacer(minLength: 0)
-            AudioMetersView(levels: model.meterLevels)
-                .frame(minHeight: Theme.Size.minTarget)
-            Spacer(minLength: 0)
-            Text(model.remainingText)
-                .font(Theme.Text.value)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
+            if model.showsVideoReadouts {
+                AudioMetersView(levels: model.meterLevels)
+                    .frame(minHeight: Theme.Size.minTarget)
+                Spacer(minLength: 0)
+                Text(model.remainingText)
+                    .font(Theme.Text.value)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
             CaptureButton(model: model)
         }
         .padding(.leading, Theme.Space.l)

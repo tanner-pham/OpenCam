@@ -77,6 +77,9 @@ final class CameraModel {
         return "\(DataRateEstimator.minutesRemaining(freeBytes: freeBytes, option: option)) min"
     }
 
+    /// Audio meters and the remaining-time estimate describe video recording, so photo mode hides them.
+    var showsVideoReadouts: Bool { mode == .video }
+
     var canCapture: Bool {
         guard phase == .ready else { return false }
         switch mode {
