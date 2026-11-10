@@ -721,7 +721,8 @@ extension CameraModel {
     var canRescanCapabilities: Bool { phase == .ready && !isRecording && !isSweeping }
 
     /// Clears the cache and reads every camera again, for a camera that could not be read before. The session is stopped
-    /// meanwhile, because the scan sets each camera's format directly; the saved selections are restored afterwards.
+    /// and holds no camera meanwhile, because the scan sets each camera's format directly; the saved selections are
+    /// restored afterwards.
     func rescanCapabilities() async {
         guard canRescanCapabilities else { return }
         do {
@@ -734,7 +735,9 @@ extension CameraModel {
         isScanningFormats = true
         await waitForQueuedConfigures()
         await waitForPhotoCaptures()
-        await configurator?.stop()
+        // The scanner adds each camera to a session of its own, so the main session lets go of its camera first;
+        // the configure below attaches it again.
+        await configurator?.releaseCameras()
         let lenses = capabilitySource.discoverLenses()
         let capabilities = await scanCapabilities(lenses: lenses)
         // A rescan starts from `.ready`; a failure reported meanwhile stands.

@@ -152,6 +152,18 @@ actor CameraSession: SessionConfigurator {
         session.stopRunning()
     }
 
+    /// Stops the session and removes its camera input, and the controls bound to that camera, so the capability scanner
+    /// can add the camera to a session of its own. The next `configure` attaches a camera again.
+    func releaseCameras() {
+        stop()
+        installSystemControls([])
+        guard let videoInput else { return }
+        session.beginConfiguration()
+        session.removeInput(videoInput)
+        session.commitConfiguration()
+        self.videoInput = nil
+    }
+
     // MARK: Inputs
 
     private func attachVideo(_ device: AVCaptureDevice, lensID: String) throws(CameraSessionError) {

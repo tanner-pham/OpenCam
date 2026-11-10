@@ -36,7 +36,27 @@ import Testing
         #expect(model.lensID == "W"); #expect(model.phase == .ready); #expect(model.notice == "1 camera could not be read.")
         let cached = try #require(CapabilityCache(directory: directory).load(osBuild: stale.osBuild, modelIdentifier: stale.modelIdentifier))
         #expect(cached == model.capabilities)
-        #expect(await fake.stopCount == 1); #expect(await fake.isRunning); #expect(await fake.applied.last?.lens.id == "W")
+        #expect(await fake.releaseCount == 1); #expect(await fake.isRunning); #expect(await fake.applied.last?.lens.id == "W")
+    }
+
+    @Test func theScanRunsWithTheCameraReleasedAndTheConfigureAttachesItAgain() async throws {
+        let hook = ScanHook(), formats = [descriptor], lenses = [wide]
+        let source = CapabilitySource(cacheDirectory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), documentsDirectory: nil,
+                                      discoverLenses: { lenses }, scan: { _ in await hook.run(); return formats })
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: false, defaults: try Fixture.freshDefaults(),
+                                capabilitySource: source)
+        model.phase = .ready
+        let fake = FakeSessionConfigurator(failingLensIDs: [])
+        model.attachSession(fake, configuredWith: try #require(model.sessionConfiguration), selection: model.currentSelection)
+        var heldCameraDuringScan = true, ranDuringScan = true
+        hook.action = {
+            heldCameraDuringScan = await fake.holdsCamera
+            ranDuringScan = await fake.isRunning
+        }
+        await model.rescanCapabilities()
+        #expect(!heldCameraDuringScan); #expect(!ranDuringScan)
+        #expect(await fake.holdsCamera); #expect(await fake.isRunning)
+        #expect(await fake.calls == ["release", "configure", "start"])
     }
 
     @Test func aWorkingRescanClearsTheEarlierScanNotice() async throws {

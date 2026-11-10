@@ -10,7 +10,11 @@ actor FakeSessionConfigurator: SessionConfigurator {
     let onStartRecording: @Sendable (URL, VideoOption) async -> Void
     private(set) var applied: [SessionConfiguration] = []
     private(set) var isRunning = true
-    private(set) var stopCount = 0
+    private(set) var releaseCount = 0
+    /// True while a camera input is attached: from a configure until the session lets the camera go.
+    private(set) var holdsCamera = true
+    /// Session calls in order: "configure", "start", "release".
+    private(set) var calls: [String] = []
     private(set) var recordingURLs: [URL] = []
     private(set) var stopRecordingCount = 0
 
@@ -26,13 +30,20 @@ actor FakeSessionConfigurator: SessionConfigurator {
             throw .noMatchingFormat(option: "fake \(configuration.lens.id)")
         }
         applied.append(configuration)
+        holdsCamera = true
+        calls.append("configure")
     }
 
-    func start() { isRunning = true }
+    func start() {
+        isRunning = true
+        calls.append("start")
+    }
 
-    func stop() {
+    func releaseCameras() {
         isRunning = false
-        stopCount += 1
+        holdsCamera = false
+        releaseCount += 1
+        calls.append("release")
     }
 
     func startRecording(option: VideoOption, url: URL, minFreeBytes: Int64) async throws(RecordingError) {

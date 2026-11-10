@@ -5,8 +5,9 @@ nonisolated protocol SessionConfigurator: Sendable {
     /// Throws when the configuration cannot be applied; the session then keeps or restores the last one that worked.
     func configure(_ configuration: SessionConfiguration) async throws(CameraSessionError)
     func start() async
-    /// A rescan stops the session first, because it sets each camera's format directly.
-    func stop() async
+    /// Stops the session and detaches its camera, so a rescan can add each camera to a session of its own;
+    /// the next `configure` attaches the camera again.
+    func releaseCameras() async
     /// Starts recording `option`, which must already be configured, to `url`; the result arrives through the session's
     /// recordings once the clip ends.
     func startRecording(option: VideoOption, url: URL, minFreeBytes: Int64) async throws(RecordingError)
