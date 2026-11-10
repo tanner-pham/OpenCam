@@ -44,7 +44,8 @@ actor CameraSession: SessionConfigurator {
 
     init() {
         let session = AVCaptureSession()
-        // activeColorSpace is chosen per option; the session would otherwise override it.
+        // activeColorSpace is chosen per option; the session would otherwise override it. Photo mode on the photo preset
+        // turns it on for its own configuration (`configureSession`).
         session.automaticallyConfiguresCaptureDeviceForWideColor = false
         let (events, continuation) = AsyncStream.makeStream(of: SessionEvent.self)
         let (recordingResults, recordingContinuation) = AsyncStream.makeStream(of: RecordingResult.self)
@@ -119,6 +120,17 @@ actor CameraSession: SessionConfigurator {
         }
         // Declared first so it runs after the commit below, also when configuring throws and the old input is restored.
         defer { NotificationCenter.default.post(name: PreviewSource.didConfigureNotification, object: session) }
+        let isOnPhotoPreset = try configureSession(configuration, device: device)
+        if isOnPhotoPreset {
+            // After the commit, so the preset's format is the active one.
+            try applyPresetPhoto(configuration, to: device)
+        }
+        pressureObservation = Self.observePressure(of: device, continuation: continuation)
+    }
+
+    /// One configuration change, committed on return also when it throws. Returns whether photo mode is on the photo
+    /// preset, whose format, zoom and photo size are applied only after this commit (`applyPresetPhoto`).
+    private func configureSession(_ configuration: SessionConfiguration, device: AVCaptureDevice) throws(CameraSessionError) -> Bool {
         session.beginConfiguration()
         defer { session.commitConfiguration() }
         // Input priority: the device's activeFormat dictates quality, and the session never changes it
@@ -126,16 +138,46 @@ actor CameraSession: SessionConfigurator {
         if session.canSetSessionPreset(.inputPriority) {
             session.sessionPreset = .inputPriority
         }
-        try attachVideo(device, lensID: lens.id)
+        try attachVideo(device, lensID: configuration.lens.id)
         attachAudio(configuration.includesAudio)
         try attachPhotoOutput(configuration.mode == .photo)
         try attachMovieOutput(configuration.mode == .video)
         attachFrameOutput(configuration.needsFrames)
+        // Photo mode takes the photo preset when the session allows it: only there does the Duo offer Bayer RAW (measured
+        // 2026-11-10). The preset picks the format, so neither the format nor the colour space is set by hand, and the
+        // session chooses wide colour itself (AVCaptureSession.h, automaticallyConfiguresCaptureDeviceForWideColor).
+        // Otherwise, and always in video mode, the flag stays off as set in init and the format is chosen below.
+        let isOnPhotoPreset = configuration.mode == .photo && session.canSetSessionPreset(.photo)
+        session.automaticallyConfiguresCaptureDeviceForWideColor = isOnPhotoPreset
+        if isOnPhotoPreset {
+            session.sessionPreset = .photo
+            return true
+        }
         try applyFormat(configuration, to: device)
         if configuration.mode == .photo {
             try applyPhotoDimensions(configuration.photo, format: device.activeFormat)
         }
-        pressureObservation = Self.observePressure(of: device, continuation: continuation)
+        return false
+    }
+
+    /// Photo mode on the photo preset, after the configuration that selected it was committed: the lens's zoom and the
+    /// selected photo size, both checked against the active format the preset chose. No format, colour space or frame
+    /// duration is set: setting activeFormat would return the session to input priority (AVCaptureDevice.h), and a preset
+    /// change already resets the frame durations to the format's defaults (AVCaptureDevice.h, activeVideoMinFrameDuration).
+    private func applyPresetPhoto(_ configuration: SessionConfiguration, to device: AVCaptureDevice) throws(CameraSessionError) {
+        do {
+            try device.lockForConfiguration()
+        } catch {
+            throw .lockFailed(reason: String(describing: error))
+        }
+        defer { device.unlockForConfiguration() }
+        let zoom = CGFloat(configuration.lens.zoomFactor)
+        // A zoom above videoMaxZoomFactor raises NSRangeException (AVCaptureDevice.h, videoZoomFactor).
+        guard zoom <= device.activeFormat.videoMaxZoomFactor else {
+            throw .noMatchingFormat(option: "zoom \(configuration.lens.label)")
+        }
+        device.videoZoomFactor = zoom
+        try applyPhotoDimensions(configuration.photo, format: device.activeFormat)
     }
 
     func start() {

@@ -12,11 +12,12 @@ nonisolated struct CapabilityCache: Sendable {
 
     private var fileURL: URL { directory.appending(path: Self.fileName) }
 
-    /// Nil when the file is missing, unreadable, or was written for another OS build or model.
+    /// Nil when the file is missing, unreadable, was written for another OS build or model, or by an older scan.
     func load(osBuild: String, modelIdentifier: String) -> CaptureCapabilities? {
         guard let data = try? Data(contentsOf: fileURL),
               let capabilities = try? CaptureCapabilities.decode(data),
-              capabilities.osBuild == osBuild, capabilities.modelIdentifier == modelIdentifier
+              capabilities.osBuild == osBuild, capabilities.modelIdentifier == modelIdentifier,
+              capabilities.scanVersion == CaptureCapabilities.currentScanVersion
         else { return nil }
         return capabilities
     }

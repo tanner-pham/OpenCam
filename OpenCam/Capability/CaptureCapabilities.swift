@@ -8,8 +8,13 @@ nonisolated struct CaptureCapabilities: Codable, Sendable, Equatable {
     var modelIdentifier: String
     /// Discovered lenses the scan could not read; they are left out of `lenses` until a rescan.
     var skippedLensIDs: [String] = []
+    /// How the scan that made these was taken. A file without it was written before the photo preset reading, and
+    /// decodes as 1; the cache reuses only `currentScanVersion`.
+    var scanVersion: Int = CaptureCapabilities.currentScanVersion
 
     static let fixtureName = "CapabilitiesFixture"
+    /// 2: photo sizes and RAW come from each camera under the photo preset.
+    static let currentScanVersion = 2
 
     static func bundledFixture(in bundle: Bundle = .main) throws(CapabilityError) -> CaptureCapabilities {
         guard let url = bundle.url(forResource: fixtureName, withExtension: "json") else {
@@ -64,7 +69,8 @@ nonisolated struct CaptureCapabilities: Codable, Sendable, Equatable {
 }
 
 nonisolated extension CaptureCapabilities {
-    /// `skippedLensIDs` is optional in the file, so the bundled fixture and caches written before it existed still load.
+    /// `skippedLensIDs` and `scanVersion` are optional in the file, so the bundled fixture and caches written before they
+    /// existed still load; a missing `scanVersion` is 1.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(lenses: try container.decode([Lens].self, forKey: .lenses),
@@ -72,6 +78,7 @@ nonisolated extension CaptureCapabilities {
                   photoOptions: try container.decode([PhotoOption].self, forKey: .photoOptions),
                   osBuild: try container.decode(String.self, forKey: .osBuild),
                   modelIdentifier: try container.decode(String.self, forKey: .modelIdentifier),
-                  skippedLensIDs: try container.decodeIfPresent([String].self, forKey: .skippedLensIDs) ?? [])
+                  skippedLensIDs: try container.decodeIfPresent([String].self, forKey: .skippedLensIDs) ?? [],
+                  scanVersion: try container.decodeIfPresent(Int.self, forKey: .scanVersion) ?? 1)
     }
 }
