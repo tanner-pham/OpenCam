@@ -7,6 +7,8 @@ import ImageIO
 nonisolated struct PhotoExporter: Sendable {
     let directory: URL
     private let renderer: LookRenderer
+    /// Encodes the image into the file; `renderer`'s encoders unless a test replaces it.
+    private let writeFile: @Sendable (CIImage, URL, ExportFormat) throws -> Void
 
     private static let quality = 0.9
 
@@ -15,9 +17,11 @@ nonisolated struct PhotoExporter: Sendable {
         PhotoExporter(directory: FileManager.default.temporaryDirectory.appending(path: "Export", directoryHint: .isDirectory))
     }
 
-    init(directory: URL, renderer: LookRenderer = .shared) {
+    /// `write` is a test seam for an encoder that fails part way; the app never passes it.
+    init(directory: URL, renderer: LookRenderer = .shared, write: (@Sendable (CIImage, URL, ExportFormat) throws -> Void)? = nil) {
         self.directory = directory
         self.renderer = renderer
+        self.writeFile = write ?? { image, url, format in try Self.encode(image, to: url, format: format, with: renderer) }
     }
 
     /// "<stem>-edited.HEIC", or ".JPG" for a JPEG original, in `directory`, replacing an older export of that name.
@@ -39,23 +43,29 @@ nonisolated struct PhotoExporter: Sendable {
         // Core Image would otherwise write the decoded image's properties as they are, including the original's pixel
         // dimensions and subject area; the export's metadata is chosen here instead.
         let image = rendered.settingProperties(Self.carriedMetadata(from: source, size: rendered.extent.size))
-        let options = [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): Self.quality]
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
                 try FileManager.default.removeItem(at: url)
             }
-            // Core Image renders straight into the encoder; no full-size bitmap is kept here.
-            switch format {
-            case .heif:
-                try renderer.context.writeHEIFRepresentation(of: image, to: url, format: .RGBA8, colorSpace: renderer.displayP3, options: options)
-            case .jpeg:
-                try renderer.context.writeJPEGRepresentation(of: image, to: url, colorSpace: renderer.displayP3, options: options)
-            }
+            try writeFile(image, url, format)
         } catch {
+            // An encoder that failed part way can leave a partial file; nothing half written is ever kept.
+            try? FileManager.default.removeItem(at: url)
             throw .writeFailed(path: url.path(percentEncoded: false), reason: error.localizedDescription)
         }
         return url
+    }
+
+    /// Core Image renders straight into the encoder; no full-size bitmap is kept here.
+    private static func encode(_ image: CIImage, to url: URL, format: ExportFormat, with renderer: LookRenderer) throws {
+        let options = [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): quality]
+        switch format {
+        case .heif:
+            try renderer.context.writeHEIFRepresentation(of: image, to: url, format: .RGBA8, colorSpace: renderer.displayP3, options: options)
+        case .jpeg:
+            try renderer.context.writeJPEGRepresentation(of: image, to: url, colorSpace: renderer.displayP3, options: options)
+        }
     }
 
     /// TIFF keys that describe the capture rather than the stored pixels; every other TIFF key (orientation, a DNG's layout

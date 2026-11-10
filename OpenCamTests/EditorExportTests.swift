@@ -23,6 +23,24 @@ import Testing
         #expect(try TestFiles.snapshot(dir) == before)
     }
 
+    /// An encoder that fails part way leaves no partial file in the export folder, and the editor says the export failed.
+    @Test func aFailedWriteLeavesNoPartialFile() async throws {
+        let captures = try TestFiles.directory(), out = try TestFiles.directory()
+        _ = try TestFiles.writeJPEG(width: 40, height: 30, rgb: SIMD3(0.5, 0.5, 0.5), to: captures.appending(path: "OC_0001.JPG"))
+        let item = try #require(LibraryScanner.items(in: captures).first)
+        let exporter = PhotoExporter(directory: out) { _, url, _ in
+            try Data("half a picture".utf8).write(to: url)
+            throw TestFileError.bitmapUnavailable
+        }
+        let model = EditorModel(item: item, edits: EditStore(directory: captures), looks: try LookStore(directory: TestFiles.directory()),
+                                exporter: exporter)
+        await model.load()
+        model.adjustments.exposure = 1
+        #expect(await model.export() == nil)
+        #expect(model.alertMessage == "The photo could not be exported."); #expect(model.phase == .ready)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: out.path(percentEncoded: false)).isEmpty)
+    }
+
     @Test func discardExportRemovesTheFile() async throws {
         let (model, _, _) = try await EditorFixture.make(width: 40, height: 30)
         let url = try #require(await model.export())
