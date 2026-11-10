@@ -4,10 +4,15 @@ import AVFoundation
 actor CameraSession: SessionConfigurator {
     nonisolated let previewSource: PreviewSource
     nonisolated let events: AsyncStream<SessionEvent>
+    /// Backs `recordings`: one result per finished clip, yielded by the recorder.
+    nonisolated let recordingResults: AsyncStream<RecordingResult>
 
     private let queue = DispatchSerialQueue(label: "opencam.session")
     private let session: AVCaptureSession
     private let continuation: AsyncStream<SessionEvent>.Continuation
+    private let recordingContinuation: AsyncStream<RecordingResult>.Continuation
+    /// Its output is attached in video mode only.
+    private let recorder: MovieRecorder
     /// Registered on the first `start()`, because the runtime-error observer needs a reference to this actor.
     private var notificationTokens: [any NSObjectProtocol] = []
     private var videoInput: AVCaptureDeviceInput?
@@ -27,10 +32,14 @@ actor CameraSession: SessionConfigurator {
         // activeColorSpace is chosen per option; the session would otherwise override it.
         session.automaticallyConfiguresCaptureDeviceForWideColor = false
         let (events, continuation) = AsyncStream.makeStream(of: SessionEvent.self)
+        let (recordingResults, recordingContinuation) = AsyncStream.makeStream(of: RecordingResult.self)
         self.session = session
         self.previewSource = PreviewSource(session: session)
         self.events = events
         self.continuation = continuation
+        self.recordingResults = recordingResults
+        self.recordingContinuation = recordingContinuation
+        self.recorder = MovieRecorder(results: recordingContinuation)
     }
 
     isolated deinit {
@@ -38,6 +47,7 @@ actor CameraSession: SessionConfigurator {
             NotificationCenter.default.removeObserver(token)
         }
         continuation.finish()
+        recordingContinuation.finish()
     }
 
     /// Asks for the camera, then the microphone. The microphone is only asked for once the camera is allowed.
@@ -55,7 +65,9 @@ actor CameraSession: SessionConfigurator {
 
     /// On failure the last configuration that worked is applied again, so the session keeps running as it was,
     /// and the original error is thrown. If that restore fails too, a runtime error is reported.
+    /// Refused while recording, because changing the format or outputs ends the clip.
     func configure(_ configuration: SessionConfiguration) throws(CameraSessionError) {
+        guard !recorder.output.isRecording else { throw .recordingInProgress }
         do throws(CameraSessionError) {
             try apply(configuration)
             lastWorkingConfiguration = configuration
@@ -88,6 +100,7 @@ actor CameraSession: SessionConfigurator {
         try attachVideo(device, lensID: lens.id)
         attachAudio(configuration.includesAudio)
         try attachPhotoOutput(configuration.mode == .photo)
+        try attachMovieOutput(configuration.mode == .video)
         try applyFormat(configuration, to: device)
         if configuration.mode == .photo {
             try applyPhotoDimensions(configuration.photo, format: device.activeFormat)
@@ -171,6 +184,18 @@ actor CameraSession: SessionConfigurator {
             return
         }
         guard session.canAddOutput(output) else { throw .cannotAddOutput(name: "photo") }
+        session.addOutput(output)
+    }
+
+    /// The movie output records video mode only; the microphone, when attached, connects to it automatically.
+    private func attachMovieOutput(_ isAttached: Bool) throws(CameraSessionError) {
+        let output = recorder.output
+        guard session.outputs.contains(output) != isAttached else { return }
+        guard isAttached else {
+            session.removeOutput(output)
+            return
+        }
+        guard session.canAddOutput(output) else { throw .cannotAddOutput(name: "movie") }
         session.addOutput(output)
     }
 
@@ -345,5 +370,42 @@ extension CameraSession {
             throw .captureFailed(reason: "photo size \(maximum.width) x \(maximum.height) not offered by the active format")
         }
         return try await photoCapturer.capture(format: format, deviceZoom: Double(device.videoZoomFactor), dngURL: dngURL, heicURL: heicURL)
+    }
+}
+
+extension CameraSession {
+    /// One result per finished clip, after its sidecar is written.
+    nonisolated var recordings: AsyncStream<RecordingResult> { recordingResults }
+
+    /// Starts recording `option`, which the session must already be configured for, to `url`. Recording stops on its own
+    /// when free space falls to `minFreeBytes`. ProRes RAW records with white balance locked; other codecs with it automatic.
+    func startRecording(option: VideoOption, url: URL, minFreeBytes: Int64) throws(RecordingError) {
+        guard session.isRunning else { throw .sessionNotRunning }
+        guard let device = videoInput?.device, session.outputs.contains(recorder.output) else { throw .outputNotAttached }
+        try setWhiteBalance(lockedFor: option.codec.family == .raw, on: device)
+        try recorder.start(option: option, url: url, minFreeBytes: minFreeBytes, device: device)
+    }
+
+    func stopRecording() {
+        recorder.stop()
+    }
+
+    /// Levels 0...1 per microphone channel; empty without a microphone or outside video mode.
+    func audioLevels() -> [Double] {
+        guard session.outputs.contains(recorder.output) else { return [] }
+        return recorder.audioLevels()
+    }
+
+    private func setWhiteBalance(lockedFor isRAW: Bool, on device: AVCaptureDevice) throws(RecordingError) {
+        let mode: AVCaptureDevice.WhiteBalanceMode = isRAW ? .locked : .continuousAutoWhiteBalance
+        guard device.whiteBalanceMode != mode, device.isWhiteBalanceModeSupported(mode) else { return }
+        do {
+            try device.lockForConfiguration()
+        } catch {
+            throw .whiteBalanceNotSet(reason: String(describing: error))
+        }
+        // Locked holds the current gains (AVCaptureDevice.h, AVCaptureWhiteBalanceModeLocked).
+        device.whiteBalanceMode = mode
+        device.unlockForConfiguration()
     }
 }

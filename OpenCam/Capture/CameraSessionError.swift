@@ -6,6 +6,7 @@ nonisolated enum CameraSessionError: Error, CustomStringConvertible {
     case cannotAddOutput(name: String)
     case noMatchingFormat(option: String)
     case lockFailed(reason: String)
+    case recordingInProgress
 
     var description: String {
         switch self {
@@ -19,6 +20,8 @@ nonisolated enum CameraSessionError: Error, CustomStringConvertible {
             "[CameraSession:configure] No format matches — {option: \(option)}"
         case .lockFailed(let reason):
             "[CameraSession:configure] Cannot lock the camera for configuration — {reason: \(reason)}"
+        case .recordingInProgress:
+            "[CameraSession:configure] Cannot reconfigure while recording — {output: movie}"
         }
     }
 }

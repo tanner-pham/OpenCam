@@ -31,6 +31,10 @@ final class CameraModel {
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let isScripted: Bool
+    /// The Simulator keeps the stand-in free space; the device reads it.
+    @ObservationIgnored private let isSimulator: Bool
+    /// `-freeSpaceMarginMB N`: recording stops N MB before the volume is full, in place of the 2 GB reserve, to test that path.
+    @ObservationIgnored private let freeSpaceMarginMB: Int?
     @ObservationIgnored private let capabilitySource: CapabilitySource
     /// Set by `attachSession` once the session has a working configuration; from then on selection changes reconfigure it.
     @ObservationIgnored private var configurator: (any SessionConfigurator)?
@@ -54,6 +58,10 @@ final class CameraModel {
     /// Photo captures still running, by file number. A configure queued after a press waits for them,
     /// because Bayer RAW needs the zoom unchanged until the capture ends (AVCapturePhotoOutput.h).
     @ObservationIgnored private var photoCaptures: [Int: Task<Void, Never>] = [:]
+    /// The start of the recording in flight, so a stop pressed while it is still starting waits for it.
+    @ObservationIgnored private var recordingStartTask: Task<Void, Never>?
+    /// The notice the last recording set, cleared by the next recording that has nothing to report.
+    @ObservationIgnored private var lastRecordingNotice: String?
 
     static let formatFailedNotice = "That format could not be used."
     init(config: LaunchConfig, capabilities: CaptureCapabilities, isSimulator: Bool, defaults: UserDefaults = .standard,
@@ -62,6 +70,8 @@ final class CameraModel {
         self.defaults = defaults
         self.capabilitySource = capabilitySource
         self.isScripted = config.isScripted
+        self.isSimulator = isSimulator
+        self.freeSpaceMarginMB = config.freeSpaceMarginMB
         if isSimulator {
             self.phase = config.simulatedState == .scanning ? .scanning : .simulator
         } else {
@@ -105,8 +115,7 @@ final class CameraModel {
     /// What the session should capture for the current selection; nil without a lens.
     var sessionConfiguration: SessionConfiguration? {
         guard let currentLens else { return nil }
-        return SessionConfiguration(lens: currentLens, mode: mode, video: currentVideoOption, photo: currentPhotoOption,
-                                    includesAudio: access.recordsSound)
+        return SessionConfiguration.make(lens: currentLens, mode: mode, video: currentVideoOption, photo: currentPhotoOption, access: access)
     }
 
     /// The current options as the screen may name them: none while formats are being read, and none the device has not reported.
@@ -180,31 +189,38 @@ final class CameraModel {
         selectionChanged()
     }
 
+    /// In video mode a press starts recording, or stops it.
     func capturePressed() {
+        if mode == .video, isRecording {
+            stopRecording()
+            return
+        }
         guard canCapture else { return }
         switch mode {
         case .photo: capturePhoto()
-        case .video: break   // Recording arrives with the movie output.
+        case .video: startRecording()
+        }
+    }
+
+    /// The captures folder, created on first use; nil, with `failureNotice` shown, when it cannot be.
+    private func store(failureNotice: String) -> CaptureStore? {
+        if let captureStore { return captureStore }
+        do throws(CaptureStoreError) {
+            let store = try CaptureStore.appDefault()
+            captureStore = store
+            return store
+        } catch {
+            Self.logger.error("\(error.description, privacy: .public)")
+            notice = failureNotice
+            return nil
         }
     }
 
     /// Reserves a file number now, so quick presses never share one, then captures behind any queued configure.
     /// RAW and HEIF of one press share the number. The notice and `lastCapture` follow `PhotoSaveReport`.
     private func capturePhoto() {
-        guard let cameraSession, let option = currentPhotoOption else { return }
-        let store: CaptureStore
-        if let captureStore {
-            store = captureStore
-        } else {
-            do throws(CaptureStoreError) {
-                store = try CaptureStore.appDefault()
-            } catch {
-                Self.logger.error("\(error.description, privacy: .public)")
-                notice = PhotoSaveReport.photoNotSaved
-                return
-            }
-            captureStore = store
-        }
+        guard let cameraSession, let option = currentPhotoOption,
+              let store = store(failureNotice: PhotoSaveReport.photoNotSaved) else { return }
         let sequence = store.reserveSequence()
         let dngURL = store.url(sequence: sequence, kind: .dng)
         let heicURL = store.url(sequence: sequence, kind: .heic)
@@ -237,6 +253,53 @@ final class CameraModel {
         } else if let notice, PhotoSaveReport.notices.contains(notice) {
             self.notice = nil
         }
+        refreshFreeBytes()
+    }
+
+    /// Reserves a file number and starts recording behind any queued configure. `isRecording` holds from the press,
+    /// so lens, mode and format stay as they are until `recordingDidFinish`.
+    private func startRecording() {
+        guard let cameraSession, let option = currentVideoOption,
+              let store = store(failureNotice: RecordingOutcome.failedNotice) else { return }
+        let url = store.url(sequence: store.reserveSequence(), kind: .mov)
+        let minFreeBytes = recordingReserveBytes()
+        let pendingConfigure = configureTask
+        isRecording = true
+        recordingStartTask = Task {
+            if let configureError = await pendingConfigure?.value {
+                // The session went back to its last working format, which is not the one the press was for.
+                recordingDidFinish(RecordingResult(url: url, option: option, outcome: .failed(configureError.description), sidecar: nil))
+                return
+            }
+            do throws(RecordingError) {
+                try await cameraSession.startRecording(option: option, url: url, minFreeBytes: minFreeBytes)
+                recordingStart = Date()
+            } catch {
+                recordingDidFinish(RecordingResult(url: url, option: option, outcome: .failed(error.description), sidecar: nil))
+            }
+        }
+    }
+
+    /// Waits for a recording that is still starting, then stops it; the UI resets in `recordingDidFinish`.
+    private func stopRecording() {
+        guard let cameraSession else { return }
+        let start = recordingStartTask
+        Task {
+            await start?.value
+            await cameraSession.stopRecording()
+        }
+    }
+
+    /// The free space at which recording stops: the 2 GB reserve, or free space minus the `-freeSpaceMarginMB` margin.
+    private func recordingReserveBytes() -> Int64 {
+        guard let freeSpaceMarginMB else { return DataRateEstimator.reserveBytes }
+        return max(0, FreeSpace.availableBytes() - Int64(freeSpaceMarginMB) * 1_000_000)
+    }
+
+    /// The Simulator keeps its stand-in figure.
+    private func refreshFreeBytes() {
+        guard !isSimulator else { return }
+        freeBytes = FreeSpace.availableBytes()
     }
 
     /// Waits for every photo capture already running.
@@ -292,7 +355,7 @@ final class CameraModel {
     /// only the last of those runs, because the earlier ones are superseded before the chain reaches them.
     @discardableResult
     private func enqueueConfigure() -> Task<CameraSessionError?, Never>? {
-        guard !isScanningFormats, let configurator, let configuration = sessionConfiguration, configuration != requestedConfiguration else { return nil }
+        guard !isScanningFormats, !isRecording, let configurator, let configuration = sessionConfiguration, configuration != requestedConfiguration else { return nil }
         requestedConfiguration = configuration
         configureGeneration += 1
         let generation = configureGeneration
@@ -368,6 +431,7 @@ extension CameraModel {
     /// Asks for access, loads the device's capabilities in place of the fixture, configures and starts the session,
     /// then follows its events for as long as the calling task runs.
     func start(session: CameraSession) async {
+        refreshFreeBytes()
         access = await CameraSession.requestAccess()
         guard access.canUseCamera else {
             phase = access.camera == .restricted ? .cameraRestricted : .cameraDenied
@@ -398,9 +462,58 @@ extension CameraModel {
         cameraSession = session
         await session.start()
         phase = .ready
-        for await event in session.events {
-            apply(event)
+        await withDiscardingTaskGroup { group in
+            group.addTask { await self.followRecordings(of: session) }
+            group.addTask { await self.pollMeters(of: session) }
+            for await event in session.events {
+                apply(event)
+            }
+            group.cancelAll()
         }
+    }
+
+    private func followRecordings(of session: CameraSession) async {
+        for await result in session.recordings {
+            recordingDidFinish(result)
+        }
+    }
+
+    /// Ten times a second; the levels stay empty without a microphone.
+    private func pollMeters(of session: CameraSession) async {
+        while !Task.isCancelled {
+            let levels = await session.audioLevels()
+            if levels != meterLevels { meterLevels = levels }
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+            } catch {
+                return
+            }
+        }
+    }
+
+    /// Resets the record button and timecode, keeps a playable clip as the last capture, and says what happened:
+    /// the outcome's notice, else dropped frames, else nothing (clearing an earlier recording notice).
+    /// A selection change held back while recording is applied now.
+    func recordingDidFinish(_ result: RecordingResult) {
+        isRecording = false
+        recordingStart = nil
+        recordingStartTask = nil
+        if case .failed(let message) = result.outcome {
+            Self.logger.error("\(message, privacy: .public)")
+        }
+        if result.outcome.isPlayable { lastCapture = result.url }
+        let clipName = result.url.deletingPathExtension().lastPathComponent
+        let recordingNotice = result.outcome.notice ?? result.sidecar?.actual.flatMap {
+            RecordingOutcome.droppedFramesNotice(clipName: clipName, droppedFrames: $0.droppedFrames)
+        }
+        if let recordingNotice {
+            notice = recordingNotice
+        } else if let lastRecordingNotice, notice == lastRecordingNotice {
+            notice = nil
+        }
+        lastRecordingNotice = recordingNotice
+        refreshFreeBytes()
+        enqueueConfigure()
     }
 
     /// Uses the cached capabilities when they were written on this OS build and model and all their lenses are present
