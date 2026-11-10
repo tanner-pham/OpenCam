@@ -258,7 +258,9 @@ actor CameraSession: SessionConfigurator {
 
     /// Caller holds the configuration lock.
     private func applyVideo(_ option: VideoOption, zoom: CGFloat, to device: AVCaptureDevice) throws(CameraSessionError) {
-        let space = Self.colorSpace(for: option.colour)
+        guard let space = AVCaptureColorSpace(rawValue: option.colour.captureColorSpaceRawValue) else {
+            throw .noMatchingFormat(option: "colour \(option.colour.rawValue)")
+        }
         let rate = Double(option.frameRate)
         let candidates = device.formats.compactMap { format -> (AVCaptureDevice.Format, AVFrameRateRange)? in
             let dimensions = format.formatDescription.dimensions
@@ -305,16 +307,6 @@ actor CameraSession: SessionConfigurator {
         }
         device.activeVideoMinFrameDuration = .invalid
         device.activeVideoMaxFrameDuration = .invalid
-    }
-
-    private static func colorSpace(for colour: ColourMode) -> AVCaptureColorSpace {
-        switch colour {
-        case .rec709: .sRGB
-        case .p3: .P3_D65
-        case .hlg: .HLG_BT2020
-        case .appleLog: .appleLog
-        case .appleLog2: .appleLog2
-        }
     }
 
     /// The same 0.05 tolerance `StandardFrameRates.collapse` uses, so every offered rate finds its range.
