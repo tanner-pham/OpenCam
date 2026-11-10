@@ -69,8 +69,11 @@ import Testing
         let captures = try TestFiles.directory()
         let exif: [CFString: Any] = [kCGImagePropertyExifDateTimeOriginal: "2026:11:09 18:42:07", kCGImagePropertyExifExposureTime: 0.004,
                                      kCGImagePropertyExifLensModel: "iPhone Duo back camera", kCGImagePropertyExifPixelXDimension: 1600,
-                                     kCGImagePropertyExifPixelYDimension: 1200, kCGImagePropertyExifSubjectArea: [800, 600, 200, 200]]
-        let tiff: [CFString: Any] = [kCGImagePropertyTIFFMake: "Apple", kCGImagePropertyTIFFModel: "iPhone Duo", kCGImagePropertyTIFFOrientation: 6]
+                                     kCGImagePropertyExifPixelYDimension: 1200, kCGImagePropertyExifSubjectArea: [800, 600, 200, 200],
+                                     kCGImagePropertyExifSubjectLocation: [800, 600], kCGImagePropertyExifColorSpace: 1]
+        // Photometric interpretation 32803 is a DNG's colour filter array layout, which says nothing true about the export.
+        let tiff: [CFString: Any] = [kCGImagePropertyTIFFMake: "Apple", kCGImagePropertyTIFFModel: "iPhone Duo", kCGImagePropertyTIFFOrientation: 6,
+                                     kCGImagePropertyTIFFPhotometricInterpretation: 32803]
         let gps: [CFString: Any] = [kCGImagePropertyGPSLatitude: 37.33, kCGImagePropertyGPSLatitudeRef: "N",
                                     kCGImagePropertyGPSLongitude: 122.03, kCGImagePropertyGPSLongitudeRef: "W"]
         _ = try TestFiles.writeOrientedPicture(width: 1600, height: 1200, orientation: 6, type: format == .jpeg ? .jpeg : .heic,
@@ -78,6 +81,11 @@ import Testing
                                                           kCGImagePropertyGPSDictionary: gps, kCGImageDestinationEmbedThumbnail: true],
                                                to: captures.appending(path: "OC_0009." + format.rawValue))
         let item = try #require(LibraryScanner.items(in: captures).first)
+        // The original really carries what the export must drop.
+        let originalSource = try #require(CGImageSourceCreateWithURL(item.pictureURL as CFURL, nil))
+        let originalProperties = try #require(CGImageSourceCopyPropertiesAtIndex(originalSource, 0, nil) as? [CFString: Any])
+        let originalTIFF = try #require(originalProperties[kCGImagePropertyTIFFDictionary] as? [CFString: Any])
+        #expect(originalTIFF[kCGImagePropertyTIFFPhotometricInterpretation] as? Int == 32803)
         let url = try await PhotoExporter(directory: try TestFiles.directory()).export(item, edit: PhotoEdit(adjustments: Adjustments().setting(.exposure, to: 1)))
 
         let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
@@ -86,10 +94,13 @@ import Testing
         #expect(readExif[kCGImagePropertyExifDateTimeOriginal] as? String == "2026:11:09 18:42:07")
         #expect(readExif[kCGImagePropertyExifExposureTime] as? Double == 0.004)
         #expect(readExif[kCGImagePropertyExifLensModel] as? String == "iPhone Duo back camera")
-        #expect(readExif[kCGImagePropertyExifSubjectArea] == nil)
+        #expect(readExif[kCGImagePropertyExifSubjectArea] == nil); #expect(readExif[kCGImagePropertyExifSubjectLocation] == nil)
+        // The pixels are Display P3, not sRGB: 65535 is "uncalibrated", so a viewer reads the embedded profile instead.
+        #expect(readExif[kCGImagePropertyExifColorSpace] as? Int == 65535)
         #expect(readExif[kCGImagePropertyExifPixelXDimension] as? Int == 1200); #expect(readExif[kCGImagePropertyExifPixelYDimension] as? Int == 1600)
         let readTIFF = try #require(properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any])
-        #expect(readTIFF[kCGImagePropertyTIFFModel] as? String == "iPhone Duo")
+        #expect(readTIFF[kCGImagePropertyTIFFMake] as? String == "Apple"); #expect(readTIFF[kCGImagePropertyTIFFModel] as? String == "iPhone Duo")
+        #expect(readTIFF[kCGImagePropertyTIFFPhotometricInterpretation] == nil)
         #expect((readTIFF[kCGImagePropertyTIFFOrientation] as? Int ?? 1) == 1)
         let readGPS = try #require(properties[kCGImagePropertyGPSDictionary] as? [CFString: Any])
         #expect(readGPS[kCGImagePropertyGPSLatitude] as? Double == 37.33)
@@ -104,6 +115,32 @@ import Testing
         if let exportThumbnail = Self.embeddedThumbnail(of: url) {
             #expect(format == .jpeg); #expect(exportThumbnail.width == 1200); #expect(exportThumbnail.height == 1600)
         }
+    }
+
+    /// ImageIO does not write a subject location into a test original, so the metadata step is also checked on injected
+    /// properties: the TIFF keys are an allow-list, and nothing that locates or describes the unedited pixels survives.
+    @Test func carriedMetadataKeepsOnlyWhatStaysTrue() throws {
+        let properties: [String: Any] = [
+            kCGImagePropertyExifDictionary as String: [kCGImagePropertyExifSubjectLocation as String: [800, 600],
+                                                       kCGImagePropertyExifSubjectArea as String: [800, 600, 200, 200],
+                                                       kCGImagePropertyExifColorSpace as String: 1,
+                                                       kCGImagePropertyExifLensModel as String: "iPhone Duo back camera"],
+            kCGImagePropertyTIFFDictionary as String: [kCGImagePropertyTIFFMake as String: "Apple", kCGImagePropertyTIFFModel as String: "iPhone Duo",
+                                                       kCGImagePropertyTIFFSoftware as String: "27.1", kCGImagePropertyTIFFDateTime as String: "2026:11:09 18:42:07",
+                                                       kCGImagePropertyTIFFArtist as String: "T", kCGImagePropertyTIFFCopyright as String: "C",
+                                                       kCGImagePropertyTIFFOrientation as String: 6, kCGImagePropertyTIFFTileWidth as String: 256,
+                                                       kCGImagePropertyTIFFPhotometricInterpretation as String: 32803,
+                                                       kCGImagePropertyTIFFCompression as String: 7]]
+        let carried = PhotoExporter.carriedMetadata(from: properties, size: CGSize(width: 300, height: 400))
+        let exif = try #require(carried[kCGImagePropertyExifDictionary as String] as? [String: Any])
+        #expect(exif[kCGImagePropertyExifSubjectLocation as String] == nil); #expect(exif[kCGImagePropertyExifSubjectArea as String] == nil)
+        #expect(exif[kCGImagePropertyExifColorSpace as String] as? Int == 65535)
+        #expect(exif[kCGImagePropertyExifLensModel as String] as? String == "iPhone Duo back camera")
+        #expect(exif[kCGImagePropertyExifPixelXDimension as String] as? Int == 300); #expect(exif[kCGImagePropertyExifPixelYDimension as String] as? Int == 400)
+        let tiff = try #require(carried[kCGImagePropertyTIFFDictionary as String] as? [String: Any])
+        let kept = [kCGImagePropertyTIFFMake, kCGImagePropertyTIFFModel, kCGImagePropertyTIFFSoftware, kCGImagePropertyTIFFDateTime,
+                    kCGImagePropertyTIFFArtist, kCGImagePropertyTIFFCopyright].map { $0 as String }
+        #expect(Set(tiff.keys) == Set(kept))
     }
 
     private static func embeddedThumbnail(of url: URL) -> CGImage? {

@@ -58,24 +58,43 @@ nonisolated struct PhotoExporter: Sendable {
         return url
     }
 
-    /// The original's capture metadata for the export: Exif (date and time, exposure, lens), TIFF (make, model), GPS and
-    /// IPTC. Orientation and pixel dimensions are the export's own (upright, `size`). Whatever describes the unedited pixels
-    /// is left out: maker notes, the subject area (coordinates in the original's orientation), embedded thumbnails and the
-    /// colour profile, which is the export's Display P3.
+    /// TIFF keys that describe the capture rather than the stored pixels; every other TIFF key (orientation, a DNG's layout
+    /// and compression) is the original file's own and is left out.
+    private static let carriedTIFFKeys = [kCGImagePropertyTIFFMake, kCGImagePropertyTIFFModel, kCGImagePropertyTIFFSoftware,
+                                          kCGImagePropertyTIFFDateTime, kCGImagePropertyTIFFArtist, kCGImagePropertyTIFFCopyright]
+        .map { $0 as String }
+    /// Exif colour space "uncalibrated": the pixels are Display P3, which the sRGB value 1 would misdescribe.
+    private static let uncalibratedColourSpace = 65535
+
     private static func carriedMetadata(from source: URL, size: CGSize) -> [String: Any] {
         guard let imageSource = CGImageSourceCreateWithURL(source as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [String: Any]
         else { return [:] }
+        return carriedMetadata(from: properties, size: size)
+    }
+
+    /// The original's capture metadata for the export: Exif (date and time, exposure, lens), the TIFF allow-list (make,
+    /// model, software, date and time, artist, copyright), GPS and IPTC. Orientation and pixel dimensions are the export's own
+    /// (upright, `size`), and its colour space is uncalibrated, so viewers read the embedded Display P3 profile. Whatever
+    /// describes the unedited pixels is left out: maker notes, the subject area and location (coordinates in the original's
+    /// orientation), embedded thumbnails, the original's TIFF layout and its colour profile. Internal for tests, which pass
+    /// properties ImageIO would not write into a test original; `[String: Any]` is what ImageIO and Core Image exchange.
+    static func carriedMetadata(from properties: [String: Any], size: CGSize) -> [String: Any] {
         var metadata: [String: Any] = [:]
         if var exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any] {
             exif[kCGImagePropertyExifSubjectArea as String] = nil
+            exif[kCGImagePropertyExifSubjectLocation as String] = nil
+            exif[kCGImagePropertyExifColorSpace as String] = uncalibratedColourSpace
             exif[kCGImagePropertyExifPixelXDimension as String] = Int(size.width)
             exif[kCGImagePropertyExifPixelYDimension as String] = Int(size.height)
             metadata[kCGImagePropertyExifDictionary as String] = exif
         }
-        if var tiff = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any] {
-            tiff[kCGImagePropertyTIFFOrientation as String] = nil
-            metadata[kCGImagePropertyTIFFDictionary as String] = tiff
+        if let tiff = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any] {
+            var carried: [String: Any] = [:]
+            for key in carriedTIFFKeys {
+                if let value = tiff[key] { carried[key] = value }
+            }
+            if !carried.isEmpty { metadata[kCGImagePropertyTIFFDictionary as String] = carried }
         }
         for key in [kCGImagePropertyGPSDictionary, kCGImagePropertyIPTCDictionary] {
             if let dictionary = properties[key as String] { metadata[key as String] = dictionary }
