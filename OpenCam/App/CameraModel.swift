@@ -9,9 +9,9 @@ final class CameraModel {
     private static let placeholderRecord = RecordSelection(family: .hevc, quality: "High", resolution: .named(width: 3840, height: 2160), frameRate: 30, colour: .rec709)
     private static let placeholderPhoto = PhotoSelection(format: .heif, megapixels: 12)
 
-    var mode: CaptureMode { didSet { persist() } }
-    var record: RecordSelection { didSet { persist() } }
-    var photo: PhotoSelection { didSet { persist() } }
+    var mode: CaptureMode { didSet { selectionChanged() } }
+    var record: RecordSelection { didSet { selectionChanged() } }
+    var photo: PhotoSelection { didSet { selectionChanged() } }
     var sheet: CameraSheet?
     var phase: CameraPhase
     var freeBytes: Int64
@@ -19,7 +19,7 @@ final class CameraModel {
     var meterLevels: [Double] = [0.62, 0.54]
     var lastCapture: URL?
     private(set) var capabilities: CaptureCapabilities
-    private(set) var lensID: String { didSet { persist() } }
+    private(set) var lensID: String { didSet { selectionChanged() } }
     private(set) var isRecording: Bool
     private(set) var recordingStart: Date?
     private(set) var access: CaptureAccess
@@ -28,12 +28,24 @@ final class CameraModel {
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let isScripted: Bool
+    /// Set once `start(session:)` has configured the session; from then on selection changes reconfigure it.
+    @ObservationIgnored private var session: CameraSession?
+    /// The tail of the serial configure chain.
+    @ObservationIgnored private var configureTask: Task<Void, Never>?
+    /// Bumped per requested configuration; a queued configure that is no longer the latest is skipped.
+    @ObservationIgnored private var configureGeneration = 0
+    /// The configuration last sent to the chain, so an unchanged selection does not reconfigure.
+    @ObservationIgnored private var requestedConfiguration: SessionConfiguration?
 
     init(config: LaunchConfig, capabilities: CaptureCapabilities, isSimulator: Bool, defaults: UserDefaults = .standard) {
         self.capabilities = capabilities
         self.defaults = defaults
         self.isScripted = config.isScripted
-        self.phase = isSimulator ? .simulator : .scanning
+        if isSimulator {
+            self.phase = config.simulatedState == .scanning ? .scanning : .simulator
+        } else {
+            self.phase = .scanning
+        }
         let accessState: AccessState = isSimulator ? .authorized : .notDetermined
         self.access = CaptureAccess(camera: accessState, microphone: accessState)
         self.freeBytes = Self.simulatorFreeBytes
@@ -71,6 +83,13 @@ final class CameraModel {
 
     var currentVideoOption: VideoOption? { recordResolver.option(for: record) }
     var currentPhotoOption: PhotoOption? { photoResolver.option(for: photo) }
+
+    /// What the session should capture for the current selection; nil without a lens.
+    var sessionConfiguration: SessionConfiguration? {
+        guard let currentLens else { return nil }
+        return SessionConfiguration(lens: currentLens, mode: mode, video: currentVideoOption, photo: currentPhotoOption,
+                                    includesAudio: access.recordsSound)
+    }
 
     var summaryParts: [String] {
         switch mode {
@@ -116,9 +135,35 @@ final class CameraModel {
         photo = Self.settle(photo, with: photoResolver) ?? photo
     }
 
+    private func selectionChanged() {
+        persist()
+        reconfigure()
+    }
+
     private func persist() {
         guard !isScripted else { return }
         SavedSelections(mode: mode, lensID: lensID, record: record, photo: photo).save(to: defaults)
+    }
+
+    /// Queues a configure behind any running one. A lens switch changes lens, record and photo in one turn;
+    /// only the last of those runs, because the earlier ones are superseded before the chain reaches them.
+    private func reconfigure() {
+        guard let session, let configuration = sessionConfiguration, configuration != requestedConfiguration else { return }
+        requestedConfiguration = configuration
+        configureGeneration += 1
+        let generation = configureGeneration
+        let previous = configureTask
+        configureTask = Task {
+            await previous?.value
+            guard generation == configureGeneration else { return }
+            do throws(CameraSessionError) {
+                try await session.configure(configuration)
+            } catch {
+                Self.logger.error("\(error.description, privacy: .public)")
+                requestedConfiguration = nil
+                phase = .failed("The camera could not start.")
+            }
+        }
     }
 
     private static func defaultLens(in capabilities: CaptureCapabilities) -> Lens? {
@@ -135,7 +180,7 @@ final class CameraModel {
 }
 
 extension CameraModel {
-    /// Asks for access, swaps the fixture lenses for the device's, configures and starts the session,
+    /// Asks for access, loads the device's capabilities in place of the fixture, configures and starts the session,
     /// then follows its events for as long as the calling task runs.
     func start(session: CameraSession) async {
         access = await CameraSession.requestAccess()
@@ -143,14 +188,19 @@ extension CameraModel {
             phase = access.camera == .restricted ? .cameraRestricted : .cameraDenied
             return
         }
-        replaceCapabilities(CaptureCapabilities(lenses: LensDiscovery.lenses(), videoOptions: [], photoOptions: [],
-                                                osBuild: DeviceIdentity.osBuild(), modelIdentifier: DeviceIdentity.modelIdentifier()))
-        guard let lens = currentLens else {
+        let lenses = LensDiscovery.lenses()
+        guard !lenses.isEmpty else {
             Self.logger.error("[CameraModel:start] No camera found — {lenses: 0}")
             phase = .failed("The camera could not start.")
             return
         }
-        let configuration = SessionConfiguration(lens: lens, mode: mode, video: nil, photo: currentPhotoOption, includesAudio: access.recordsSound)
+        await loadCapabilities(lenses: lenses)
+        if case .failed = phase { return }
+        guard let configuration = sessionConfiguration else {
+            Self.logger.error("[CameraModel:start] No lens selected — {lenses: \(lenses.count)}")
+            phase = .failed("The camera could not start.")
+            return
+        }
         do {
             try await session.configure(configuration)
         } catch {
@@ -158,10 +208,43 @@ extension CameraModel {
             phase = .failed("The camera could not start.")
             return
         }
+        requestedConfiguration = configuration
+        self.session = session
         await session.start()
         phase = .ready
         for await event in session.events {
             apply(event)
+        }
+    }
+
+    /// Uses the cached capabilities when they were written on this OS build and model for the same cameras;
+    /// otherwise scans, saves to the cache and leaves a copy in Documents for comparison with the probe report.
+    func loadCapabilities(lenses: [Lens]) async {
+        let osBuild = DeviceIdentity.osBuild(), modelIdentifier = DeviceIdentity.modelIdentifier()
+        let cache = CapabilityCache(directory: URL.applicationSupportDirectory.appending(path: "OpenCam"))
+        if let cached = cache.load(osBuild: osBuild, modelIdentifier: modelIdentifier), cached.lenses.map(\.id) == lenses.map(\.id) {
+            // Lens labels can carry localized device names, so the freshly discovered lenses are kept.
+            replaceCapabilities(CaptureCapabilities(lenses: lenses, videoOptions: cached.videoOptions, photoOptions: cached.photoOptions,
+                                                    osBuild: osBuild, modelIdentifier: modelIdentifier))
+            return
+        }
+        phase = .scanning
+        let formats: [FormatDescriptor]
+        do {
+            formats = try await CapabilityScanner.scan(lenses: lenses)
+        } catch {
+            Self.logger.error("\(error.description, privacy: .public)")
+            phase = .failed("The camera could not start.")
+            return
+        }
+        let capabilities = CapabilityMapper.capabilities(lenses: lenses, formats: formats, osBuild: osBuild, modelIdentifier: modelIdentifier)
+        replaceCapabilities(capabilities)
+        for directory in [cache.directory, URL.documentsDirectory] {
+            do {
+                try CapabilityCache(directory: directory).save(capabilities)
+            } catch {
+                Self.logger.error("\(error.description, privacy: .public)")
+            }
         }
     }
 

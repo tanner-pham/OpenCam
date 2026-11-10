@@ -32,6 +32,7 @@ struct StripToolbar: ToolbarContent {
                 Image(systemName: model.mode == .video ? "video.fill" : "camera.fill")
             }
             .accessibilityLabel("Mode")
+            .disabled(model.isRecording)
         case .lens:
             Menu {
                 Picker("Lens", selection: Binding(get: { model.lensID }, set: { model.selectLens($0) })) {
@@ -41,8 +42,11 @@ struct StripToolbar: ToolbarContent {
                 Text(model.currentLens?.label ?? "Lens")
             }
             .accessibilityLabel("Lens, \(model.currentLens?.label ?? "none")")
+            .disabled(model.isRecording)
         case .record:
+            // Disabled while recording, so no change reaches the session mid-clip.
             Button("Record settings", systemImage: "slider.horizontal.3") { model.sheet = .record }
+                .disabled(model.isRecording)
         case .library:
             Button("Library", systemImage: "photo.on.rectangle") {}
                 .disabled(true)

@@ -54,6 +54,8 @@ actor CameraSession {
         guard let device = AVCaptureDevice(uniqueID: lens.deviceUniqueID) else {
             throw .deviceMissing(lensID: lens.id)
         }
+        // Declared first so it runs after the commit below, also when configuring throws and the old input is restored.
+        defer { NotificationCenter.default.post(name: PreviewSource.didConfigureNotification, object: session) }
         session.beginConfiguration()
         defer { session.commitConfiguration() }
         // Input priority: the device's activeFormat dictates quality, and the session never changes it

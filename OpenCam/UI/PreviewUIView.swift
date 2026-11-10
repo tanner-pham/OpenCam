@@ -10,7 +10,7 @@ final class PreviewUIView: UIView {
 
     private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     private var rotationObservation: NSKeyValueObservation?
-    private var startObserver: (any NSObjectProtocol)?
+    private var sessionObservers: [any NSObjectProtocol] = []
 
     private var previewLayer: AVCaptureVideoPreviewLayer? { layer as? AVCaptureVideoPreviewLayer }
 
@@ -23,11 +23,12 @@ final class PreviewUIView: UIView {
         }
         previewLayer.videoGravity = .resizeAspect
         previewLayer.session = source.session
-        // A new camera input arrives with a session start; rebuild the coordinator for it then.
-        startObserver = NotificationCenter.default.addObserver(
-            forName: AVCaptureSession.didStartRunningNotification, object: source.session, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.updateRotationCoordinator() }
+        // A new camera input arrives with the first start, and with each configure on a running session
+        // (a lens switch or reconfigure); rebuild the coordinator for it then.
+        sessionObservers = [AVCaptureSession.didStartRunningNotification, PreviewSource.didConfigureNotification].map { name in
+            NotificationCenter.default.addObserver(forName: name, object: source.session, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateRotationCoordinator() }
+            }
         }
     }
 
@@ -35,7 +36,7 @@ final class PreviewUIView: UIView {
     required init?(coder: NSCoder) { nil }
 
     isolated deinit {
-        if let startObserver { NotificationCenter.default.removeObserver(startObserver) }
+        for observer in sessionObservers { NotificationCenter.default.removeObserver(observer) }
     }
 
     override func didMoveToWindow() {
