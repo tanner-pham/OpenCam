@@ -57,6 +57,8 @@ extension CameraModel {
     /// The stopped state's "Try again": configures the current selection again and starts the session.
     func retryCamera() {
         guard isCameraStopped else { return }
+        // A user action: the automatic restart is given back.
+        autoRestarted = nil
         requestedConfiguration = nil
         enqueueConfigure()
     }
@@ -114,8 +116,10 @@ extension CameraModel {
             show(Self.formatFailedNotice, from: .configuration)
             select(defaultSelection)
             restart(sessionConfiguration)
-        } else {
-            restart(running?.configuration)
+        } else if let running, running.configuration != autoRestarted {
+            // Once per configuration until a user action; a second stop of the same one is the stopped state.
+            autoRestarted = running.configuration
+            restart(running.configuration)
         }
     }
 

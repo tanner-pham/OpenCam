@@ -148,6 +148,31 @@ import Testing
         #expect(model.phase == .failed("The camera stopped.")); #expect(model.currentSelection == selection)
     }
 
+    /// A configuration that runs past the confirmation and then stops again is restarted automatically only once; Try again
+    /// gives one more automatic restart.
+    @Test func aSelectionThatKeepsStoppingAfterItsRestartEndsInTheStoppedState() async throws {
+        let (model, fake, _) = try attachedModel()
+        let configuration = try #require(model.sessionConfiguration)
+        #expect(await confirmed(model))
+        model.apply(.runtimeError(Self.stop))
+        await model.waitForQueuedConfigures()
+        #expect(await eventually { model.phase == .ready })
+        model.apply(.runtimeError(Self.stop))
+        await model.waitForQueuedConfigures()
+        #expect(model.isCameraStopped)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(model.phase == .failed("The camera stopped."))
+        #expect(await fake.calls == ["configure", "start"]); #expect(await fake.applied == [configuration])
+        model.retryCamera()
+        await model.waitForQueuedConfigures()
+        #expect(await eventually { model.phase == .ready })
+        #expect(await fake.calls == ["configure", "start", "configure", "start"])
+        model.apply(.runtimeError(Self.stop))
+        await model.waitForQueuedConfigures()
+        #expect(await fake.calls == ["configure", "start", "configure", "start", "configure", "start"])
+        #expect(await eventually { model.phase == .ready })
+    }
+
     /// The clip ends as it always has; only then does the camera restart.
     @Test func aStopWhileRecordingRecoversOnceTheClipHasEnded() async throws {
         let (model, fake, _) = try attachedModel()

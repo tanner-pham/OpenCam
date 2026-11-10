@@ -86,6 +86,9 @@ final class CameraModel {
     /// True from an automatic recovery until a configuration is confirmed; another runtime error meanwhile ends in the
     /// stopped state, so recovery never loops.
     @ObservationIgnored var isRecoveryUnconfirmed = false
+    /// The configuration rule 5 restarted automatically; it is not restarted automatically again until a user action
+    /// (a selection change or Try again) clears it, so a configuration that keeps stopping cannot loop.
+    @ObservationIgnored var autoRestarted: SessionConfiguration?
     /// True when a runtime error came during a recording or a sweep; the recovery runs once that ends.
     @ObservationIgnored var isRecoveryDeferred = false
     /// The mode a first launch picks, for the default selection.
@@ -484,6 +487,8 @@ final class CameraModel {
 
     func selectionChanged() {
         guard !isApplyingSelection else { return }
+        // A selection change is a user action: it gives the automatic restart back.
+        autoRestarted = nil
         // A new lens, mode, format or look tries the viewfinder again.
         isLookViewfinderUnavailable = false
         clearNotice(from: .look)
