@@ -28,13 +28,14 @@ Added by this plan:
 
 - Branch: `feat/looks-in-camera`, stacked on `feat/editor-looks`. Every name below is as it is in that tree.
 - Risk rule: with no look selected ("None") the camera behaves exactly as today. `SessionConfiguration.needsFrames` is false, so no data output is attached; `PhotoCaptureDelegate` writes as today; `LookCapture` is never called; `ViewfinderArea` draws today's views. Everything new is reached only through a selected look, and every new failure falls back to today's behaviour with a plain notice. A photo is never lost to a look.
-- Isolation: `CameraLook`, `LookAvailability`, `LookBaker`, `LookCapture`, `FramePipeline`, `FrameSlot`, `FrameOrientation`, `FrameWatch` and `FrameFit` are `nonisolated` and `Sendable` (`FramePipeline` like `PhotoCaptureDelegate`: a `final class` with a `Mutex`). Baking is a `@concurrent` function; frames are handled on the pipeline's own serial queue. Only `CameraModel` and views are main-actor. No pixel buffer leaves the sample-buffer callback: it becomes a `CIImage` there (`CIImage` is `NS_SWIFT_SENDABLE` in the SDK), so no new `@unchecked Sendable` is needed. `PreviewSource` stays the one existing unchecked crossing and only gains the `Sendable` `FramePipeline`; the frame connection is reached through its existing `session.outputs`.
+- Isolation: `CameraLook`, `LookAvailability`, `LookBaker`, `LookCapture`, `FramePipeline`, `FrameSlot`, `FrameOrientation`, `FrameWatch` and `FrameFit` are `nonisolated` and `Sendable` (`FramePipeline` like `PhotoCaptureDelegate`: a `final class` with a `Mutex`). Baking is a `@concurrent` function; frames are handled on the pipeline's own serial queue. Only `CameraModel` and views are main-actor. No pixel buffer leaves the sample-buffer callback: it becomes a `CIImage` there (`CIImage` is `NS_SWIFT_SENDABLE` in the SDK), so no new `@unchecked Sendable` is needed. `PreviewSource` stays the one existing unchecked crossing and only gains the `Sendable` `FramePipeline`; the data output's connection is touched only inside `CameraSession.apply`, never from the main actor.
+- JPEG: `PhotoFormat` has no JPEG yet, so "baked into HEIF or JPEG" means HEIF here; JPEG takes the same path when the format is added.
 - Notices: a new `NoticeSource.look` for the look's own notices ("Look turned off. Looks need Rec. 709 or P3." and "The look cannot be shown in the viewfinder with this format."). The capture notices ("Look not applied. The photo was saved without it." and "Look not saved with the photo.") come from `.capture`, and a `PhotoSaveReport` notice always wins over them.
 - Exact UI copy, used verbatim: row title "Look"; chip "None"; "Looks need Rec. 709 or P3."; "Shown in the viewfinder only. Video is recorded without it."; "Look turned off. Looks need Rec. 709 or P3."; "The look cannot be shown in the viewfinder with this format."; "Look not applied. The photo was saved without it."; "Look not saved with the photo."; the Simulator caption "No camera in Simulator" stays.
 - Launch flag: `-cameraLook <name>` selects the look of that name at launch (with `-seedLook on` in the Simulator) and makes the launch scripted, so it neither restores nor saves selections.
 - Screenshots: `SHOT_DIR=docs/screenshots/e2`, names prefixed `e2-`, display 1, through `scripts/shot.sh` (unchanged). The implementer reads every PNG.
 - Device SDK compile (needed wherever AVFoundation or MetalKit code changes): `xcodebuild -project OpenCam.xcodeproj -scheme OpenCam -sdk iphoneos -destination generic/platform=iOS -derivedDataPath .build CODE_SIGNING_ALLOWED=NO build`, expected `** BUILD SUCCEEDED **`.
-- Calls made in this plan (each small): (1) `LookStore` is a stateless value type with no change signal, so sharing one store does not by itself bring a new look into the camera; the camera reads the looks again when the Library closes (every look change happens under the Library cover) and at launch. (2) The processed HEIF is held in memory by the delegate when a look is on and baked in the model's capture task by a `@concurrent` step, so the photo output's callback queue and the session actor are never blocked by a 48 MP render. (3) The look name in the summary is cut in the model to 16 characters (15 and "…"), because `FormatButton` is `.fixedSize()` and a frame cannot truncate it there. (4) A viewfinder fallback detaches the data output until the next lens, mode, format or look change, which tries again. (5) In video mode the summary drops the look's name while the viewfinder cannot show it, since the look then applies nowhere. (6) The data output asks for preview-sized buffers (`automaticallyConfiguresOutputBufferDimensions = false`, `deliversPreviewSizedOutputBuffers = true`, AVCaptureVideoDataOutput.h:247-264); when the connection cannot rotate (ProRes RAW, AVCaptureSession.h:1089) or mirror, the pipeline turns the image itself. (7) The Look row sits after the chip rows and before the data-rate footer; a `-screen record` launch with `-cameraLook` opens Record settings scrolled to it, so the landscape screenshot shows it.
+- Calls made in this plan (each small): (1) `LookStore` is a stateless value type with no change signal, so sharing one store does not by itself bring a new look into the camera; the camera reads the looks again when the Library closes (every look change happens under the Library cover) and at launch. (2) The processed HEIF is held in memory by the delegate when a look is on and baked in the model's capture task by a `@concurrent` step, so the photo output's callback queue and the session actor are never blocked by a 48 MP render. (3) The look name in the summary is cut in the model to 16 characters (15 and "…"), because `FormatButton` is `.fixedSize()` and a frame cannot truncate it there. (4) A viewfinder fallback detaches the data output until the next lens, mode, format or look change, which tries again. (5) In video mode the summary drops the look's name while the viewfinder cannot show it, since the look then applies nowhere. (6) The data output asks for preview-sized buffers (`automaticallyConfiguresOutputBufferDimensions = false`, `deliversPreviewSizedOutputBuffers = true`, AVCaptureVideoDataOutput.h:244-266); the pipeline always turns the image itself by the angle from the rotation coordinator, because setting the angle on a data output's connection physically rotates buffers and needs a lengthy pipeline reconfiguration (AVCaptureSession.h:1085); only mirroring is set on the connection, inside `CameraSession.apply`. (7) The Look row sits after the chip rows and before the data-rate footer; a `-screen record` launch with `-cameraLook` opens Record settings scrolled to it, so the landscape screenshot shows it.
 
 ## Review Focus
 
@@ -50,7 +51,7 @@ Added by this plan:
 
 **Files:**
 - Create: `OpenCam/Edit/CameraLook.swift`, `OpenCam/App/CameraModel+Look.swift`
-- Modify: `OpenCam/Support/SavedSelections.swift` (`var look: CameraLook? = nil`; the memberwise init and old saved JSON without `look` keep working), `OpenCam/App/LaunchConfig.swift` (`var cameraLookName: String?`, from `-cameraLook <name>`, sets `isScripted`; the doc comment's flag list gains it), `OpenCam/App/CameraModel.swift` (stored `var looks: [Look] = []`, `var cameraLook: CameraLook?` (set only by the look extension), `@ObservationIgnored let lookStore: LookStore?`; `init` gains a last parameter `lookStore: LookStore? = nil`; `selectionChanged()` drops `private` so the extension can call it; `currentSelection` passes `look: cameraLook`; `init` sets `cameraLook = saved?.look`, then `looks = lookStore?.all() ?? []`, `cameraLook = CameraLook.reconciled(cameraLook, with: looks)`, then for `config.cameraLookName` the look of that name, or None when there is none), `OpenCam/App/CameraModel+Library.swift` (`returnCameraFromLibrary()`'s `defer { refreshLastCapture() }` also calls `reloadLooks()`), `OpenCam/App/OpenCamApp.swift` (creates one `LookStore.appDefault()` in `init`, seeds "Warm fade" into it in the Simulator when `seedsLook`, passes it to `makeLibrary(captures:looks:config:)` and to `CameraModel(..., lookStore:)`; a store that fails is logged, the Library is then unavailable as today and the camera has only None)
+- Modify: `OpenCam/Support/SavedSelections.swift` (`var look: CameraLook? = nil`; the memberwise init and old saved JSON without `look` keep working), `OpenCam/App/LaunchConfig.swift` (`var cameraLookName: String?`, from `-cameraLook <name>`, sets `isScripted`; the doc comment's flag list gains it), `OpenCam/App/CameraModel.swift` (stored `var looks: [Look] = []`, `var cameraLook: CameraLook?` (set only by the look extension), `@ObservationIgnored let lookStore: LookStore?`; `init` gains a last parameter `lookStore: LookStore? = nil`; `selectionChanged()` drops `private` so the extension can call it; `currentSelection` passes `look: cameraLook`; `init` sets `cameraLook = saved?.look`, then `looks = lookStore?.all() ?? []`, `cameraLook = CameraLook.reconciled(cameraLook, with: looks)`, then for `config.cameraLookName` the look of that name, or None when there is none), `OpenCam/App/CameraModel+Library.swift` (`returnCameraFromLibrary()` calls `reloadLooks()` straight after its first guard (`guard !isLibraryPresented else { return }`), so the looks are read again on every path and before the selection is configured again; a look deleted in the Library is then None before any configure runs. The `defer { refreshLastCapture() }` stays as it is), `OpenCam/App/OpenCamApp.swift` (creates one `LookStore.appDefault()` in `init`, seeds "Warm fade" into it in the Simulator when `seedsLook`, both before `CameraModel` is constructed so a `-cameraLook` launch finds the look, passes it to `makeLibrary(captures:looks:config:)` and to `CameraModel(..., lookStore:)`; a store that fails is logged, the Library is then unavailable as today and the camera has only None)
 - Test: `OpenCamTests/CameraLookTests.swift`; Modify `OpenCamTests/LaunchConfigTests.swift`
 
 **Interfaces:**
@@ -166,6 +167,7 @@ import Testing
 @Test func parsesCameraLookFlag() {
     let c = LaunchConfig.parse(["app", "-cameraLook", "Warm fade", "-seedLook", "on"])
     #expect(c.cameraLookName == "Warm fade"); #expect(c.isScripted)
+    #expect(LaunchConfig.parse(["app", "-cameraLook", "Warm fade"]).isScripted)   // the flag alone makes the launch scripted
     #expect(LaunchConfig.parse(["app"]).cameraLookName == nil)
 }
 ```
@@ -186,12 +188,12 @@ git commit -m "feat: share one look store and keep the camera's look selection"
 
 **Files:**
 - Create: `OpenCam/Capability/LookAvailability.swift`
-- Modify: `OpenCam/App/NoticeSource.swift` (`case look`: "A look turned off or not shown in the viewfinder; cleared when a look is chosen or the viewfinder can show it again."), `OpenCam/App/CameraModel.swift` (`hasCamera` drops `private`; `selectionChanged()` calls `settleLook()` before `persist()`; `init` turns a restored or scripted look the current mode cannot take into None without a notice; `summaryParts` appends `summaryLookName` when it is non-nil; `@ObservationIgnored let scrollsToLookRow: Bool`, true when `config.screen == .record && config.cameraLookName != nil`), `OpenCam/App/CameraModel+Look.swift`, `OpenCam/UI/ChipRow.swift` (`var isSingleLine = false`: one horizontally scrolling line of chips instead of the grid, `columns` ignored; each chip at least `2 * Theme.Size.minTarget` wide and at most `Theme.Size.lookChipMax = 160`, title cut to one line with an ellipsis), `OpenCam/UI/ChipButton.swift` (the title takes `.lineLimit(1)`), `OpenCam/UI/Theme.swift` (`Size.lookChipMax`), `OpenCam/UI/VideoRecordRows.swift` and `OpenCam/UI/PhotoRows.swift` (gain `let look: LookChoice` and draw `ChipRow(title: "Look", ..., isSingleLine: true)` after the last chip row and before the footer; with `look.scrollsIntoView` a `ScrollViewReader` scrolls to it on appear), `OpenCam/UI/RecordSettingsSheet.swift` (gains `let look: LookChoice`, passed to both), `OpenCam/UI/CameraRootView.swift` (builds `LookChoice` from the model), `OpenCam/UI/FormatButton.swift` (`ForEach(Array(parts.enumerated()), id: \.offset)`, so a look named like a format part never collides)
+- Modify: `OpenCam/App/NoticeSource.swift` (`case look`: "A look turned off or not shown in the viewfinder; cleared when a look is chosen or the viewfinder can show it again."), `OpenCam/App/CameraModel.swift` (`hasCamera` drops `private`; `selectionChanged()` calls `settleLook()` before `persist()`; `init` turns a restored or scripted look the current mode cannot take into None without a notice; `summaryParts` appends `summaryLookName` when it is non-nil; `@ObservationIgnored let scrollsToLookRow: Bool`, true when `config.screen == .record && config.cameraLookName != nil`), `OpenCam/App/CameraModel+Look.swift`, `OpenCam/UI/ChipRow.swift` (`var isSingleLine = false`, declared before `onSelect`: one horizontally scrolling line of chips instead of the grid, `columns` ignored (the Look row passes `columns: 1`); each chip at least `2 * Theme.Size.minTarget` wide and at most `Theme.Size.lookChipMax = 160`, title cut to one line with an ellipsis), `OpenCam/UI/ChipButton.swift` (`var isSingleLine = false`, passed from `ChipRow`; the title takes `.lineLimit(1)` only when it is true, other rows are unchanged), `OpenCam/UI/Theme.swift` (`Size.lookChipMax`), `OpenCam/UI/VideoRecordRows.swift` and `OpenCam/UI/PhotoRows.swift` (gain `let look: LookChoice` and draw `ChipRow(title: "Look", columns: 1, ..., isSingleLine: true)` after the last chip row and before the footer (`PhotoRows` has no footer: the row goes last there); with `look.scrollsIntoView` a `ScrollViewReader` scrolls to it on appear), `OpenCam/UI/RecordSettingsSheet.swift` (gains `let look: LookChoice`, passed to both), `OpenCam/UI/CameraRootView.swift` (builds `LookChoice` from the model), `OpenCam/UI/FormatButton.swift` (`ForEach(Array(parts.enumerated()), id: \.offset)`, so a look named like a format part never collides)
 - Create: `OpenCam/UI/LookChoice.swift`
 - Test: `OpenCamTests/LookAvailabilityTests.swift`, `OpenCamTests/LookRuleTests.swift`
 
 **Interfaces:**
-- Consumes: Task 1 `CameraLook`, `CameraModel.cameraLook`, `looks`, `selectLook(_:)`, `selectionChanged()`; camera core `Chip`, `ChipRow`, `ColourMode`, `CaptureMode`, `show(_:from:)`, `clearNotice(from:)`.
+- Consumes: Task 1 `CameraLook`, `CameraModel.cameraLook`, `looks`, `selectLook(_:)`, `selectionChanged()`; camera core `Chip`, `ChipRow`, `ColourMode`, `CaptureMode`, `show(_:from:)`, `clearNotice(from:)`; `reloadLooks()` (Task 1).
 - Produces:
 
 ```swift
@@ -282,9 +284,9 @@ extension CameraModel {
     @Test func deletedLookLeavesNoNameInTheSummary() throws {   // Review Focus 1
         let (model, looks, look) = try make()
         model.mode = .photo; model.selectLook(look.id)
-        #expect(model.summaryParts == ["HEIF", "12 MP", "Warm fade"])
+        #expect(model.summaryParts == ["RAW + HEIF", "48 MP", "Warm fade"])
         try looks.delete(look.id); model.reloadLooks()
-        #expect(model.summaryLookName == nil); #expect(model.summaryParts == ["HEIF", "12 MP"]); #expect(model.lookChips.map(\.title) == ["None"])
+        #expect(model.summaryLookName == nil); #expect(model.summaryParts == ["RAW + HEIF", "48 MP"]); #expect(model.lookChips.map(\.title) == ["None"])
     }
 
     @Test func noCameraPictureNamesNoLook() throws {
@@ -297,10 +299,8 @@ extension CameraModel {
 }
 ```
 
-`["HEIF", "12 MP"]` is the fixture's default photo summary; if `CameraModelTests` shows another default label, use that one in both expectations, never weaken the comparison.
-
 - [ ] **Step 2: Run to see them fail** — `scripts/test.sh LookAvailabilityTests`. Expected: `cannot find 'LookAvailability' in scope`.
-- [ ] **Step 3: Implement the Interfaces and the Files edits.** `settleLook()` runs inside `selectionChanged()` after its `isApplyingSelection` guard and sets `cameraLook` directly, so it never re-enters `selectionChanged()`.
+- [ ] **Step 3: Implement the Interfaces and the Files edits.** `settleLook()` runs inside `selectionChanged()` after its `isApplyingSelection` guard and sets `cameraLook` directly, so it never re-enters `selectionChanged()`. `configureFailed` calls `settleLook()` after restoring the selection, then `persist()` (a look failing back to an HLG last-working selection becomes None); no new test, as there is no fake configurator to make a configure fail.
 - [ ] **Step 4: Run to see them pass** — `scripts/test.sh LookAvailabilityTests && scripts/test.sh LookRuleTests && scripts/test.sh CameraModelTests`. Expected: `** TEST SUCCEEDED **` three times (the summary tests of the camera core are unchanged with None).
 - [ ] **Step 5: Screenshot and look**
 
@@ -312,7 +312,7 @@ scripts/shot.sh e2-settings-video-v -orientation portrait -mode video -screen re
 scripts/shot.sh e2-settings-video-h -orientation landscape -mode video -screen record -seedLook on -cameraLook "Warm fade"
 ```
 
-Pass when: each sheet shows a "Look" row after the last existing row, one line of chips, "None" first and "Warm fade" prominent in the accent colour; the video shots show "Shown in the viewfinder only. Video is recorded without it." under the row, the photo shots no reason line; the landscape video shot is scrolled so the Look row is fully visible; the data-rate footer still follows in video; nothing clipped or wrapped, every other row as in the camera core's `t4-record-*` shots.
+Pass when: each sheet shows a "Look" row after the last existing row, one line of chips, "None" first and "Warm fade" prominent in the accent colour; the video shots show "Shown in the viewfinder only. Video is recorded without it." under the row, the photo shots no reason line; the landscape video shot is scrolled so the Look row is fully visible; the data-rate footer still follows in video; nothing clipped or wrapped, every other row as in the camera core's baseline shots in `docs/screenshots/p1a/` (`t4-record-photo-v`, `-video-v`, `-video-h`; compare `e2-settings-photo-h` against the video-h layout, as there is no photo-h baseline).
 
 - [ ] **Step 6: Commit**
 
@@ -331,7 +331,7 @@ git commit -m "feat: choose a look in record settings and name it in the summary
 - Test: `OpenCamTests/StandInLookTests.swift`
 
 **Interfaces:**
-- Consumes: Task 1 `CameraLook`; Task 2 `isLookOffered`; E1 `LookRenderer.shared.renderColourAndVignette(_:cube:vignette:)`, `LookRenderer.cgImage(_:)`, `LookCompiler.cube(for:)`, `LookSeeder.warmFade`.
+- Consumes: Task 1 `CameraLook`; Task 2 `isLookOffered`; E1 `LookRenderer.shared.renderColourAndVignette(_:cube:vignette:)`, `LookRenderer.shared.cgImage(_:)`, `LookCompiler.cube(for:)`, `LookSeeder.warmFade`.
 - Produces:
 
 ```swift
@@ -342,7 +342,7 @@ git commit -m "feat: choose a look in record settings and name it in the summary
 }
 struct LookStandIn: View { let look: CameraLook?; var captionTopInset: CGFloat = 0 }
     // nil: ViewfinderStandIn(captionTopInset:) exactly as today. A look: the stand-in rendered once per size and look
-    // (.task(id:) on both), drawn filling the area, with StandInCaption on top; the plain stand-in shows until the image is ready.
+    // (.task(id:) keyed on size, scale and look), drawn filling the area, with StandInCaption on top; the plain stand-in shows until the image is ready.
 extension CameraModel {
     var viewfinderLook: CameraLook? { get }   // cameraLook while isLookOffered; Task 5 adds the frame fallback
 }
@@ -387,7 +387,7 @@ for o in portrait landscape; do s=${o:0:1}; [[ $s == p ]] && s=v || s=h
 done
 ```
 
-Pass when: `e2-camera-none-photo-v` matches the camera core's photo shot and its summary has no look name; in the four look shots the stand-in is visibly warmer and flatter with darker corners than `e2-camera-none-photo-v`, "No camera in Simulator" still shows in its capsule, the summary ends with "Warm fade" (stacked as one more line in portrait photo), and no other part of the summary or bar is pushed out or clipped.
+Pass when: `e2-camera-none-photo-v` matches the camera core's photo shot and its summary has no look name; in the four look shots the stand-in is visibly warmer and flatter with darker corners than `e2-camera-none-photo-v`, "No camera in Simulator" still shows in its capsule, the summary ends with "Warm fade" (stacked as one more line in portrait photo), and no other part of the summary or bar is pushed out or clipped, and the picture keeps its full width on the folded display; if the third summary line makes it shrink, say so in the report.
 
 - [ ] **Step 6: Commit**
 
@@ -402,7 +402,7 @@ git commit -m "feat: show the selected look on the simulator viewfinder"
 
 **Files:**
 - Create: `OpenCam/Render/LookBaker.swift`, `OpenCam/Render/LookBakeError.swift`, `OpenCam/Capture/LookCapture.swift`, `OpenCam/Capture/LookCaptureOutcome.swift`
-- Modify: `OpenCam/Capture/PhotoCaptureResult.swift` (`var heldPhoto: Data? = nil`), `OpenCam/Capture/PhotoCaptureDelegate.swift` (`init(dngURL:heicURL:holdsProcessed: Bool = false)`; when holding, the processed photo's `fileDataRepresentation()` is kept in `State` instead of written and returned as `heldPhoto`; `.noPhotoData` only when nothing was saved and nothing held), `OpenCam/Capture/PhotoCapturer.swift` and `OpenCam/Capture/CameraSession.swift` (`capture`/`capturePhoto` gain `holdsProcessed: Bool = false`, passed through), `OpenCam/App/CameraModel.swift` (`capturePhoto()` reads `let look = cameraLook` at the press; with a look it passes `holdsProcessed: option.format != .raw` and awaits `LookCapture.finish` inside the same `photoCaptures[sequence]` task, so a configure or rescan waits for the bake; `photoFinished(requested:result:lookNotice:)` shows the `PhotoSaveReport` notice when there is one, else `lookNotice`, else clears `.capture`. With None every call is today's), `OpenCam/Render/PhotoExporter.swift` (no change; `carriedMetadata(from:size:)` is reused)
+- Modify: `OpenCam/Capture/PhotoCaptureResult.swift` (`var heldPhoto: Data? = nil`), `OpenCam/Capture/PhotoCaptureDelegate.swift` (`init(dngURL:heicURL:holdsProcessed: Bool = false)`; when holding, the processed photo's `fileDataRepresentation()` is kept in `State` instead of written and returned as `heldPhoto`; `.noPhotoData` only when nothing was saved and nothing held), `OpenCam/Capture/PhotoCapturer.swift` and `OpenCam/Capture/CameraSession.swift` (`capture`/`capturePhoto` gain `holdsProcessed: Bool = false`, passed through), `OpenCam/App/CameraModel.swift` (`capturePhoto()` reads `let look = cameraLook` at the press; with a look it passes `holdsProcessed: option.format != .raw` and awaits `LookCapture.finish` inside the same `photoCaptures[sequence]` task, so a configure or rescan waits for the bake; `photoFinished(requested:result:lookNotice:)` shows the `PhotoSaveReport` notice when there is one, else `lookNotice`, else clears `.capture`. With None every call is today's), `OpenCam/Render/PhotoExporter.swift` (no change; `carriedMetadata(from:size:)` is reused). The model makes the `EditStore` for `finish` as `EditStore(directory: store.directory)` from its capture store, as `OpenCamApp.swift` does
 - Test: `OpenCamTests/LookBakerTests.swift`, `OpenCamTests/LookCaptureTests.swift`
 
 **Interfaces:**
@@ -427,7 +427,7 @@ nonisolated enum LookCapture {
 }
 ```
 
-`finish` rules, in order: (a) a held photo is baked and written to `heicURL` with `.withoutOverwriting`; if baking throws, the held bytes are written unchanged and the notice is `lookNotApplied`; if that write fails, `heicURL` is not saved and the result's error becomes `.writeFailed(path: heicURL.lastPathComponent, reason:)` unless it already had one; a saved `heicURL` is appended to `saved`; `heldPhoto` is nil in the outcome. (b) Only for `.raw` with `dngURL` in `saved`: `edits.save(PhotoEdit(adjustments: look.adjustments, lookName: look.name), stem:)` with the stem `dngURL.deletingPathExtension().lastPathComponent`; a failure is logged and the notice is `lookNotSaved`. (c) `.rawPlusHEIF` and `.heif` never write an edit file. The DNG is never opened.
+`finish` rules, in order: (a) a held photo is baked and written to `heicURL` with `.withoutOverwriting`; if baking throws, the held bytes are written unchanged and the notice is `lookNotApplied`; a failed write of the baked bytes is not retried with the held bytes: the error becomes `.writeFailed`, the look notice is nil and the save report's notice wins; if the write of the held bytes fails, `heicURL` is not saved and the result's error becomes `.writeFailed(path: heicURL.lastPathComponent, reason:)` unless it already had one; a saved `heicURL` is appended to `saved`; `heldPhoto` is nil in the outcome. (b) Only for `.raw` with `dngURL` in `saved`: `edits.save(PhotoEdit(adjustments: look.adjustments, lookName: look.name), stem:)` with the stem `dngURL.deletingPathExtension().lastPathComponent`; a failure is logged and the notice is `lookNotSaved`. (c) `.rawPlusHEIF` and `.heif` never write an edit file. The DNG is never opened. The short `path:` (`heicURL.lastPathComponent`) follows `PhotoCaptureDelegate`'s existing `.writeFailed` and is the one exception to the full-path rule.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -542,7 +542,7 @@ git commit -m "feat: bake the selected look into captured photos"
 
 **Files:**
 - Create in `OpenCam/Capture/`: `FramePipeline.swift`, `FrameSlot.swift`, `FrameOrientation.swift`, `FrameWatch.swift`, `FrameFit.swift`; Create `OpenCam/App/CameraModel+Frames.swift`, `OpenCam/UI/FrameView.swift` (`UIViewRepresentable`), `OpenCam/UI/FrameMetalView.swift` (`MTKView` subclass)
-- Modify: `OpenCam/Capture/SessionConfiguration.swift` (`var needsFrames = false`; `make` gains `needsFrames: Bool = false`), `OpenCam/Capture/SessionEvent.swift` (`case framesUnavailable`: the data output could not be added; the viewfinder keeps the preview layer), `OpenCam/Capture/PreviewSource.swift` (`let frames: FramePipeline`; the doc comment says the pipeline is `Sendable` and adds nothing to the unchecked crossing), `OpenCam/Capture/CameraSession.swift` (owns `let frames = FramePipeline()` and one `AVCaptureVideoDataOutput` with `alwaysDiscardsLateVideoFrames = true`, `automaticallyConfiguresOutputBufferDimensions = false`, `deliversPreviewSizedOutputBuffers = true`, delegate `frames` on `frames.queue`; `apply(_:)` calls `attachFrameOutput(configuration.needsFrames)` after `attachMovieOutput`, inside the same `beginConfiguration`/`commitConfiguration`; with `needsFrames` false it removes the output if attached, so a None configuration leaves today's outputs; when it cannot be added it does not throw, it yields `.framesUnavailable` and the configure stands), `OpenCam/UI/PreviewUIView.swift` (each `applyRotation(_:)`, and every `didConfigureNotification` even for the same camera, also applies `FrameOrientation.plan` to the `AVCaptureVideoDataOutput` found in `source.session.outputs`: its connection's mirroring and rotation, and the remainder through `source.frames.setOrientation(_:)`), `OpenCam/UI/ViewfinderArea.swift` (`.ready`: `CameraPreviewView` always stays in the hierarchy; with a look, `FrameView` sits on top and the preview takes `.opacity(0)` once the first frame is drawn; with None, `FrameView` is gone and the preview shows at once), `OpenCam/App/CameraModel.swift` (`sessionConfiguration` passes `needsFrames: needsFrames`; `selectionChanged()` sets `isLookViewfinderUnavailable = false` and clears the `.look` notice before `settleLook()`; `enqueueConfigure`'s success path calls `watchFrames(for: configuration)`; `apply(_:)` maps `.framesUnavailable` to `framesUnavailable()`; stored `var isLookViewfinderUnavailable = false`, `@ObservationIgnored var frameWatch: Task<Void, Never>?`), `OpenCam/App/CameraModel+Look.swift` (`viewfinderLook` is also nil while `isLookViewfinderUnavailable`; `summaryLookName` is nil in video mode while it is)
+- Modify: `OpenCam/Capture/SessionConfiguration.swift` (`var needsFrames = false`; `make` gains `needsFrames: Bool = false`), `OpenCam/Capture/SessionEvent.swift` (`case framesUnavailable`: the data output could not be added; the viewfinder keeps the preview layer), `OpenCam/Capture/PreviewSource.swift` (`let frames: FramePipeline`; the doc comment says the pipeline is `Sendable` and adds nothing to the unchecked crossing), `OpenCam/Capture/CameraSession.swift` (owns `let frames = FramePipeline()` and one `AVCaptureVideoDataOutput` with `alwaysDiscardsLateVideoFrames = true`, `automaticallyConfiguresOutputBufferDimensions = false`, `deliversPreviewSizedOutputBuffers = true`, delegate `frames` on `frames.queue`; `apply(_:)` calls `attachFrameOutput(configuration.needsFrames)` after `attachMovieOutput`, inside the same `beginConfiguration`/`commitConfiguration`; with the output attached it sets `automaticallyAdjustsVideoMirroring = false` and `isVideoMirrored` (true for a front camera, read from `position` at runtime) on the data output's connection when `isVideoMirroringSupported`, and tells the pipeline through `frames.setCamera(isFront:connectionCanMirror:)`; the connection's rotation angle is never set; with `needsFrames` false it removes the output if attached, so a None configuration leaves today's outputs; when it cannot be added it does not throw, it yields `.framesUnavailable` and the configure stands), `OpenCam/UI/PreviewUIView.swift` (split: the `didConfigureNotification` observer always calls a new `applyFrameOrientation()`, which passes `rotationCoordinator?.videoRotationAngleForHorizonLevelPreview` to `source.frames.setAngle(_:)`, then `updateRotationCoordinator()`, so the coordinator is still rebuilt only for a new camera; `applyRotation(_:)` calls it too. It never reads `session.outputs` and never touches the data output's connection, and with no data output in `session.outputs` nothing changes), `OpenCam/UI/ViewfinderArea.swift` (`.ready`: `CameraPreviewView` and `FrameView` sit in a `ZStack` in both cases, so turning a look on or off never rebuilds the preview; with a look, `FrameView` is on top and the preview takes `.opacity(0)` once the first frame is drawn; with None, `FrameView` is absent and the preview shows at once), `OpenCam/App/CameraModel.swift` (`sessionConfiguration` passes `needsFrames: needsFrames`; `selectionChanged()` sets `isLookViewfinderUnavailable = false` and clears the `.look` notice before `settleLook()`; `enqueueConfigure`'s success path, `start(session:)` after `session.start()`, and `returnCameraFromLibrary()` after `configurator.start()` call `watchFrames(for: configuration)`, so a stalled look at launch or after the Library gets its notice; `apply(_:)` maps `.framesUnavailable` to `framesUnavailable()`; stored `var isLookViewfinderUnavailable = false`, `@ObservationIgnored var frameWatch: Task<Void, Never>?`), `OpenCam/App/CameraModel+Look.swift` (`viewfinderLook` is also nil while `isLookViewfinderUnavailable`; `summaryLookName` is nil in video mode while it is)
 - Test: `OpenCamTests/FrameRuleTests.swift`, `OpenCamTests/FramePartsTests.swift`
 
 **Interfaces:**
@@ -556,11 +556,10 @@ nonisolated struct FrameSlot<Frame: Sendable>: Sendable {
     mutating func take() -> Frame?             // the newest frame once; nil until another arrives
 }
 nonisolated struct FrameOrientation: Sendable, Equatable {
-    var connectionAngle: CGFloat?              // set on the connection; nil when it cannot rotate
-    var connectionMirrors: Bool                // isVideoMirrored on the connection (automaticallyAdjustsVideoMirroring = false first)
-    var imageRotation: CGImagePropertyOrientation   // applied by the pipeline: .up, or .right/.down/.left for 90/180/270
+    var connectionMirrors: Bool                // isVideoMirrored on the connection, set inside CameraSession.apply (automaticallyAdjustsVideoMirroring = false first)
+    var imageRotation: CGImagePropertyOrientation   // always applied by the pipeline: .up, or .right/.down/.left for 90/180/270; the connection's angle is never set
     var imageMirrors: Bool                     // the pipeline flips horizontally after rotating
-    static func plan(angle: CGFloat, isFront: Bool, connectionRotates: Bool, connectionMirrors: Bool) -> FrameOrientation
+    static func plan(angle: CGFloat, isFront: Bool, connectionCanMirror: Bool) -> FrameOrientation
 }
 nonisolated enum FrameWatch {
     static let timeout: Duration = .seconds(2)
@@ -573,17 +572,18 @@ nonisolated final class FramePipeline: NSObject, AVCaptureVideoDataOutputSampleB
     let queue: DispatchSerialQueue             // "opencam.frames"
     init(renderer: LookRenderer = .shared)
     func setLook(_ adjustments: Adjustments?)  // the table comes from its own ColourCubeCache on the frame queue, built once per look
-    func setOrientation(_ orientation: FrameOrientation)
+    func setAngle(_ angle: CGFloat)            // from PreviewUIView's rotation coordinator; the pipeline applies FrameOrientation.plan
+    func setCamera(isFront: Bool, connectionCanMirror: Bool)   // from CameraSession.apply
     func takeLatest() -> CIImage?
     var deliveredCount: Int { get }
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection)
         // pixel buffer -> CIImage -> remaining rotation and mirror -> renderColourAndVignette -> slot; nothing kept without a look
 }
 final class FrameMetalView: MTKView { init(frames: FramePipeline, onFirstFrame: @escaping () -> Void) }
-    // MTLCreateSystemDefaultDevice(), framebufferOnly false, layer colour space Display P3; each draw takes frames.takeLatest()
+    // MTLCreateSystemDefaultDevice(), framebufferOnly = false, `(layer as? CAMetalLayer)?.colorspace` set to Display P3, colorPixelFormat `.bgra8Unorm` (8-bit, the same depth as the editor's proxy preview); each draw takes frames.takeLatest()
     // and returns early when there is none; renders through LookRenderer.shared.context into the drawable with FrameFit.
 struct FrameView: UIViewRepresentable { let frames: FramePipeline; let look: CameraLook; let onFirstFrame: () -> Void }
-    // calls frames.setLook(look.adjustments) when made and when the look changes
+    // calls frames.setLook(look.adjustments) when made and when the look changes; dismantleUIView calls frames.setLook(nil), which empties the slot
 extension CameraModel {
     static let framesUnavailableNotice = "The look cannot be shown in the viewfinder with this format."
     var needsFrames: Bool { get }           // cameraLook != nil && isLookOffered && !isLookViewfinderUnavailable
@@ -593,7 +593,7 @@ extension CameraModel {
 }
 ```
 
-The `plan` table the tests pin: front cameras (`AVCaptureDevice.position == .front`, the Duo's outer and inner cameras) are mirrored, back cameras never; mirroring goes on the connection when it supports it, else to the image; the angle goes on the connection when `isVideoRotationAngleSupported(angle)`, else to the image (AVCaptureSession.h:1089: ProRes RAW buffers cannot be rotated). The rotation coordinator is the preview layer's, whose preview angle stays valid because the hidden layer remains in the view hierarchy (AVCaptureDevice.h:3117).
+The `plan` table the tests pin: front cameras (`AVCaptureDevice.position == .front`, read at runtime) are mirrored, back cameras never; mirroring goes on the connection when it supports it, else to the image; the image is always turned by the angle (0, 90, 180, 270 to `.up`, `.right`, `.down`, `.left`), because setting the angle on a data output's connection physically rotates buffers and needs a lengthy capture pipeline reconfiguration (AVCaptureSession.h:1085). The rotation coordinator is the preview layer's, whose preview angle stays valid because the hidden layer remains in the view hierarchy (AVCaptureDevice.h:3117).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -655,16 +655,16 @@ The `plan` table the tests pin: front cameras (`AVCaptureDevice.position == .fro
         #expect(slot.take() == 3); #expect(slot.take() == nil); #expect(slot.dropped == 2)
         slot.put(4); #expect(slot.take() == 4); #expect(slot.dropped == 2)
     }
-    @Test func orientationGoesToTheConnectionWhenItCanAndToTheImageOtherwise() {
-        #expect(FrameOrientation.plan(angle: 90, isFront: false, connectionRotates: true, connectionMirrors: true)
-                == FrameOrientation(connectionAngle: 90, connectionMirrors: false, imageRotation: .up, imageMirrors: false))
-        #expect(FrameOrientation.plan(angle: 90, isFront: true, connectionRotates: true, connectionMirrors: true)
-                == FrameOrientation(connectionAngle: 90, connectionMirrors: true, imageRotation: .up, imageMirrors: false))
-        #expect(FrameOrientation.plan(angle: 90, isFront: true, connectionRotates: false, connectionMirrors: false)
-                == FrameOrientation(connectionAngle: nil, connectionMirrors: false, imageRotation: .right, imageMirrors: true))
-        #expect(FrameOrientation.plan(angle: 180, isFront: false, connectionRotates: false, connectionMirrors: false).imageRotation == .down)
-        #expect(FrameOrientation.plan(angle: 270, isFront: false, connectionRotates: false, connectionMirrors: false).imageRotation == .left)
-        #expect(FrameOrientation.plan(angle: 0, isFront: false, connectionRotates: false, connectionMirrors: false).imageRotation == .up)
+    @Test func theImageIsAlwaysTurnedByThePipelineAndMirroredOnTheConnectionWhenItCan() {
+        #expect(FrameOrientation.plan(angle: 90, isFront: false, connectionCanMirror: true)
+                == FrameOrientation(connectionMirrors: false, imageRotation: .right, imageMirrors: false))
+        #expect(FrameOrientation.plan(angle: 90, isFront: true, connectionCanMirror: true)
+                == FrameOrientation(connectionMirrors: true, imageRotation: .right, imageMirrors: false))
+        #expect(FrameOrientation.plan(angle: 90, isFront: true, connectionCanMirror: false)
+                == FrameOrientation(connectionMirrors: false, imageRotation: .right, imageMirrors: true))
+        #expect(FrameOrientation.plan(angle: 180, isFront: false, connectionCanMirror: false).imageRotation == .down)
+        #expect(FrameOrientation.plan(angle: 270, isFront: false, connectionCanMirror: false).imageRotation == .left)
+        #expect(FrameOrientation.plan(angle: 0, isFront: false, connectionCanMirror: false).imageRotation == .up)
     }
     @Test func watchStallsOnlyAfterTwoSecondsWithoutAFrame() {
         #expect(!FrameWatch.isStalled(framesSinceConfigure: 0, elapsed: .milliseconds(1900)))
@@ -743,7 +743,7 @@ git commit -m "fix: keep look states honest across the camera"
 **On the device** (owner; the Simulator cannot show any of it):
 - [ ] With None: the viewfinder, frame rate and photo capture feel exactly as before E2.
 - [ ] Choose "Warm fade" (seeded in the Simulator only, so make a look in the editor first): the viewfinder shows the look within a moment, upright and level in all four orientations, the preview layer never shows through, and switching back to None shows the plain preview at once.
-- [ ] The outer and inner front cameras show a mirrored look viewfinder, as the plain preview does; the back cameras do not.
+- [ ] The cameras that report `.front` show a mirrored look viewfinder, as the plain preview does; the others do not.
 - [ ] Lens, mode and format changes with a look on keep the look in the viewfinder; a format that cannot take it shows "The look cannot be shown in the viewfinder with this format." and the plain preview, and the next lens or format change tries again.
 - [ ] HEIF with a look: the saved `OC_000n.HEIC` shows the look, upright, in Display P3, with the camera's date and lens data, and matches the viewfinder and the editor's look tile by eye.
 - [ ] RAW + HEIF with a look: the DNG opens without the look; the HEIC has it; Library shows one item with the look; no `.edit.json` beside them.
