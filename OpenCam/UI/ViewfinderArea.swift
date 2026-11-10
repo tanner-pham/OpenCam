@@ -22,7 +22,7 @@ struct ViewfinderArea: View {
             } else {
                 Color.black
             }
-        case .scanning, .cameraDenied, .cameraRestricted, .failed:
+        case .scanning, .cameraDenied, .cameraRestricted, .failed, .released:
             Color.black
                 .overlay {
                     if let status = StatusText.viewfinder(phase) {

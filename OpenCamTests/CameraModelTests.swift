@@ -34,7 +34,7 @@ import Testing
     }
 
     @Test func noCameraNamesNothingAndMetersReadEmpty() throws {
-        for phase in [CameraPhase.cameraDenied, .cameraRestricted, .failed("The camera stopped."), .scanning] {
+        for phase in [CameraPhase.cameraDenied, .cameraRestricted, .failed("The camera stopped."), .scanning, .released] {
             let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
             model.phase = phase
             #expect(model.summaryParts == ["--"]); #expect(model.frameRateText == "--"); #expect(model.remainingText == "-- min")

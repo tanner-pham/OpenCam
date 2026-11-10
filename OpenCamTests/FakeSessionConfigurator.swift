@@ -5,7 +5,7 @@ import Foundation
 /// `startRecording` runs `onStartRecording` before it returns (a test can deliver a result there), and `stopRecording`
 /// answers `isClipInFlight`; no recording result is ever sent on its own.
 actor FakeSessionConfigurator: SessionConfigurator {
-    let failingLensIDs: Set<String>
+    private(set) var failingLensIDs: Set<String>
     let isClipInFlight: Bool
     let onStartRecording: @Sendable (URL, VideoOption) async -> Void
     private(set) var applied: [SessionConfiguration] = []
@@ -23,6 +23,11 @@ actor FakeSessionConfigurator: SessionConfigurator {
         self.failingLensIDs = failingLensIDs
         self.isClipInFlight = isClipInFlight
         self.onStartRecording = onStartRecording
+    }
+
+    /// From now on only these lenses fail to configure.
+    func setFailingLensIDs(_ ids: Set<String>) {
+        failingLensIDs = ids
     }
 
     func configure(_ configuration: SessionConfiguration) throws(CameraSessionError) {

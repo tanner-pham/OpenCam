@@ -3,6 +3,8 @@ import SwiftUI
 /// Format summary, audio meters, remaining time and the capture button. The histogram slot stays empty until the monitoring plan.
 struct BottomBar: View {
     let model: CameraModel
+    /// The side of the system's vertical bar. The bar keeps the screen's corner inset on the other side.
+    var stripEdge: HorizontalEdge? = .leading
 
     var body: some View {
         VStack(spacing: Theme.Space.xs) {
@@ -11,8 +13,8 @@ struct BottomBar: View {
             NoticeLine(model: model)
                 .frame(height: Theme.Size.noticeLine)
         }
-        .padding(.leading, Theme.Space.l)
-        .padding(.trailing, Theme.Size.cornerInset)
+        .padding(stripEdge == .trailing ? .trailing : .leading, Theme.Space.l)
+        .padding(stripEdge == .trailing ? .leading : .trailing, Theme.Size.cornerInset)
         .padding(.bottom, Theme.Space.s)
     }
 

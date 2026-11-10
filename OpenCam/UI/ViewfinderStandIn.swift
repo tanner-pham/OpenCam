@@ -4,6 +4,8 @@ import SwiftUI
 struct ViewfinderStandIn: View {
     /// Extra top inset for the caption when readouts float over the picture.
     var captionTopInset: CGFloat = 0
+    /// False for the Simulator sample pictures, which have no caption.
+    var showsCaption = true
 
     var body: some View {
         Canvas { context, size in
@@ -56,13 +58,15 @@ struct ViewfinderStandIn: View {
             context.stroke(string, with: .color(.white.opacity(0.8)), lineWidth: 1)
         }
         .overlay(alignment: .topLeading) {
-            Text("No camera in Simulator")
-                .font(.caption2)
-                .padding(.horizontal, Theme.Space.s)
-                .padding(.vertical, Theme.Space.xs)
-                .glassEffect(.regular, in: .capsule)
-                .padding(Theme.Space.s)
-                .padding(.top, captionTopInset)
+            if showsCaption {
+                Text("No camera in Simulator")
+                    .font(.caption2)
+                    .padding(.horizontal, Theme.Space.s)
+                    .padding(.vertical, Theme.Space.xs)
+                    .glassEffect(.regular, in: .capsule)
+                    .padding(Theme.Space.s)
+                    .padding(.top, captionTopInset)
+            }
         }
     }
 }

@@ -4,16 +4,22 @@ import SwiftUI
 struct FoldedHorizontalView: View {
     let model: CameraModel
     let size: CGSize
+    /// The system bars' top and bottom insets the controls keep clear of; zero on the folded phone.
+    var insets = EdgeInsets()
+    /// The side of the system's vertical bar; the readouts keep their wider inset for the screen's corner on the other side.
+    var stripEdge: HorizontalEdge?
 
     var body: some View {
         VStack(spacing: 0) {
-            TopReadoutBar(model: model)
+            TopReadoutBar(model: model, stripEdge: stripEdge)
                 .frame(height: Theme.Size.topBar)
             ViewfinderArea(phase: model.phase)
                 .frame(width: size.width, height: size.width * 9 / 16)
                 .clipped()
-            BottomBar(model: model)
+            BottomBar(model: model, stripEdge: stripEdge)
                 .frame(maxHeight: .infinity)
         }
+        .padding(.top, insets.top)
+        .padding(.bottom, insets.bottom)
     }
 }

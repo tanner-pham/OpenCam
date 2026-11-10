@@ -3,32 +3,35 @@ import SwiftUI
 
 struct CameraRootView: View {
     @Bindable var model: CameraModel
+    let library: LibraryStore?
+    let launch: LaunchConfig
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     private var isLandscape: Bool { verticalSizeClass == .compact }
 
+    init(model: CameraModel, library: LibraryStore?, launch: LaunchConfig) {
+        self.model = model
+        self.library = library
+        self.launch = launch
+    }
+
     var body: some View {
         NavigationStack {
-            GeometryReader { geo in
-                Group {
-                    if isLandscape {
-                        FoldedHorizontalView(model: model, size: geo.size)
-                    } else if model.mode == .video {
-                        FoldedVerticalVideoView(model: model, size: geo.size)
-                    } else {
-                        FoldedVerticalView(model: model, size: geo.size)
-                    }
-                }
-            }
-            .ignoresSafeArea(.container, edges: [.top, .bottom])
-            .background(Color.black.ignoresSafeArea())
-            .persistentSystemOverlays(.hidden)
-            .toolbar { StripToolbar(model: model, isLandscape: isLandscape) }
+            CameraLayout(model: model, isLandscape: isLandscape)
+                .background(Color.black.ignoresSafeArea())
+                .persistentSystemOverlays(.hidden)
+                .toolbar { StripToolbar(model: model, library: library, isLandscape: isLandscape) }
         }
         // The Camera Control takes the photo or starts and stops recording, through the same rules as the on-screen button.
         // Always enabled while this screen shows: a disabled interaction hands the button back to the system, which opens
         // Apple's Camera app. When capture is not allowed the model ignores the press.
         .onCameraCaptureEvent { model.handleCaptureEvent(phase: $0.phase) }
+        // An import still running when the Library closed lands after the close read the last capture.
+        .onChange(of: library?.importsFinished) { model.libraryImportFinished() }
+        .fullScreenCover(isPresented: Binding(get: { model.isLibraryPresented && library != nil }, set: { model.isLibraryPresented = $0 }),
+                         onDismiss: { Task { await model.closeLibrary() } }) {
+            if let library { LibraryView(library: library, launch: launch) }
+        }
         .sheet(item: $model.sheet) { sheet in
             switch sheet {
             case .record:

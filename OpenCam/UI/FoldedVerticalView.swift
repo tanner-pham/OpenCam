@@ -4,11 +4,14 @@ import SwiftUI
 struct FoldedVerticalView: View {
     let model: CameraModel
     let size: CGSize
+    /// The system bars' top and bottom insets the controls keep clear of; zero on the folded phone.
+    var insets = EdgeInsets()
 
     var body: some View {
-        VStack(spacing: 0) {
+        // 3:4 across the full width when it fits (the folded phone); otherwise as large as the controls below leave room
+        // for, still 3:4, so the readouts, shutter row and notice line always show in full.
+        PictureAboveControlsLayout(pictureAspect: 3 / 4) {
             ViewfinderArea(phase: model.phase)
-                .frame(width: size.width, height: size.width * 4 / 3)
                 .clipped()
 
             VStack(spacing: Theme.Space.s) {
@@ -27,11 +30,15 @@ struct FoldedVerticalView: View {
                     Color.clear.frame(maxWidth: .infinity)
                 }
                 .padding(.horizontal, Theme.Space.l)
+                // The glass button draws beyond its label; the row keeps room for all of it when the picture takes the rest.
+                .frame(minHeight: Theme.Size.captureButton + Theme.Space.l)
                 NoticeLine(model: model)
                     .frame(height: Theme.Size.noticeLine)
             }
             .padding(.top, Theme.Space.s)
             .frame(maxHeight: .infinity, alignment: .top)
         }
+        .padding(.top, insets.top)
+        .padding(.bottom, insets.bottom)
     }
 }

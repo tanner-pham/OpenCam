@@ -14,6 +14,8 @@ final class CameraModel {
     var record: RecordSelection { didSet { selectionChanged() } }
     var photo: PhotoSelection { didSet { selectionChanged() } }
     var sheet: CameraSheet?
+    /// True at launch when the screen is the Library or the Editor; the Library is a full-screen cover.
+    var isLibraryPresented: Bool
     var phase: CameraPhase
     var freeBytes: Int64
     /// Set only through `show(_:from:)` and cleared only through `clearNotice(from:)`, so each event clears only its own.
@@ -72,7 +74,7 @@ final class CameraModel {
     @ObservationIgnored private var isAwaitingRestore: Bool
     /// The running session, for capture; set by `start(session:)`.
     @ObservationIgnored var cameraSession: CameraSession?
-    /// Created on the first capture.
+    /// Injected so photos, recordings, sweeps and imports number files from one store; otherwise created on first use.
     @ObservationIgnored private var captureStore: CaptureStore?
     /// Photo captures still running, by file number. A configure queued after a press waits for them,
     /// because Bayer RAW needs the zoom unchanged until the capture ends (AVCapturePhotoOutput.h).
@@ -86,11 +88,19 @@ final class CameraModel {
     @ObservationIgnored var unreportedClips: Set<String> = []
     /// What put `notice` there; nil when no notice is shown.
     @ObservationIgnored var noticeSource: NoticeSource?
+    /// False when the Library could not be built at launch; its item then says so instead of opening it.
+    @ObservationIgnored let isLibraryAvailable: Bool
+    /// The tail of the serial chain that releases the camera for the Library and takes it back.
+    @ObservationIgnored var libraryHandoff: Task<Void, Never>?
+    /// True from the moment the session let go of its camera for the Library until it runs again.
+    @ObservationIgnored var isCameraReleasedForLibrary = false
 
     static let formatFailedNotice = "That format could not be used."
     static let formatSetupFailed = "This format could not be set up."
     init(config: LaunchConfig, capabilities: CaptureCapabilities, isSimulator: Bool, defaults: UserDefaults = .standard,
-         capabilitySource: CapabilitySource = .device) {
+         capabilitySource: CapabilitySource = .device, captureStore: CaptureStore? = nil, isLibraryAvailable: Bool = true) {
+        self.captureStore = captureStore
+        self.isLibraryAvailable = isLibraryAvailable
         self.capabilities = capabilities
         self.defaults = defaults
         self.capabilitySource = capabilitySource
@@ -112,7 +122,9 @@ final class CameraModel {
         case .main: self.sheet = nil
         case .record: self.sheet = .record
         case .sweep: self.sheet = .sweep
+        case .library, .editor: self.sheet = nil
         }
+        self.isLibraryPresented = config.screen == .library || config.screen == .editor
 
         let saved = config.isScripted ? nil : SavedSelections.load(from: defaults)
         let resolved = Self.resolve(lensID: saved?.lensID, record: saved?.record, photo: saved?.photo, in: capabilities)
@@ -245,8 +257,10 @@ final class CameraModel {
     /// Audio meters and the remaining-time estimate describe video recording, so photo mode hides them.
     var showsVideoReadouts: Bool { mode == .video }
 
+    /// Never while the Library covers the camera, whatever the phase says: a Camera Control press under it would capture
+    /// something nobody can see.
     var canCapture: Bool {
-        guard !isSweeping, StatusText.canRecord(phase: phase, mode: mode, minutesRemaining: minutesRemaining) else { return false }
+        guard !isSweeping, !isLibraryPresented, StatusText.canRecord(phase: phase, mode: mode, minutesRemaining: minutesRemaining) else { return false }
         switch mode {
         case .video: return currentVideoOption != nil
         case .photo: return currentPhotoOption != nil
@@ -304,6 +318,11 @@ final class CameraModel {
     /// Offers the newest photo or clip already in the captures folder; a capture made since then stays.
     func loadLastCapture() {
         guard lastCapture == nil else { return }
+        refreshLastCapture()
+    }
+
+    /// Reads the newest photo or clip again, so one deleted in the Library stops showing and an import counts.
+    func refreshLastCapture() {
         if captureStore == nil {
             do throws(CaptureStoreError) {
                 captureStore = try CaptureStore.appDefault()
@@ -542,6 +561,7 @@ extension CameraModel {
         cameraSession = session
         await session.start()
         phase = .ready
+        releaseIfLibraryOpen()
         await withDiscardingTaskGroup { group in
             group.addTask { await self.followRecordings(of: session) }
             group.addTask { await self.pollMeters(of: session) }
@@ -613,8 +633,14 @@ extension CameraModel {
             phase = .failed("The camera stopped.")
         case .restarted:
             // The session runs again, so a pause notice is stale; any other notice stays. A clip recording before the
-            // reset is gone, and the movie output may never report it.
-            phase = .ready
+            // reset is gone, and the movie output may never report it. With the Library open the camera ends released, a
+            // release queued whatever the phase was (one that already ran makes the queued one do nothing). With the Library
+            // closed after a failed return the session holds no camera, so the failed state stands until the next close
+            // retries.
+            if !isCameraReleasedForLibrary || isLibraryPresented {
+                phase = .ready
+                releaseIfLibraryOpen()
+            }
             isInterrupted = false
             clearNotice(from: .interruption)
             endRecordingWithoutResult(clip: nil, context: "restarted")
