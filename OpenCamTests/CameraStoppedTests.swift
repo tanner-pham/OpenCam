@@ -199,6 +199,20 @@ import Testing
         #expect(model.phase == .failed("The camera stopped."))
     }
 
+    /// A confirmation armed just before a media-services reset never marks the camera ready, and nothing starts the session
+    /// beside the reset's own restart; `.restarted` does.
+    @Test func aConfirmationArmedBeforeAResetNeverMarksTheCameraReady() async throws {
+        let (model, fake, _) = try attachedModel()
+        model.apply(.runtimeError("[CameraSession:runtimeError] Session stopped — {code: -11819}"))
+        #expect(!model.isCameraStopped); #expect(!model.canOpenRecordSettings)
+        model.retryCamera()
+        await model.waitForQueuedConfigures()
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(model.phase == .failed("The camera stopped.")); #expect(model.confirmed == nil); #expect(await fake.calls.isEmpty)
+        model.apply(.restarted)
+        #expect(model.phase == .ready)
+    }
+
     /// The clip ends as it always has; only then does the camera restart.
     @Test func aStopWhileRecordingRecoversOnceTheClipHasEnded() async throws {
         let (model, fake, _) = try attachedModel()

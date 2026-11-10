@@ -91,6 +91,9 @@ final class CameraModel {
     @ObservationIgnored var autoRestarted: SessionConfiguration?
     /// True when a runtime error came during a recording or a sweep; the recovery runs once that ends.
     @ObservationIgnored var isRecoveryDeferred = false
+    /// True from a media-services reset until its `.restarted` (or a later runtime error that is not a reset): the session
+    /// restarts itself meanwhile, so the camera is not in the stopped state and nothing here starts it.
+    var isResettingMediaServices = false
     /// The mode a first launch picks, for the default selection.
     @ObservationIgnored let launchMode: CaptureMode
     /// True while several selection properties are set as one change (a restore or a capabilities load);
@@ -746,12 +749,18 @@ extension CameraModel {
             clearNotice(from: .interruption)
             rewatchFrames()
         case .runtimeError(let message) where Self.isMediaServicesReset(message):
-            // Sets no notice; the phase says the camera stopped. The session restarts itself and `.restarted` follows.
+            // Sets no notice; the phase says the camera stopped. The session restarts itself and `.restarted` follows, so no
+            // pending confirmation may mark the camera ready and nothing here starts it meanwhile.
             Self.logger.error("\(message, privacy: .public)")
+            runtimeErrorCount += 1
+            confirmation?.cancel()
+            confirmation = nil
+            isResettingMediaServices = true
             phase = .failed(Self.cameraStopped)
         case .runtimeError(let message):
             cameraStopped(message)
         case .restarted:
+            isResettingMediaServices = false
             // The session runs again, so a pause notice is stale; any other notice stays. A clip recording before the
             // reset is gone, and the movie output may never report it. With the Library open the camera ends released, a
             // release queued whatever the phase was (one that already ran makes the queued one do nothing). With the Library

@@ -9,8 +9,9 @@ extension CameraModel {
     /// How long a configuration must run without a runtime error before it counts as confirmed.
     static let runningConfirmation: Duration = .milliseconds(1500)
 
-    /// True in the stopped state: `phase == .failed(cameraStopped)` with a session attached.
-    var isCameraStopped: Bool { phase == .failed(Self.cameraStopped) && configurator != nil }
+    /// True in the stopped state: `phase == .failed(cameraStopped)` with a session attached, and no media-services reset in
+    /// progress (the reset's own `.restarted` decides the phase).
+    var isCameraStopped: Bool { phase == .failed(Self.cameraStopped) && configurator != nil && !isResettingMediaServices }
 
     /// The Library (released), a rescan or a sweep holds the session; each configures and starts it again when it ends,
     /// so nothing here starts it meanwhile.
@@ -31,6 +32,8 @@ extension CameraModel {
         runtimeErrorCount += 1
         confirmation?.cancel()
         confirmation = nil
+        // A reset whose restart never came is over; this error is handled as any other.
+        isResettingMediaServices = false
         // Released for the Library: the session is stopped on purpose, and the Library's return configures and starts it
         // again; that return is the one recovery.
         if phase == .released {
