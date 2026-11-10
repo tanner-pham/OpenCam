@@ -66,6 +66,8 @@ extension CameraModel {
     private func returnCameraFromLibrary() async {
         // Opened again before this step ran: the camera stays released for that Library.
         guard !isLibraryPresented else { return }
+        // Every look change happens under the Library, so the looks are read again on every path, before the selection is configured.
+        reloadLooks()
         defer { refreshLastCapture() }
         guard isCameraReleasedForLibrary, let configurator else {
             // Closed before the release ran: the session never let go, so the camera is simply back.

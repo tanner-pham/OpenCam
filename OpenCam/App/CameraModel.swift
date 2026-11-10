@@ -39,6 +39,10 @@ final class CameraModel {
     private(set) var readouts = LiveReadouts()
     /// The latest format sweep, kept after it ends so its result stays on screen.
     var sweep: FormatSweep?
+    /// The saved looks, read at launch and whenever the Library closes.
+    var looks: [Look] = []
+    /// The look the camera applies; nil is None. Set only by `CameraModel+Look`.
+    var cameraLook: CameraLook?
     /// True from the start of a sweep until the user's selection is back. Lens, mode, selection, capture, Record settings
     /// and rescans are all held meanwhile, and nothing is saved as the user's selection.
     var isSweeping = false
@@ -90,6 +94,8 @@ final class CameraModel {
     @ObservationIgnored var noticeSource: NoticeSource?
     /// False when the Library could not be built at launch; its item then says so instead of opening it.
     @ObservationIgnored let isLibraryAvailable: Bool
+    /// The store shared with the Library and the editor; nil when none could be made, and the camera then has only None.
+    @ObservationIgnored let lookStore: LookStore?
     /// The tail of the serial chain that releases the camera for the Library and takes it back.
     @ObservationIgnored var libraryHandoff: Task<Void, Never>?
     /// True from the moment the session let go of its camera for the Library until it runs again.
@@ -98,8 +104,10 @@ final class CameraModel {
     static let formatFailedNotice = "That format could not be used."
     static let formatSetupFailed = "This format could not be set up."
     init(config: LaunchConfig, capabilities: CaptureCapabilities, isSimulator: Bool, defaults: UserDefaults = .standard,
-         capabilitySource: CapabilitySource = .device, captureStore: CaptureStore? = nil, isLibraryAvailable: Bool = true) {
+         capabilitySource: CapabilitySource = .device, captureStore: CaptureStore? = nil, isLibraryAvailable: Bool = true,
+         lookStore: LookStore? = nil) {
         self.captureStore = captureStore
+        self.lookStore = lookStore
         self.isLibraryAvailable = isLibraryAvailable
         self.capabilities = capabilities
         self.defaults = defaults
@@ -132,6 +140,13 @@ final class CameraModel {
         self.mode = saved?.mode ?? config.mode
         self.record = resolved.record ?? Self.placeholderRecord
         self.photo = resolved.photo ?? Self.placeholderPhoto
+        let looks = lookStore?.all() ?? []
+        self.looks = looks
+        if let name = config.cameraLookName {
+            self.cameraLook = looks.first { $0.name == name }.map(CameraLook.init)
+        } else {
+            self.cameraLook = CameraLook.reconciled(saved?.look, with: looks)
+        }
         // A device launch starts with no capabilities, so the saved choices wait for real ones and must not be overwritten meanwhile.
         self.isAwaitingRestore = !config.isScripted && capabilities.lenses.isEmpty
         if isSimulator { simulate(config.simulatedState) }
@@ -414,10 +429,10 @@ final class CameraModel {
     }
 
     var currentSelection: SavedSelections {
-        SavedSelections(mode: mode, lensID: lensID, record: record, photo: photo)
+        SavedSelections(mode: mode, lensID: lensID, record: record, photo: photo, look: cameraLook)
     }
 
-    private func selectionChanged() {
+    func selectionChanged() {
         guard !isApplyingSelection else { return }
         persist()
         enqueueConfigure()

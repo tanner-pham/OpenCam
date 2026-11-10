@@ -18,14 +18,17 @@ struct OpenCamApp: App {
         self.config = config
         // One capture store serves the camera and the Library, so photos, recordings, sweeps and imports share one numbering.
         let captureStore = Self.makeCaptureStore()
-        let library = captureStore.flatMap { Self.makeLibrary(captures: $0, config: config) }
+        // One look store serves the camera, the Library and the editor. It is made, and seeded, before the camera model so a
+        // -cameraLook launch finds its look.
+        let looks = Self.makeLookStore(config: config)
+        let library = captureStore.flatMap { captures in looks.flatMap { Self.makeLibrary(captures: captures, looks: $0, config: config) } }
         _library = State(initialValue: library)
         #if targetEnvironment(simulator)
         // The fixture stands in for the scan in the Simulator only.
         do {
             let capabilities = try CaptureCapabilities.bundledFixture()
             _model = State(initialValue: CameraModel(config: config, capabilities: capabilities, isSimulator: true, captureStore: captureStore,
-                                                     isLibraryAvailable: library != nil))
+                                                     isLibraryAvailable: library != nil, lookStore: looks))
         } catch {
             Self.logger.error("[OpenCamApp:init] Fixture failed to load — {error: \(String(describing: error), privacy: .public)}")
             _model = State(initialValue: nil)
@@ -35,7 +38,7 @@ struct OpenCamApp: App {
         // On the device nothing is known until the scan or the cache provides it.
         let empty = CaptureCapabilities(lenses: [], videoOptions: [], photoOptions: [], osBuild: "", modelIdentifier: "")
         _model = State(initialValue: CameraModel(config: config, capabilities: empty, isSimulator: false, captureStore: captureStore,
-                                                 isLibraryAvailable: library != nil))
+                                                 isLibraryAvailable: library != nil, lookStore: looks))
         _session = State(initialValue: CameraSession())
         #endif
     }
@@ -71,16 +74,8 @@ struct OpenCamApp: App {
         }
     }
 
-    private static func makeLibrary(captures: CaptureStore, config: LaunchConfig) -> LibraryStore? {
-        #if targetEnvironment(simulator)
-        if config.seedsSamples {
-            do throws(LibraryError) {
-                _ = try SampleSeeder.seedIfEmpty(captures)
-            } catch {
-                logger.error("\(error.description, privacy: .public)")
-            }
-        }
-        #endif
+    /// Nil when the store could not be made: the Library is then unavailable and the camera has only None.
+    private static func makeLookStore(config: LaunchConfig) -> LookStore? {
         do throws(LookStoreError) {
             let looks = try LookStore.appDefault()
             #if targetEnvironment(simulator)
@@ -92,14 +87,27 @@ struct OpenCamApp: App {
                 }
             }
             #endif
-            let library = LibraryStore(captures: captures, edits: EditStore(directory: captures.directory),
-                                       looks: looks, thumbnails: ThumbnailCache.appDefault())
-            library.reload()
-            return library
+            return looks
         } catch {
             logger.error("\(error.description, privacy: .public)")
             return nil
         }
+    }
+
+    private static func makeLibrary(captures: CaptureStore, looks: LookStore, config: LaunchConfig) -> LibraryStore? {
+        #if targetEnvironment(simulator)
+        if config.seedsSamples {
+            do throws(LibraryError) {
+                _ = try SampleSeeder.seedIfEmpty(captures)
+            } catch {
+                logger.error("\(error.description, privacy: .public)")
+            }
+        }
+        #endif
+        let library = LibraryStore(captures: captures, edits: EditStore(directory: captures.directory),
+                                   looks: looks, thumbnails: ThumbnailCache.appDefault())
+        library.reload()
+        return library
     }
 
     private func forceOrientation() {
