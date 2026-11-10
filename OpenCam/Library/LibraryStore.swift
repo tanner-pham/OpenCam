@@ -47,9 +47,9 @@ import OSLog
         looks = lookStore.all()
     }
 
-    /// Imports the pictures into the shared Captures folder, then reloads so they show.
-    func importPhotos(_ candidates: [ImportCandidate]) async -> ImportResult {
-        let result = await PhotoImporter.importCandidates(candidates, into: captures)
+    /// Loads and imports the pictures into the shared Captures folder one at a time, then reloads once so they show.
+    func importPhotos<Source>(_ sources: [Source], load: (Source) async -> ImportCandidate?) async -> ImportResult {
+        let result = await PhotoImporter.importEach(sources, into: captures, load: load)
         reload()
         return result
     }

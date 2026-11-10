@@ -118,18 +118,13 @@ struct LibraryView: View {
         }
     }
 
-    /// Loads what the picker returned, imports it, empties the selection and tells the person what happened.
+    /// Imports what the picker returned one picture at a time, empties the selection and tells the person what happened.
     private func importPicked(_ items: [PhotosPickerItem]) {
         guard !items.isEmpty else { return }
         pickedItems = []
         Task {
-            var candidates: [ImportCandidate] = []
-            var unloaded = 0
-            for item in items {
-                if let candidate = await PhotoImporter.candidate(from: item) { candidates.append(candidate) } else { unloaded += 1 }
-            }
-            let result = await library.importPhotos(candidates)
-            alertTitle = ImportResult(imported: result.imported, failed: result.failed + unloaded).message
+            let result = await library.importPhotos(items, load: PhotoImporter.candidate(from:))
+            alertTitle = result.message
         }
     }
 

@@ -20,28 +20,42 @@ import UniformTypeIdentifiers
         return nil
     }
 
-    /// Each candidate is proven first, off the main actor: its bytes must decode, and the kind kept comes from the bytes
-    /// (the declared type is only a hint). Only then is a number reserved (here, on the main actor) and the bytes written off
-    /// the main actor, to a temporary file moved into place without replacing anything. A failure leaves no file and, before
-    /// the write, uses no number.
+    /// Already loaded candidates, imported in order: `importEach` with nothing to load.
     static func importCandidates(_ candidates: [ImportCandidate], into captures: CaptureStore) async -> ImportResult {
+        await importEach(candidates, into: captures) { $0 }
+    }
+
+    /// Loads, imports and releases one source at a time, so a batch never holds more than one picture's bytes (thirty ProRAW
+    /// files would not fit in memory at once). A source that cannot be loaded counts as one that could not be imported.
+    static func importEach<Source>(_ sources: [Source], into captures: CaptureStore,
+                                   load: (Source) async -> ImportCandidate?) async -> ImportResult {
         var imported: [URL] = []
         var failed = 0
-        for candidate in candidates {
-            guard let kind = await provenKind(of: candidate) else {
-                logger.error("[PhotoImporter:importCandidates] Not imported — {type: \(candidate.contentType.identifier, privacy: .public)}")
+        for source in sources {
+            guard let candidate = await load(source) else {
                 failed += 1
                 continue
             }
-            let url = captures.url(sequence: captures.reserveSequence(), kind: kind)
-            if await write(candidate.data, to: url) {
-                imported.append(url)
-            } else {
-                logger.error("[PhotoImporter:importCandidates] Write failed — {type: \(candidate.contentType.identifier, privacy: .public)}")
-                failed += 1
-            }
+            if let url = await importCandidate(candidate, into: captures) { imported.append(url) } else { failed += 1 }
         }
         return ImportResult(imported: imported, failed: failed)
+    }
+
+    /// The candidate is proven first, off the main actor: its bytes must decode, and the kind kept comes from the bytes
+    /// (the declared type is only a hint). Only then is a number reserved (here, on the main actor) and the bytes written off
+    /// the main actor, to a temporary file moved into place without replacing anything. A failure leaves no file and, before
+    /// the write, uses no number. Returns the new file, or nil.
+    static func importCandidate(_ candidate: ImportCandidate, into captures: CaptureStore) async -> URL? {
+        guard let kind = await provenKind(of: candidate) else {
+            logger.error("[PhotoImporter:importCandidate] Not imported — {type: \(candidate.contentType.identifier, privacy: .public)}")
+            return nil
+        }
+        let url = captures.url(sequence: captures.reserveSequence(), kind: kind)
+        guard await write(candidate.data, to: url) else {
+            logger.error("[PhotoImporter:importCandidate] Write failed — {type: \(candidate.contentType.identifier, privacy: .public)}")
+            return nil
+        }
+        return url
     }
 
     /// The kind the bytes really are, or nil when the system cannot open them, make a 64 px thumbnail, or they are not a kept type.

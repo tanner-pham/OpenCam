@@ -57,6 +57,22 @@ import UniformTypeIdentifiers
         #expect(try Data(contentsOf: dir.appending(path: "OC_0001.JPG")) == Data("keep me".utf8))
         #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path(percentEncoded: false)).sorted() == before)
     }
+    /// Thirty ProRAW files would not fit in memory at once: each picked item is loaded, imported and released before the next
+    /// one loads.
+    @Test func aBatchHoldsOnePictureAtATime() async throws {
+        let dir = try TestFiles.directory()
+        let jpeg = try TestFiles.jpegData(width: 64, height: 48, rgb: SIMD3(0.4, 0.5, 0.6))
+        let counter = LiveBufferCounter()
+        var aliveAtEachLoad: [Int] = []
+        let result = await PhotoImporter.importEach(Array(0..<5), into: try CaptureStore(directory: dir)) { index in
+            aliveAtEachLoad.append(counter.count)
+            // The third item cannot be loaded; it counts as one that could not be imported.
+            return index == 2 ? nil : ImportCandidate(data: counter.data(copying: jpeg), contentType: .jpeg)
+        }
+        #expect(aliveAtEachLoad == [0, 0, 0, 0, 0]); #expect(counter.count == 0)
+        #expect(result.imported.map(\.lastPathComponent) == ["OC_0001.JPG", "OC_0002.JPG", "OC_0003.JPG", "OC_0004.JPG"])
+        #expect(result.failed == 1); #expect(result.message == "Imported 4 photos. 1 could not be imported.")
+    }
     @Test func fileKinds() throws {
         #expect(PhotoImporter.fileKind(for: .heic) == .heic); #expect(PhotoImporter.fileKind(for: .heif) == .heic)
         #expect(PhotoImporter.fileKind(for: .jpeg) == .jpg); #expect(PhotoImporter.fileKind(for: .png) == .png)
