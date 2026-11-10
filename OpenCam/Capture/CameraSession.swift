@@ -21,8 +21,12 @@ actor CameraSession: SessionConfigurator {
     /// Its output is attached in photo mode only.
     private let photoCapturer = PhotoCapturer()
     private var pressureObservation: NSKeyValueObservation?
-    /// True from a media-services-reset restart until it succeeds, so a reset during that restart is not retried.
+    /// True while a media-services-reset restart runs, so a reset during that restart is not retried; cleared when it
+    /// ends, whether it worked or not.
     private var isRestartingAfterReset = false
+    /// Set by `start()` and cleared by `stop()`; a media-services reset restarts the session only while it is set,
+    /// so a session stopped on purpose (during a rescan, say) stays stopped.
+    private var isMeantToRun = false
     /// Restored when a later configure fails.
     private var lastWorkingConfiguration: SessionConfiguration?
     /// The white-balance mode a ProRes RAW recording replaced, restored when that recording finishes.
@@ -120,25 +124,30 @@ actor CameraSession: SessionConfigurator {
     }
 
     func start() {
+        isMeantToRun = true
         if notificationTokens.isEmpty {
             notificationTokens = Self.observeNotifications(of: session, owner: self, continuation: continuation)
         }
         guard !session.isRunning else { return }
         session.startRunning()
-        if session.isRunning { isRestartingAfterReset = false }
     }
 
-    /// After `AVError.Code.mediaServicesWereReset` the session is restarted once; `.restarted` follows when it runs again.
+    /// After `AVError.Code.mediaServicesWereReset` the session is restarted once, if it is meant to run; `.restarted`
+    /// follows when it runs again. A restart that fails leaves the session failed, and a later reset tries again.
     private func restartAfterMediaServicesReset() {
-        guard !isRestartingAfterReset else { return }
+        guard isMeantToRun, !isRestartingAfterReset else { return }
         isRestartingAfterReset = true
+        defer { isRestartingAfterReset = false }
         session.startRunning()
-        guard session.isRunning else { return }
-        isRestartingAfterReset = false
+        guard session.isRunning else {
+            Self.logger.error("[CameraSession:restartAfterMediaServicesReset] The session did not start again — {isRunning: false}")
+            return
+        }
         continuation.yield(.restarted)
     }
 
     func stop() {
+        isMeantToRun = false
         guard session.isRunning else { return }
         session.stopRunning()
     }
