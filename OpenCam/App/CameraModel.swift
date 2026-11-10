@@ -75,6 +75,10 @@ final class CameraModel {
     @ObservationIgnored private var photoCaptures: [Int: Task<Void, Never>] = [:]
     /// The start of the recording in flight, so a stop pressed while it is still starting waits for it.
     @ObservationIgnored private var recordingStartTask: Task<Void, Never>?
+    /// The clip being recorded, from the press until its result; a stop or restart that finds no result coming ends it.
+    @ObservationIgnored private var recordingClip: (url: URL, option: VideoOption)?
+    /// Clips the model ended without their result; a result that still arrives changes no recording state.
+    @ObservationIgnored private var unreportedClips: Set<URL> = []
     /// What put `notice` there; nil when no notice is shown.
     @ObservationIgnored private var noticeSource: NoticeSource?
 
@@ -366,13 +370,14 @@ final class CameraModel {
     /// recording or `recordingDidFinish` has reported its failure; nil when nothing started and no result will follow.
     @discardableResult
     private func startRecording() -> Task<Void, Never>? {
-        guard let cameraSession, let option = currentVideoOption,
+        guard let configurator, let option = currentVideoOption,
               let store = store(failureNotice: RecordingOutcome.failedNotice) else { return nil }
         let url = store.url(sequence: store.reserveSequence(), kind: .mov)
         if isSweeping { recordSweepClip(url) }
         let minFreeBytes = recordingReserveBytes()
         let pendingConfigure = configureTask
         isRecording = true
+        recordingClip = (url, option)
         let task = Task {
             if let configureError = await pendingConfigure?.value {
                 // The session went back to its last working format, which is not the one the press was for.
@@ -380,7 +385,7 @@ final class CameraModel {
                 return
             }
             do throws(RecordingError) {
-                try await cameraSession.startRecording(option: option, url: url, minFreeBytes: minFreeBytes)
+                try await configurator.startRecording(option: option, url: url, minFreeBytes: minFreeBytes)
                 recordingStart = Date()
             } catch {
                 recordingDidFinish(RecordingResult(url: url, option: option, outcome: .failed(error.description), sidecar: nil))
@@ -390,14 +395,44 @@ final class CameraModel {
         return task
     }
 
-    /// Waits for a recording that is still starting, then stops it; the UI resets in `recordingDidFinish`.
+    /// Waits for a recording that is still starting, then stops it; the UI resets in `recordingDidFinish`. When the session
+    /// had no clip in flight, no result will come, so the clip is ended here.
     private func stopRecording() {
-        guard let cameraSession else { return }
+        guard let configurator else { return }
         let start = recordingStartTask
+        let clip = recordingClip?.url
         Task {
             await start?.value
-            await cameraSession.stopRecording()
+            let isClipInFlight = await configurator.stopRecording()
+            guard !isClipInFlight, let clip else { return }
+            endRecordingWithoutResult(clip: clip, context: "stopRecording")
         }
+    }
+
+    /// Ends the recording when its result will never arrive: through `recordingDidFinish`, as `.failed` when no file
+    /// exists and as `.stopped(.noResult)` when one does, which is never reported lost. `clip` nil ends whichever clip is
+    /// recording; otherwise only that clip, and nothing once its result has arrived. A recording with no known clip
+    /// (a scripted launch) only resets.
+    private func endRecordingWithoutResult(clip: URL?, context: String) {
+        guard isRecording else { return }
+        guard let recordingClip else {
+            isRecording = false
+            recordingStart = nil
+            recordingStartTask = nil
+            return
+        }
+        guard clip == nil || clip == recordingClip.url else { return }
+        let path = recordingClip.url.path(percentEncoded: false)
+        let message = "[CameraModel:\(context)] No recording result arrived — {path: \(path)}"
+        let outcome: RecordingOutcome
+        if FileManager.default.fileExists(atPath: path) {
+            Self.logger.error("\(message, privacy: .public)")
+            outcome = .stopped(.noResult, isPlayable: false)
+        } else {
+            outcome = .failed(message)
+        }
+        recordingDidFinish(RecordingResult(url: recordingClip.url, option: recordingClip.option, outcome: outcome, sidecar: nil))
+        unreportedClips.insert(recordingClip.url)
     }
 
     /// The free space at which recording stops: the 2 GB reserve, or free space minus the `-freeSpaceMarginMB` margin.
@@ -624,10 +659,14 @@ extension CameraModel {
     /// During a sweep the result goes to the sweep instead, which reports it in its own rows and drives the next configure.
     /// A sweep clip whose result arrives after the sweep ended never becomes the last capture or a notice, and is deleted
     /// unless `-keepSweepClips on` (its sidecar stays).
+    /// A result for a clip the model already ended without one changes no recording state, which may belong to a newer clip.
     func recordingDidFinish(_ result: RecordingResult) {
-        isRecording = false
-        recordingStart = nil
-        recordingStartTask = nil
+        if unreportedClips.remove(result.url) == nil {
+            isRecording = false
+            recordingStart = nil
+            recordingStartTask = nil
+            recordingClip = nil
+        }
         if case .failed(let message) = result.outcome {
             Self.logger.error("\(message, privacy: .public)")
         }
@@ -784,9 +823,11 @@ extension CameraModel {
             Self.logger.error("\(message, privacy: .public)")
             phase = .failed("The camera stopped.")
         case .restarted:
-            // The session runs again, so a pause notice is stale; any other notice stays.
+            // The session runs again, so a pause notice is stale; any other notice stays. A clip recording before the
+            // reset is gone, and the movie output may never report it.
             phase = .ready
             clearNotice(from: .interruption)
+            endRecordingWithoutResult(clip: nil, context: "restarted")
         case .microphoneUnavailable(let message):
             // Reads the same as microphone denied: video still records, without sound.
             Self.logger.error("\(message, privacy: .public)")

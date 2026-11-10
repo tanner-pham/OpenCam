@@ -11,8 +11,41 @@ nonisolated final class MovieRecorder: NSObject, AVCaptureFileOutputRecordingDel
 
     let output = AVCaptureMovieFileOutput()
     private let results: AsyncStream<RecordingResult>.Continuation
-    /// The recording in flight, from `start` until the output reports its file finished.
-    private let pending = Mutex<PendingRecording?>(nil)
+    /// The recording in flight, from `start` until the output reports its file finished, and the finished files still
+    /// being read back before their result is yielded.
+    private let inFlight = InFlight()
+
+    /// One lock over both, so a clip is never seen as neither pending nor finishing between the two.
+    private nonisolated final class InFlight: Sendable {
+        private struct State: Sendable {
+            var pending: PendingRecording?
+            var finishing = 0
+        }
+
+        private let state = Mutex(State())
+
+        /// True from `begin` until `reported`.
+        var isAwaitingResult: Bool { state.withLock { $0.pending != nil || $0.finishing > 0 } }
+
+        /// Replaces any earlier pending recording, whose end was never reported.
+        func begin(_ recording: PendingRecording) {
+            state.withLock { $0.pending = recording }
+        }
+
+        /// The pending recording, now finishing; nil when none was pending.
+        func finish() -> PendingRecording? {
+            state.withLock { current in
+                guard let pending = current.pending else { return nil }
+                current.pending = nil
+                current.finishing += 1
+                return pending
+            }
+        }
+
+        func reported() {
+            state.withLock { $0.finishing -= 1 }
+        }
+    }
 
     private struct PendingRecording: Sendable {
         let url: URL
@@ -42,13 +75,17 @@ nonisolated final class MovieRecorder: NSObject, AVCaptureFileOutputRecordingDel
             connection.videoRotationAngle = angle
         }
         output.minFreeDiskSpaceLimit = minFreeBytes
-        pending.withLock { $0 = PendingRecording(url: url, option: option, recordedAt: Date(), onFinish: onFinish) }
+        inFlight.begin(PendingRecording(url: url, option: option, recordedAt: Date(), onFinish: onFinish))
         output.startRecording(to: url, recordingDelegate: self)
     }
 
-    func stop() {
-        guard output.isRecording else { return }
+    /// Stops the clip being recorded. Returns whether a clip is in flight: recording, started and not yet reported
+    /// finished, or finished with its result still to come. False means no result will follow.
+    @discardableResult
+    func stop() -> Bool {
+        guard output.isRecording else { return inFlight.isAwaitingResult }
         output.stopRecording()
+        return true
     }
 
     /// One level per channel of the output's audio connection; empty without a microphone.
@@ -78,10 +115,7 @@ nonisolated final class MovieRecorder: NSObject, AVCaptureFileOutputRecordingDel
     // MARK: AVCaptureFileOutputRecordingDelegate
 
     func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: (any Error)?) {
-        guard let recording = pending.withLock({ current -> PendingRecording? in
-            defer { current = nil }
-            return current
-        }) else {
+        guard let recording = inFlight.finish() else {
             Self.logger.error("[MovieRecorder:didFinishRecording] No recording was pending — {path: \(outputFileURL.path(percentEncoded: false), privacy: .public)}")
             return
         }
@@ -91,8 +125,10 @@ nonisolated final class MovieRecorder: NSObject, AVCaptureFileOutputRecordingDel
         let message = nsError.map { "[MovieRecorder:didFinishRecording] Recording ended with an error — {domain: \($0.domain), code: \($0.code), playable: \(outcome.isPlayable)}" }
         if let message { Self.logger.error("\(message, privacy: .public)") }
         let results = self.results
+        let inFlight = self.inFlight
         Task {
             results.yield(await Self.finish(recording, outcome: outcome, errorMessage: message))
+            inFlight.reported()
         }
     }
 

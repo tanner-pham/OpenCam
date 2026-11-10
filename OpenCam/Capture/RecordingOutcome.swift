@@ -11,6 +11,8 @@ nonisolated enum RecordingOutcome: Sendable, Equatable {
     static let storageFullNotice = "Recording stopped. Storage is full. Clip saved."
     static let interruptedNotice = "Recording stopped. The camera was interrupted. Clip saved."
     static let failedNotice = "Recording failed. The clip could not be saved."
+    /// A clip whose end the camera never reported but whose file is on disk: it is never called lost.
+    static let incompleteNotice = "Recording stopped. The clip may be incomplete."
 
     /// AVError.h: `AVErrorRecordingSuccessfullyFinishedKey` says whether the file is playable despite the error.
     init(error: NSError?) {
@@ -34,6 +36,7 @@ nonisolated enum RecordingOutcome: Sendable, Equatable {
     var notice: String? {
         switch self {
         case .completed: nil
+        case .stopped(.noResult, _): Self.incompleteNotice
         case .stopped(_, false), .failed: Self.failedNotice
         case .stopped(.storageFull, true): Self.storageFullNotice
         case .stopped(.interrupted, true): Self.interruptedNotice

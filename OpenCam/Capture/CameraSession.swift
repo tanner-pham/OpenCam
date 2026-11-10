@@ -408,7 +408,8 @@ extension CameraSession {
         }
     }
 
-    func stopRecording() {
+    /// Returns whether a clip was in flight; false means no recording result will follow.
+    func stopRecording() -> Bool {
         recorder.stop()
     }
 
