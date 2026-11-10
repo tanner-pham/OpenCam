@@ -147,9 +147,10 @@ import OSLog
         }
     }
 
-    /// Each item's edit for the confirmation counts in `LookChange`: nil for a clip.
+    /// Each item's edit for the confirmation counts in `LookChange`: nil for a clip and for a photo whose edit could not be
+    /// loaded, which the action leaves alone and reports as not changed, so it is never counted as one that will change.
     func lookEdits(for items: [LibraryItem]) -> [PhotoEdit?] {
-        items.map { $0.isEditable ? edit(for: $0) : nil }
+        items.map { $0.isEditable && editFailures[$0.stem] == nil ? edit(for: $0) : nil }
     }
 
     /// Runs `change` on each photo (true when it changed the photo). A photo whose edit is from a newer version is left as it

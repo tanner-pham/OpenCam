@@ -49,6 +49,17 @@ import Testing
         try expectUnchanged(dir)
     }
 
+    /// The confirmation counts agree with the action: a photo whose edit could not be loaded will be reported as "could not be
+    /// changed", so it is neither one Remove look changes nor one whose edit Apply look replaces.
+    @Test func theConfirmationCountsLeaveThemOut() throws {
+        let (store, _) = try setUp()   // OC_0004 (no edit), OC_0003 (look), OC_0002 (newer shape), OC_0001 (garbage)
+        let edits = store.lookEdits(for: store.items)
+        #expect(edits.count == 4); #expect(edits[2] == nil); #expect(edits[3] == nil)
+        #expect(LookChange.photosToRemove(in: edits) == 1); #expect(LookChange.editsToReplace(in: edits) == 1)
+        let unreadable = store.lookEdits(for: store.items.filter { $0.stem == "OC_0001" || $0.stem == "OC_0002" })
+        #expect(LookChange.photosToRemove(in: unreadable) == 0); #expect(LookChange.editsToReplace(in: unreadable) == 0)
+    }
+
     @Test func applyLookCountsThemAndLeavesThemWhole() throws {
         let (store, dir) = try setUp()
         let look = try store.lookStore.save(name: "Cool", adjustments: Adjustments().setting(.temperature, to: -20))
