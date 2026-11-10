@@ -173,6 +173,18 @@ import Testing
         #expect(await eventually { model.phase == .ready })
     }
 
+    /// A runtime error handled while the recovery's start is still awaited stops its confirmation.
+    @Test func aStopDuringTheRestartsStartIsNotLost() async throws {
+        let (model, fake, _) = try attachedModel()
+        #expect(await confirmed(model))
+        await fake.setOnNextStart { @MainActor in model.apply(.runtimeError(Self.stop)) }
+        model.apply(.runtimeError(Self.stop))
+        await model.waitForQueuedConfigures()
+        #expect(await fake.calls == ["configure", "start"])
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(model.phase == .failed("The camera stopped.")); #expect(model.isCameraStopped)
+    }
+
     /// The clip ends as it always has; only then does the camera restart.
     @Test func aStopWhileRecordingRecoversOnceTheClipHasEnded() async throws {
         let (model, fake, _) = try attachedModel()

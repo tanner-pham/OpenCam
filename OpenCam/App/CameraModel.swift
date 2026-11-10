@@ -509,7 +509,7 @@ final class CameraModel {
         self.configurator = configurator
         requestedConfiguration = configuration
         lastWorking = (configuration, selection)
-        confirmWhenRunning(configuration)
+        confirmWhenRunning(configuration, since: runtimeErrorCount)
         // A change made while the first configure was awaited could not queue yet; apply it now.
         enqueueConfigure()
     }
@@ -542,6 +542,8 @@ final class CameraModel {
             _ = await previous?.value
             await Self.waitForAll(captures)
             guard generation == configureGeneration else { return nil }
+            // Read before the configure and start, so an error handled while they are awaited still stops the confirmation.
+            let errors = runtimeErrorCount
             do throws(CameraSessionError) {
                 try await configurator.configure(configuration)
             } catch {
@@ -552,7 +554,7 @@ final class CameraModel {
             clearNotice(from: .configuration)
             // A stopped camera runs again with the new selection; a running one is confirmed once it has run long enough.
             if await startIfStopped(configurator) || phase == .ready {
-                confirmWhenRunning(configuration)
+                confirmWhenRunning(configuration, since: errors)
             }
             watchFrames(for: configuration)
             return nil

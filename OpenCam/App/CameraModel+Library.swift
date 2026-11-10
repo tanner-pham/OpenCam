@@ -80,6 +80,8 @@ extension CameraModel {
         }
         // The release moved nothing, but the session holds no camera, so the selection is configured again even unchanged.
         requestedConfiguration = nil
+        // Read before the configure and start, so an error handled while they are awaited is not lost.
+        let errors = runtimeErrorCount
         do throws(CameraSessionError) {
             try await applySelection()
         } catch {
@@ -92,7 +94,7 @@ extension CameraModel {
         await configurator.start()
         isCameraReleasedForLibrary = false
         // The session runs again; once it has run long enough it is confirmed, and a camera that stopped meanwhile is ready.
-        if let lastWorking { confirmWhenRunning(lastWorking.configuration) }
+        if let lastWorking { confirmWhenRunning(lastWorking.configuration, since: errors) }
         // A selection changed while the camera started was held; it is configured now, and its own configure watches frames.
         if enqueueConfigure() == nil, let configuration = requestedConfiguration {
             watchFrames(for: configuration)

@@ -53,6 +53,8 @@ extension CameraModel {
         } else {
             show(Self.rescanFailedNotice, from: .scan)
         }
+        // Read before the configure and start, so an error handled while they are awaited is not lost.
+        let errors = runtimeErrorCount
         do throws(CameraSessionError) {
             try await applySelection()
         } catch {
@@ -66,7 +68,7 @@ extension CameraModel {
         isSessionStoppedForRescan = false
         rewatchFrames()
         // Once it has run long enough it is confirmed, and a camera that stopped during the rescan is ready again.
-        if let lastWorking { confirmWhenRunning(lastWorking.configuration) }
+        if let lastWorking { confirmWhenRunning(lastWorking.configuration, since: errors) }
     }
 
     static let rescanFailedNotice = "Camera formats could not be read."
