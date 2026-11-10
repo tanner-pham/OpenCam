@@ -72,6 +72,30 @@ import OSLog
         }
     }
 
+    /// The photo item a capture file belongs to (its picture or its RAW), matched by file name; nil for a clip or a file not
+    /// in the last reload.
+    private func photoItem(forCapture url: URL) -> LibraryItem? {
+        let name = CaptureStore.clipKey(for: url)
+        return items.first { item in
+            item.isEditable && [item.pictureURL, item.rawURL].contains { $0.map(CaptureStore.clipKey(for:)) == name }
+        }
+    }
+
+    /// What the camera strip's picture of a capture depends on: the photo's thumbnail key, which carries its edit; nil for a
+    /// clip or a file not in the last reload.
+    func captureThumbnailKey(for url: URL) -> String? {
+        photoItem(forCapture: url).map(thumbnailKey(for:))
+    }
+
+    /// The camera strip's picture of a photo, from the same cache and with the same edit as its Library cell, so a photo
+    /// looks the same in both places. A capture made since the last reload is found by reloading. Nil for a clip, which the
+    /// strip draws its own way, or when the photo cannot be drawn.
+    func captureThumbnail(for url: URL) async -> CGImage? {
+        if photoItem(forCapture: url) == nil { reload() }
+        guard let item = photoItem(forCapture: url), case .ready(let image) = await thumbnail(for: item) else { return nil }
+        return image
+    }
+
     /// Each photo's edit becomes a copy of the look, so later changes to the look never reach it. Clips are skipped.
     func applyLook(_ look: Look, to items: [LibraryItem]) throws(LibraryError) -> LookChange {
         let edit = PhotoEdit(adjustments: look.adjustments, lookName: look.name)

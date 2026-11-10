@@ -31,7 +31,7 @@ struct CameraRootView: View {
             .ignoresSafeArea(.container, edges: [.top, .bottom])
             .background(Color.black.ignoresSafeArea())
             .persistentSystemOverlays(.hidden)
-            .toolbar { StripToolbar(model: model, isLandscape: isLandscape) }
+            .toolbar { StripToolbar(model: model, library: library, isLandscape: isLandscape) }
         }
         // The Camera Control takes the photo or starts and stops recording, through the same rules as the on-screen button.
         // Always enabled while this screen shows: a disabled interaction hands the button back to the system, which opens

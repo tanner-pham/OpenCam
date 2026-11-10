@@ -3,6 +3,7 @@ import SwiftUI
 /// The four strip controls as native toolbar items, so the system draws them in the side strip.
 struct StripToolbar: ToolbarContent {
     @Bindable var model: CameraModel
+    let library: LibraryStore?
     let isLandscape: Bool
 
     private enum Item: CaseIterable { case mode, lens, record, library }
@@ -48,7 +49,7 @@ struct StripToolbar: ToolbarContent {
             Button("Record settings", systemImage: "slider.horizontal.3") { model.openRecordSettings() }
                 .disabled(!model.canOpenRecordSettings)
         case .library:
-            LibraryThumbnail(model: model)
+            LibraryThumbnail(model: model, library: library)
         }
     }
 }
