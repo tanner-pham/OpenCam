@@ -781,7 +781,8 @@ extension CameraModel {
             // release queued whatever the phase was (one that already ran makes the queued one do nothing). With the Library
             // closed after a failed return the session holds no camera, so the failed state stands until the next close
             // retries.
-            if !isCameraReleasedForLibrary || isLibraryPresented {
+            // A rescan holds the session stopped and ends by configuring and starting it itself, so the phase is its own.
+            if !isScanningFormats, !isSessionStoppedForRescan, !isCameraReleasedForLibrary || isLibraryPresented {
                 phase = .ready
                 releaseIfLibraryOpen()
             }

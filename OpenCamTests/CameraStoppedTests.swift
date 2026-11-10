@@ -325,6 +325,19 @@ import Testing
         #expect(await eventually { model.phase == .ready })
     }
 
+    /// A restart after a reset during a rescan leaves the rescan's phase; the rescan's own start makes the camera ready.
+    @Test func aRestartDuringARescanLeavesItsPhase() throws {
+        let (model, _, _) = try attachedModel()
+        model.phase = .scanning
+        model.isScanningFormats = true
+        model.apply(.restarted)
+        #expect(model.phase == .scanning)
+        model.isScanningFormats = false
+        model.isSessionStoppedForRescan = true
+        model.apply(.restarted)
+        #expect(model.phase == .scanning); #expect(!model.canRescanCapabilities)
+    }
+
     /// The clip ends as it always has; only then does the camera restart.
     @Test func aStopWhileRecordingRecoversOnceTheClipHasEnded() async throws {
         let (model, fake, _) = try attachedModel()
