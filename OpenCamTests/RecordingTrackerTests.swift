@@ -25,9 +25,11 @@ import Testing
         let currentFinish = tracker.finish(url: second)
         let current = try #require(currentFinish)
         #expect(current.recording.url == second); #expect(current.isCurrent); #expect(tracker.pending == nil)
-        #expect(tracker.isAwaitingResult)
+        let finishing = tracker.requestStop()
+        #expect(finishing == .awaitingResult)
         tracker.reported()
-        #expect(!tracker.isAwaitingResult)
+        let done = tracker.requestStop()
+        #expect(done == .nothingInFlight)
     }
 
     @Test func aFileThatWasNeverStartedIsNotMatched() {
@@ -35,5 +37,46 @@ import Testing
         tracker.begin(clip(second))
         let unknown = tracker.finish(url: first)
         #expect(unknown == nil); #expect(tracker.pending?.url == second)
+    }
+
+    @Test func aStopBeforeTheOutputStartsIsAppliedWhenItStarts() {
+        var tracker = RecordingTracker()
+        let idle = tracker.requestStop()
+        #expect(idle == .nothingInFlight)
+        tracker.begin(clip(first))
+        let early = tracker.requestStop()
+        #expect(early == .deferred)
+        // A start reported for another file changes nothing.
+        let otherStart = tracker.didStart(url: second)
+        #expect(!otherStart)
+        let start = tracker.didStart(url: first)
+        #expect(start)
+        let later = tracker.requestStop()
+        #expect(later == .stopNow)
+    }
+
+    @Test func aStopAfterTheStartStopsAtOnceAndAFinishingClipIsStillInFlight() {
+        var tracker = RecordingTracker()
+        tracker.begin(clip(first))
+        let start = tracker.didStart(url: first)
+        #expect(!start)
+        let running = tracker.requestStop()
+        #expect(running == .stopNow)
+        let finished = tracker.finish(url: first)
+        #expect(finished?.isCurrent == true)
+        let finishing = tracker.requestStop()
+        #expect(finishing == .awaitingResult)
+        tracker.reported()
+        let done = tracker.requestStop()
+        #expect(done == .nothingInFlight)
+    }
+
+    @Test func aDeferredStopDoesNotCarryOverToTheNextClip() {
+        var tracker = RecordingTracker()
+        tracker.begin(clip(first))
+        _ = tracker.requestStop()
+        tracker.begin(clip(second))
+        let start = tracker.didStart(url: second)
+        #expect(!start)
     }
 }

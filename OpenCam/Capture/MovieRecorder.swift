@@ -44,13 +44,16 @@ nonisolated final class MovieRecorder: NSObject, AVCaptureFileOutputRecordingDel
         output.startRecording(to: url, recordingDelegate: self)
     }
 
-    /// Stops the clip being recorded. Returns whether a clip is in flight: recording, started and not yet reported
-    /// finished, or finished with its result still to come. False means no result will follow.
+    /// Stops the clip being recorded. A stop that arrives before the output has started writing is remembered and applied
+    /// in `didStartRecordingTo`, so a quick second press records a short clip instead of leaving one running.
+    /// Returns whether a clip is in flight: recording, about to record, or finished with its result still to come.
+    /// False means no result will follow.
     @discardableResult
     func stop() -> Bool {
-        guard output.isRecording else { return tracker.state.withLock { $0.isAwaitingResult } }
-        output.stopRecording()
-        return true
+        let request = tracker.state.withLock { $0.requestStop() }
+        let isRecording = output.isRecording
+        if request == .stopNow || isRecording { output.stopRecording() }
+        return request.isClipInFlight || isRecording
     }
 
     /// One level per channel of the output's audio connection; empty without a microphone.
@@ -78,6 +81,12 @@ nonisolated final class MovieRecorder: NSObject, AVCaptureFileOutputRecordingDel
     }
 
     // MARK: AVCaptureFileOutputRecordingDelegate
+
+    /// Applies a stop asked for before the file started writing.
+    func fileOutput(_ output: AVCaptureFileOutput, didStartRecordingTo fileURL: URL, from connections: [AVCaptureConnection]) {
+        guard tracker.state.withLock({ $0.didStart(url: fileURL) }) else { return }
+        output.stopRecording()
+    }
 
     func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: (any Error)?) {
         guard let (recording, isCurrent) = tracker.state.withLock({ $0.finish(url: outputFileURL) }) else {
