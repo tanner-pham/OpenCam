@@ -74,8 +74,8 @@ nonisolated struct Adjustments: Codable, Sendable, Hashable {
         AdjustmentKey.allCases.allSatisfy { $0.snapped(self[$0]) == $0.snapped(other[$0]) }
     }
 
-    /// True when any of exposure through saturation is not zero.
+    /// True when any colour key (`AdjustmentKey.isColour`) is not zero.
     var hasColourChanges: Bool {
-        AdjustmentKey.allCases.prefix { $0 != .sharpening }.contains { self[$0] != 0 }
+        AdjustmentKey.allCases.contains { $0.isColour && self[$0] != 0 }
     }
 }

@@ -18,10 +18,10 @@ nonisolated final class ColourCubeCache: Sendable {
         return cube
     }
 
-    /// Only the adjustments the table depends on: exposure through saturation.
+    /// Only the adjustments the table depends on: the colour keys.
     private static func colourPart(of adjustments: Adjustments) -> Adjustments {
         var colour = Adjustments()
-        for key in AdjustmentKey.allCases.prefix(while: { $0 != .sharpening }) { colour[key] = adjustments[key] }
+        for key in AdjustmentKey.allCases where key.isColour { colour[key] = adjustments[key] }
         return colour
     }
 }

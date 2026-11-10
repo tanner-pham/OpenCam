@@ -42,6 +42,15 @@ nonisolated enum AdjustmentKey: String, CaseIterable, Sendable {
         return min(max(snapped, range.lowerBound), range.upperBound)
     }
 
+    /// True for the keys the colour table is built from (`ColourMath` reads exactly these); the others are spatial steps.
+    /// Said per key, so a key added later is placed on purpose rather than by its position in `allCases`.
+    var isColour: Bool {
+        switch self {
+        case .exposure, .contrast, .highlights, .shadows, .whites, .blacks, .temperature, .tint, .vibrance, .saturation: true
+        case .sharpening, .noiseReduction, .grain, .vignette: false
+        }
+    }
+
     var group: EditorGroup {
         switch self {
         case .exposure, .contrast, .highlights, .shadows, .whites, .blacks: .light
