@@ -1,8 +1,10 @@
 import Foundation
 import Observation
+import OSLog
 
 @Observable
 final class CameraModel {
+    private static let logger = Logger(subsystem: "local.opencam.app", category: "CameraModel")
     private static let simulatorFreeBytes: Int64 = 141_000_000_000
     private static let placeholderRecord = RecordSelection(family: .hevc, quality: "High", resolution: .named(width: 3840, height: 2160), frameRate: 30, colour: .rec709)
     private static let placeholderPhoto = PhotoSelection(format: .heif, megapixels: 12)
@@ -20,6 +22,9 @@ final class CameraModel {
     private(set) var lensID: String { didSet { persist() } }
     private(set) var isRecording: Bool
     private(set) var recordingStart: Date?
+    private(set) var access: CaptureAccess
+    private(set) var pressureLevel: PressureLevel = .nominal
+    private(set) var isThermalPressure = false
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let isScripted: Bool
@@ -29,6 +34,8 @@ final class CameraModel {
         self.defaults = defaults
         self.isScripted = config.isScripted
         self.phase = isSimulator ? .simulator : .scanning
+        let accessState: AccessState = isSimulator ? .authorized : .notDetermined
+        self.access = CaptureAccess(camera: accessState, microphone: accessState)
         self.freeBytes = Self.simulatorFreeBytes
         self.isRecording = config.isRecording
         self.recordingStart = config.isRecording ? Date().addingTimeInterval(-42) : nil
@@ -124,5 +131,52 @@ final class CameraModel {
 
     private static func settle(_ selection: PhotoSelection?, with resolver: PhotoSelectionResolver) -> PhotoSelection? {
         selection.flatMap(resolver.settled) ?? resolver.defaultSelection()
+    }
+}
+
+extension CameraModel {
+    /// Asks for access, swaps the fixture lenses for the device's, configures and starts the session,
+    /// then follows its events for as long as the calling task runs.
+    func start(session: CameraSession) async {
+        access = await CameraSession.requestAccess()
+        guard access.canUseCamera else {
+            phase = access.camera == .restricted ? .cameraRestricted : .cameraDenied
+            return
+        }
+        replaceCapabilities(CaptureCapabilities(lenses: LensDiscovery.lenses(), videoOptions: [], photoOptions: [],
+                                                osBuild: DeviceIdentity.osBuild(), modelIdentifier: DeviceIdentity.modelIdentifier()))
+        guard let lens = currentLens else {
+            Self.logger.error("[CameraModel:start] No camera found — {lenses: 0}")
+            phase = .failed("The camera could not start.")
+            return
+        }
+        let configuration = SessionConfiguration(lens: lens, mode: mode, video: nil, photo: currentPhotoOption, includesAudio: access.recordsSound)
+        do {
+            try await session.configure(configuration)
+        } catch {
+            Self.logger.error("\(error.description, privacy: .public)")
+            phase = .failed("The camera could not start.")
+            return
+        }
+        await session.start()
+        phase = .ready
+        for await event in session.events {
+            apply(event)
+        }
+    }
+
+    func apply(_ event: SessionEvent) {
+        switch event {
+        case .interrupted(let reason):
+            notice = reason.notice
+        case .interruptionEnded:
+            notice = nil
+        case .runtimeError(let message):
+            Self.logger.error("\(message, privacy: .public)")
+            phase = .failed("The camera stopped.")
+        case .pressure(let level, let isThermal):
+            pressureLevel = level
+            isThermalPressure = isThermal
+        }
     }
 }

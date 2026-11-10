@@ -1,15 +1,28 @@
 import SwiftUI
 
-/// The picture area. Only the Simulator stand-in exists so far; other phases show black until the live preview lands.
+extension EnvironmentValues {
+    /// The live session's preview source; nil in the Simulator.
+    @Entry var previewSource: PreviewSource?
+}
+
+/// The picture area: the live preview when ready, the stand-in in the Simulator, black otherwise.
 struct ViewfinderArea: View {
     let phase: CameraPhase
     var captionTopInset: CGFloat = 0
+
+    @Environment(\.previewSource) private var previewSource
 
     var body: some View {
         switch phase {
         case .simulator:
             ViewfinderStandIn(captionTopInset: captionTopInset)
-        case .scanning, .ready, .cameraDenied, .cameraRestricted, .failed:
+        case .ready:
+            if let previewSource {
+                CameraPreviewView(source: previewSource)
+            } else {
+                Color.black
+            }
+        case .scanning, .cameraDenied, .cameraRestricted, .failed:
             Color.black
         }
     }

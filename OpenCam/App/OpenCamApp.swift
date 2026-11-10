@@ -8,6 +8,8 @@ struct OpenCamApp: App {
 
     private let config: LaunchConfig
     @State private var model: CameraModel?
+    /// Nil in the Simulator, which has no camera.
+    @State private var session: CameraSession?
 
     init() {
         let config = LaunchConfig.parse(ProcessInfo.processInfo.arguments)
@@ -16,10 +18,13 @@ struct OpenCamApp: App {
             let capabilities = try CaptureCapabilities.bundledFixture()
             #if targetEnvironment(simulator)
             let isSimulator = true
+            let session: CameraSession? = nil
             #else
             let isSimulator = false
+            let session: CameraSession? = CameraSession()
             #endif
             _model = State(initialValue: CameraModel(config: config, capabilities: capabilities, isSimulator: isSimulator))
+            _session = State(initialValue: session)
         } catch {
             Self.logger.error("Fixture failed to load: \(String(describing: error), privacy: .public)")
             _model = State(initialValue: nil)
@@ -38,7 +43,12 @@ struct OpenCamApp: App {
                 }
             }
             .preferredColorScheme(.dark)
+            .environment(\.previewSource, session?.previewSource)
             .task { forceOrientation() }
+            .task {
+                guard let model, let session else { return }
+                await model.start(session: session)
+            }
         }
     }
 
