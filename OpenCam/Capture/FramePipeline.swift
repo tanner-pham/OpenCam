@@ -9,6 +9,8 @@ import Synchronization
 nonisolated final class FramePipeline: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, Sendable {
     private struct State {
         var adjustments: Adjustments?
+        /// The view that last set the look; only it can clear it.
+        var owner: UUID?
         var angle: CGFloat = 0
         var isFront = false
         var slot = FrameSlot<CIImage>()
@@ -28,13 +30,36 @@ nonisolated final class FramePipeline: NSObject, AVCaptureVideoDataOutputSampleB
         self.renderer = renderer
     }
 
-    /// The look to draw; nil stops keeping frames and empties the slot.
-    func setLook(_ adjustments: Adjustments?) {
+    /// The look to draw, set by the view `owner`, which becomes the only one that can clear it.
+    func setLook(_ adjustments: Adjustments, owner: UUID) {
         state.withLock { state in
-            guard state.adjustments != adjustments else { return }
+            state.owner = owner
             state.adjustments = adjustments
-            if adjustments == nil { state.slot.empty() }
         }
+    }
+
+    /// A changed look from the view that set it; nothing from a view another one has replaced as owner.
+    func changeLook(_ adjustments: Adjustments, owner: UUID) {
+        state.withLock { state in
+            guard state.owner == owner else { return }
+            state.adjustments = adjustments
+        }
+    }
+
+    /// Stops keeping frames and empties the slot, unless another view has set the look since `owner` did: a view swapped out
+    /// by a layout change is taken down after its replacement was made, and must not switch the replacement's look off.
+    func clearLook(owner: UUID) {
+        state.withLock { state in
+            guard state.owner == owner else { return }
+            state.owner = nil
+            state.adjustments = nil
+            state.slot.empty()
+        }
+    }
+
+    /// The look frames are drawn with now; nil when none.
+    var look: Adjustments? {
+        state.withLock { $0.adjustments }
     }
 
     /// The preview's horizon-level angle, from `PreviewUIView`'s rotation coordinator.
@@ -58,12 +83,17 @@ nonisolated final class FramePipeline: NSObject, AVCaptureVideoDataOutputSampleB
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        let (adjustments, orientation) = state.withLock { state in
-            state.deliveredCount += 1
-            return (state.adjustments, state.orientation)
-        }
-        guard let adjustments, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        let image = orientation.apply(to: CIImage(cvPixelBuffer: pixelBuffer))
+        state.withLock { $0.deliveredCount += 1 }
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        receive(CIImage(cvPixelBuffer: pixelBuffer))
+    }
+
+    /// One camera frame, already a `CIImage`: turned upright, drawn through the look and put in the slot. Nothing is kept
+    /// without a look. Internal so tests can deliver a picture without a sample buffer.
+    func receive(_ frame: CIImage) {
+        let (adjustments, orientation) = state.withLock { ($0.adjustments, $0.orientation) }
+        guard let adjustments else { return }
+        let image = orientation.apply(to: frame)
         let looked = renderer.renderColourAndVignette(image, cube: cubes.cube(for: adjustments), vignette: adjustments.vignette)
         state.withLock { state in
             // The look changed or was turned off while this frame was rendered; it must not land after that.

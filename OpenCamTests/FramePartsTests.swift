@@ -35,6 +35,25 @@ import Testing
         let turned = FrameOrientation.plan(angle: 90, isFront: false).apply(to: picture)
         #expect(turned.extent.size == CGSize(width: 1, height: 2))
     }
+    /// A view swapped out by a layout change is taken down after its replacement set the look; its clear changes nothing.
+    @Test func onlyTheViewThatLastSetTheLookCanClearIt() {
+        let frames = FramePipeline()
+        let a = UUID(), b = UUID()
+        let warm = Adjustments().setting(.temperature, to: 20), cool = Adjustments().setting(.temperature, to: -20)
+        let picture = CIImage(color: CIColor(red: 1, green: 0, blue: 0)).cropped(to: CGRect(x: 0, y: 0, width: 2, height: 1))
+        frames.setLook(warm, owner: a)
+        frames.setLook(cool, owner: b)
+        frames.changeLook(warm, owner: a)
+        #expect(frames.look == cool)
+        frames.receive(picture)
+        frames.clearLook(owner: a)
+        #expect(frames.look == cool)
+        frames.receive(picture)
+        frames.clearLook(owner: b)
+        #expect(frames.look == nil); #expect(frames.takeLatest() == nil)
+        frames.receive(picture)
+        #expect(frames.takeLatest() == nil)
+    }
     @Test func watchStallsOnlyAfterTwoSecondsWithoutAFrame() {
         #expect(!FrameWatch.isStalled(framesSinceConfigure: 0, elapsed: .milliseconds(1900)))
         #expect(FrameWatch.isStalled(framesSinceConfigure: 0, elapsed: .seconds(2)))
