@@ -86,6 +86,8 @@ final class CameraModel {
     /// Photo captures still running, by file number. A configure queued after a press waits for them,
     /// because Bayer RAW needs the zoom unchanged until the capture ends (AVCapturePhotoOutput.h).
     @ObservationIgnored private var photoCaptures: [Int: Task<Void, Never>] = [:]
+    /// The last photo capture pressed with a look; the next one with a look finishes after it.
+    @ObservationIgnored private var lookFinishTail: Task<Void, Never>?
     /// The start of the recording in flight, so a stop pressed while it is still starting waits for it.
     @ObservationIgnored var recordingStartTask: Task<Void, Never>?
     /// The clip being recorded, from the press until its result; a stop or restart that finds no result coming ends it.
@@ -391,7 +393,11 @@ final class CameraModel {
         let look = cameraLook
         let format = option.format
         let edits = EditStore(directory: store.directory)
-        photoCaptures[sequence] = Task {
+        // Captures with a look finish in press order, one bake at a time: each waits for the one pressed before it, so an
+        // older photo never becomes the last capture after a newer one and 48 MP renders never overlap. Without a look the
+        // chain is neither read nor extended.
+        let earlierFinish = look != nil ? lookFinishTail : nil
+        let capture = Task {
             defer { photoCaptures[sequence] = nil }
             _ = await pendingConfigure?.value
             let result: PhotoCaptureResult
@@ -404,10 +410,13 @@ final class CameraModel {
             // and the last capture is set only after it, so the strip shows the baked picture.
             var lookNotice: String?
             if let look {
+                await earlierFinish?.value
                 lookNotice = await LookCapture.finish(result, look: look, format: format, heicURL: heicURL, dngURL: dngURL, edits: edits).notice
             }
             photoFinished(requested: requested, result: result, lookNotice: lookNotice)
         }
+        photoCaptures[sequence] = capture
+        if look != nil { lookFinishTail = capture }
     }
 
     /// The notice always describes the latest capture: a full save clears an earlier photo notice. The save report's
