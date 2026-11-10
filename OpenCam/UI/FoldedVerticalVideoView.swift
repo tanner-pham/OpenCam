@@ -16,7 +16,7 @@ struct FoldedVerticalVideoView: View {
                     .padding(.top, Theme.Space.l)
                 Spacer(minLength: 0)
                 if model.bottomNotice != nil {
-                    NoticeLine(model: model)
+                    NoticeLine(model: model, isOnGlass: true)
                         .padding(.horizontal, Theme.Space.m)
                         .padding(.vertical, Theme.Space.xs)
                         .glassEffect(.regular, in: .capsule)
@@ -36,15 +36,12 @@ struct FoldedVerticalVideoView: View {
             HStack(spacing: Theme.Space.s) {
                 FormatButton(parts: model.summaryParts) { model.openRecordSettings() }
                     .disabled(!model.canOpenRecordSettings)
-                // "Storage full" is wider than the minutes, so the meters give way when the row would overflow.
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: Theme.Space.s) {
-                        AudioMetersView(levels: model.meterLevels, width: 56)
-                        remainingText
-                    }
+                // "Storage full" is wider than the minutes, so the meters give way to it.
+                HStack(spacing: Theme.Space.s) {
+                    if !model.isStorageFull { AudioMetersView(levels: model.shownMeterLevels, width: 48) }
                     remainingText
                 }
-                .padding(.horizontal, Theme.Space.m)
+                .padding(.horizontal, Theme.Space.s + Theme.Space.xs / 2)
                 .frame(minHeight: Theme.Size.minTarget)
                 .glassEffect(.regular, in: .capsule)
                 Spacer(minLength: 0)

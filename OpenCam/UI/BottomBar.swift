@@ -24,7 +24,7 @@ struct BottomBar: View {
                 .disabled(!model.canOpenRecordSettings)
             Spacer(minLength: 0)
             if model.showsVideoReadouts {
-                AudioMetersView(levels: model.meterLevels)
+                AudioMetersView(levels: model.shownMeterLevels)
                     .frame(minHeight: Theme.Size.minTarget)
                 Spacer(minLength: 0)
                 Text(model.remaining.text)

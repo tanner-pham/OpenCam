@@ -3,6 +3,8 @@ import SwiftUI
 /// The one line of status under the controls. The microphone line is a button that opens Settings.
 struct NoticeLine: View {
     let model: CameraModel
+    /// On glass over the picture the text is primary, for contrast.
+    var isOnGlass = false
 
     @Environment(\.openURL) private var openURL
 
@@ -20,7 +22,7 @@ struct NoticeLine: View {
     private func line(_ text: String) -> some View {
         Text(text)
             .font(.footnote)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(isOnGlass ? .primary : .secondary)
             .lineLimit(1)
             .minimumScaleFactor(0.8)
     }

@@ -18,7 +18,7 @@ final class CameraModel {
     var freeBytes: Int64
     /// Set only through `show(_:from:)` and cleared only through `clearNotice(from:)`, so each event clears only its own.
     private(set) var notice: String?
-    var meterLevels: [Double] = [0.62, 0.54]
+    private(set) var meterLevels: [Double] = []
     var lastCapture: URL?
     private(set) var capabilities: CaptureCapabilities
     private(set) var lensID: String { didSet { selectionChanged() } }
@@ -148,8 +148,15 @@ final class CameraModel {
     }
 
     /// The current options as the screen may name them: none while formats are being read, and none the device has not reported.
-    private var shownVideoOption: VideoOption? { phase == .scanning ? nil : currentVideoOption }
-    private var shownPhotoOption: PhotoOption? { phase == .scanning ? nil : currentPhotoOption }
+    /// Only a working camera, or the Simulator's labelled stand-in, names a format or a measurement.
+    private var hasCamera: Bool { phase == .ready || phase == .simulator }
+    private var shownVideoOption: VideoOption? { hasCamera ? currentVideoOption : nil }
+    private var shownPhotoOption: PhotoOption? { hasCamera ? currentPhotoOption : nil }
+
+    /// Levels only from a running session with a microphone; otherwise both bars read empty.
+    var shownMeterLevels: [Double] {
+        phase == .ready && access.recordsSound && meterLevels.count == 2 ? meterLevels : [0, 0]
+    }
 
     var summaryParts: [String] {
         switch mode {
@@ -188,6 +195,7 @@ final class CameraModel {
         return StatusText.remaining(minutes: minutesRemaining)
     }
     var remainingText: String { remaining.text }
+    var isStorageFull: Bool { remaining.text == StatusText.storageFull }
 
     var pressureText: String? { StatusText.pressure(pressureLevel, isThermal: isThermalPressure) }
 
@@ -204,7 +212,7 @@ final class CameraModel {
 
     /// Record settings opens only once the device's formats are known.
     var canOpenRecordSettings: Bool {
-        phase != .scanning && !(capabilities.videoOptions.isEmpty && capabilities.photoOptions.isEmpty)
+        hasCamera && !(capabilities.videoOptions.isEmpty && capabilities.photoOptions.isEmpty)
     }
 
     func openRecordSettings() {

@@ -33,6 +33,20 @@ import Testing
         #expect(simulator.summaryParts != ["--"]); #expect(simulator.frameRateText == "30"); #expect(simulator.canOpenRecordSettings)
     }
 
+    @Test func noCameraNamesNothingAndMetersReadEmpty() throws {
+        for phase in [CameraPhase.cameraDenied, .cameraRestricted, .failed("The camera stopped."), .scanning] {
+            let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
+            model.phase = phase
+            #expect(model.summaryParts == ["--"]); #expect(model.frameRateText == "--"); #expect(model.remainingText == "-- min")
+            #expect(!model.canOpenRecordSettings); #expect(!model.canCapture); #expect(model.shownMeterLevels == [0, 0])
+        }
+        let simulator = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
+        #expect(simulator.shownMeterLevels == [0, 0]); #expect(simulator.remainingText == "677 min")
+        let denied = CameraModel(config: .parse(["app", "-state", "micDenied"]), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
+        denied.phase = .ready
+        #expect(denied.shownMeterLevels == [0, 0])
+    }
+
     @Test func launchScreenOpensItsSheet() throws {
         let caps = try Fixture.load()
         #expect(CameraModel(config: .parse(["app", "-screen", "record"]), capabilities: caps, isSimulator: true, defaults: try Fixture.freshDefaults()).sheet == .record)
