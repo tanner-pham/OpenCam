@@ -32,8 +32,10 @@ final class FrameMetalView: MTKView {
     }
 
     override func draw(_ rect: CGRect) {
+        // Without a Metal device nothing can draw, so the frame is left in the slot rather than thrown away.
+        guard let commandQueue else { return }
         guard let image = frames.takeLatest() else { return }
-        guard let commandQueue, let drawable = currentDrawable, let commandBuffer = commandQueue.makeCommandBuffer() else { return }
+        guard let drawable = currentDrawable, let commandBuffer = commandQueue.makeCommandBuffer() else { return }
         let renderer = LookRenderer.shared
         let bounds = CGRect(origin: .zero, size: drawableSize)
         let fitted = image.transformed(by: FrameFit.aspectFit(image.extent, in: drawableSize))
