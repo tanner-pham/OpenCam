@@ -541,6 +541,9 @@ final class CameraModel {
         photo = lastWorking.selection.photo
         isApplyingSelection = false
         settleLook()
+        // The selection change reset the viewfinder's fallback; the session is back on a configuration that may have no
+        // frames (an earlier fallback), so the viewfinder follows what was restored, not what was asked for.
+        isLookViewfinderUnavailable = cameraLook != nil && !lastWorking.configuration.needsFrames
         requestedConfiguration = lastWorking.configuration
         configureTask = nil
         persist()

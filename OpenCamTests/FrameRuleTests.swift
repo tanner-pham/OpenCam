@@ -48,6 +48,25 @@ import Testing
         #expect(model.sessionConfiguration?.needsFrames == false)
     }
 
+    /// After a fallback, a format that fails restores the configuration without frames, and the viewfinder follows it.
+    @Test func aFailedFormatAfterAFallbackKeepsThePlainViewfinder() async throws {
+        let (model, look) = try make()
+        model.mode = .video
+        model.selectLook(look.id)
+        let fake = FakeSessionConfigurator(failingLensIDs: ["ultraWide"])
+        model.attachSession(fake, configuredWith: try #require(model.sessionConfiguration), selection: model.currentSelection)
+        model.framesUnavailable()
+        await model.waitForQueuedConfigures()
+        #expect(await fake.applied.last?.needsFrames == false)
+
+        model.selectLens("ultraWide")
+        #expect(model.viewfinderLook?.id == look.id)   // the change tries the viewfinder again
+        await #expect(throws: CameraSessionError.self) { try await model.applySelection() }
+        #expect(model.cameraLook?.id == look.id); #expect(model.viewfinderLook == nil)
+        #expect(model.sessionConfiguration?.needsFrames == false); #expect(model.summaryLookName == nil)
+        #expect(model.notice == "That format could not be used.")
+    }
+
     /// A sweep tests the formats without a look: every option is configured without frames and the look is suspended, not
     /// turned off by an Apple Log option. Afterwards the look is back and one configure brings the frames back.
     @Test func aSweepSuspendsTheLookAndBringsItBack() async throws {
