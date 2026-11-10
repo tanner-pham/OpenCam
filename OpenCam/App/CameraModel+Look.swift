@@ -30,12 +30,13 @@ extension CameraModel {
         selectLook(UUID(uuidString: chipID))
     }
 
-    /// The look drawn on the viewfinder: the selection while the mode and colour offer it.
-    var viewfinderLook: CameraLook? { isLookOffered ? cameraLook : nil }
+    /// The look drawn on the viewfinder: the selection while the mode and colour offer it and its frames can be drawn.
+    var viewfinderLook: CameraLook? { isLookOffered && !isLookViewfinderUnavailable ? cameraLook : nil }
 
-    /// The look's name for the format summary; nil with no camera picture or no look.
+    /// The look's name for the format summary; nil with no camera picture or no look, and in video mode while the viewfinder
+    /// cannot show it, since the look then applies nowhere.
     var summaryLookName: String? {
-        guard hasCamera, let cameraLook else { return nil }
+        guard hasCamera, let cameraLook, !(mode == .video && isLookViewfinderUnavailable) else { return nil }
         return LookAvailability.summaryName(cameraLook.name)
     }
 

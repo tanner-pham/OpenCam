@@ -20,6 +20,11 @@ actor CameraSession: SessionConfigurator {
     private var audioInput: AVCaptureDeviceInput?
     /// Its output is attached in photo mode only.
     private let photoCapturer = PhotoCapturer()
+    /// Draws the selected look on the viewfinder; fed by `frameOutput`, which is attached only while a configuration needs frames.
+    private let frames: FramePipeline
+    /// Preview-sized buffers for the look on the viewfinder (AVCaptureVideoDataOutput.h, `deliversPreviewSizedOutputBuffers`).
+    /// Attached only while the applied configuration's `needsFrames` is true, so with no look the outputs are as before.
+    private let frameOutput: AVCaptureVideoDataOutput
     private var pressureObservation: NSKeyValueObservation?
     /// True while a media-services-reset restart runs, so a reset during that restart is not retried; cleared when it
     /// ends, whether it worked or not.
@@ -43,8 +48,17 @@ actor CameraSession: SessionConfigurator {
         session.automaticallyConfiguresCaptureDeviceForWideColor = false
         let (events, continuation) = AsyncStream.makeStream(of: SessionEvent.self)
         let (recordingResults, recordingContinuation) = AsyncStream.makeStream(of: RecordingResult.self)
+        let frames = FramePipeline()
+        let frameOutput = AVCaptureVideoDataOutput()
+        frameOutput.alwaysDiscardsLateVideoFrames = true
+        // Must be turned off before deliversPreviewSizedOutputBuffers can be set (AVCaptureVideoDataOutput.h).
+        frameOutput.automaticallyConfiguresOutputBufferDimensions = false
+        frameOutput.deliversPreviewSizedOutputBuffers = true
+        frameOutput.setSampleBufferDelegate(frames, queue: frames.queue)
         self.session = session
-        self.previewSource = PreviewSource(session: session)
+        self.frames = frames
+        self.frameOutput = frameOutput
+        self.previewSource = PreviewSource(session: session, frames: frames)
         self.events = events
         self.continuation = continuation
         self.recordingResults = recordingResults
@@ -116,6 +130,7 @@ actor CameraSession: SessionConfigurator {
         attachAudio(configuration.includesAudio)
         try attachPhotoOutput(configuration.mode == .photo)
         try attachMovieOutput(configuration.mode == .video)
+        attachFrameOutput(configuration.needsFrames)
         try applyFormat(configuration, to: device)
         if configuration.mode == .photo {
             try applyPhotoDimensions(configuration.photo, format: device.activeFormat)
@@ -231,6 +246,37 @@ actor CameraSession: SessionConfigurator {
         }
         guard session.canAddOutput(output) else { throw .cannotAddOutput(name: "movie") }
         session.addOutput(output)
+    }
+
+    /// Attached only while a look needs frames; detached otherwise, so a configuration without a look has the outputs it
+    /// always had. An output that cannot be added never fails the configure: `.framesUnavailable` says so and the
+    /// viewfinder keeps the preview layer. The connection's rotation angle is never set (rotating a data output's buffers
+    /// needs a lengthy pipeline reconfiguration, AVCaptureSession.h `videoRotationAngle`); only its mirroring is, here,
+    /// while the session is being configured, and the pipeline turns the image itself.
+    private func attachFrameOutput(_ isAttached: Bool) {
+        let isPresent = session.outputs.contains(frameOutput)
+        guard isAttached else {
+            if isPresent { session.removeOutput(frameOutput) }
+            return
+        }
+        if !isPresent {
+            guard session.canAddOutput(frameOutput) else {
+                Self.logger.error("[CameraSession:attachFrameOutput] Cannot add output — {name: frames}")
+                continuation.yield(.framesUnavailable)
+                return
+            }
+            session.addOutput(frameOutput)
+        }
+        let isFront = videoInput?.device.position == .front
+        let connection = frameOutput.connection(with: .video)
+        let canMirror = connection?.isVideoMirroringSupported ?? false
+        let plan = FrameOrientation.plan(angle: 0, isFront: isFront, connectionCanMirror: canMirror)
+        if let connection, canMirror {
+            // isVideoMirrored cannot be set while the connection adjusts it itself (AVCaptureSession.h).
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = plan.connectionMirrors
+        }
+        frames.setCamera(isFront: isFront, connectionCanMirror: canMirror)
     }
 
     /// The largest photo follows the selected size; it must be one the active format lists (AVCapturePhotoOutput.h,

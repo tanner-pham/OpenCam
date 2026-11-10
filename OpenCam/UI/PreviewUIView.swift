@@ -2,7 +2,9 @@ import AVFoundation
 import OSLog
 import UIKit
 
-/// Hosts the live picture, aspect-fit, kept horizon-level by a rotation coordinator for the layer's camera.
+/// Hosts the live picture, aspect-fit, kept horizon-level by a rotation coordinator for the layer's camera. The same
+/// coordinator's angle turns the look's frames: the layer stays in the view hierarchy while a look hides it, so its angle
+/// stays valid (AVCaptureDevice.h, `previewLayer`).
 final class PreviewUIView: UIView {
     private static let logger = Logger(subsystem: "local.opencam.app", category: "Preview")
 
@@ -11,10 +13,12 @@ final class PreviewUIView: UIView {
     private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     private var rotationObservation: NSKeyValueObservation?
     private var sessionObservers: [any NSObjectProtocol] = []
+    private let frames: FramePipeline
 
     private var previewLayer: AVCaptureVideoPreviewLayer? { layer as? AVCaptureVideoPreviewLayer }
 
     init(source: PreviewSource) {
+        frames = source.frames
         super.init(frame: .zero)
         backgroundColor = .black
         guard let previewLayer else {
@@ -25,11 +29,19 @@ final class PreviewUIView: UIView {
         previewLayer.session = source.session
         // A new camera input arrives with the first start, and with each configure on a running session
         // (a lens switch or reconfigure); rebuild the coordinator for it then.
-        sessionObservers = [AVCaptureSession.didStartRunningNotification, PreviewSource.didConfigureNotification].map { name in
-            NotificationCenter.default.addObserver(forName: name, object: source.session, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.updateRotationCoordinator() }
+        let center = NotificationCenter.default
+        let started = center.addObserver(forName: AVCaptureSession.didStartRunningNotification, object: source.session, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateRotationCoordinator() }
+        }
+        // Each configure may attach another camera to the frames, so they are given the angle again before the coordinator
+        // is rebuilt, which happens only for a new camera.
+        let configured = center.addObserver(forName: PreviewSource.didConfigureNotification, object: source.session, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.applyFrameOrientation()
+                self?.updateRotationCoordinator()
             }
         }
+        sessionObservers = [started, configured]
     }
 
     @available(*, unavailable)
@@ -58,8 +70,15 @@ final class PreviewUIView: UIView {
     }
 
     private func applyRotation(_ angle: CGFloat) {
+        applyFrameOrientation()
         guard let connection = previewLayer?.connection, connection.isVideoRotationAngleSupported(angle) else { return }
         connection.videoRotationAngle = angle
+    }
+
+    /// Hands the preview's horizon-level angle to the frames, which turn each image by it themselves.
+    private func applyFrameOrientation() {
+        guard let angle = rotationCoordinator?.videoRotationAngleForHorizonLevelPreview else { return }
+        frames.setAngle(angle)
     }
 
     private static func videoDevice(of layer: AVCaptureVideoPreviewLayer) -> AVCaptureDevice? {

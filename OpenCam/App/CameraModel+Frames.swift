@@ -1,0 +1,44 @@
+import Foundation
+
+extension CameraModel {
+    static let framesUnavailableNotice = "The look cannot be shown in the viewfinder with this format."
+
+    /// The session attaches the look's data output only while the viewfinder can draw the look.
+    var needsFrames: Bool { cameraLook != nil && isLookOffered && !isLookViewfinderUnavailable }
+
+    /// The look's frames cannot be drawn with this format: the viewfinder returns to the plain preview, the data output is
+    /// detached, and the look stays selected (photos still take it). The next lens, mode, format or look change tries again.
+    func framesUnavailable() {
+        isLookViewfinderUnavailable = true
+        show(Self.framesUnavailableNotice, from: .look)
+        enqueueConfigure()
+    }
+
+    /// After a configure that needs frames reaches a running session, waits `FrameWatch.timeout` for the first one; with
+    /// none, and the look still on for this configuration, falls back to the plain preview. A configuration without frames
+    /// only cancels the last watch.
+    func watchFrames(for configuration: SessionConfiguration) {
+        frameWatch?.cancel()
+        frameWatch = nil
+        guard configuration.needsFrames, let cameraSession else { return }
+        let frames = cameraSession.previewSource.frames
+        let start = frames.deliveredCount
+        let clock = ContinuousClock()
+        let began = clock.now
+        frameWatch = Task {
+            do {
+                try await Task.sleep(for: FrameWatch.timeout)
+            } catch {
+                return
+            }
+            let delivered = frames.deliveredCount - start
+            guard FrameWatch.isStalled(framesSinceConfigure: delivered, elapsed: clock.now - began) else { return }
+            // Frames stop for reasons of their own while the camera is paused or handed to the Library; only a running,
+            // uninterrupted camera still asking for this configuration has stalled.
+            guard needsFrames, requestedConfiguration == configuration, phase == .ready, !isInterrupted, !isLibraryPresented,
+                  !isCameraReleasedForLibrary else { return }
+            Self.logger.error("[CameraModel:watchFrames] No frame arrived — {lens: \(configuration.lens.id, privacy: .public), mode: \(configuration.mode.rawValue, privacy: .public)}")
+            framesUnavailable()
+        }
+    }
+}

@@ -43,6 +43,9 @@ final class CameraModel {
     var looks: [Look] = []
     /// The look the camera applies; nil is None. Set only by `CameraModel+Look`.
     var cameraLook: CameraLook?
+    /// True when the look's frames could not be drawn with the current format; the viewfinder shows the plain preview until
+    /// the next lens, mode, format or look change tries again. The look stays selected.
+    var isLookViewfinderUnavailable = false
     /// True from the start of a sweep until the user's selection is back. Lens, mode, selection, capture, Record settings
     /// and rescans are all held meanwhile, and nothing is saved as the user's selection.
     var isSweeping = false
@@ -102,6 +105,8 @@ final class CameraModel {
     @ObservationIgnored var libraryHandoff: Task<Void, Never>?
     /// True from the moment the session let go of its camera for the Library until it runs again.
     @ObservationIgnored var isCameraReleasedForLibrary = false
+    /// Waits for the look's first frames after a configure; a stall falls back to the plain preview.
+    @ObservationIgnored var frameWatch: Task<Void, Never>?
 
     static let formatFailedNotice = "That format could not be used."
     static let formatSetupFailed = "This format could not be set up."
@@ -197,7 +202,8 @@ final class CameraModel {
     /// What the session should capture for the current selection; nil without a lens.
     var sessionConfiguration: SessionConfiguration? {
         guard let currentLens else { return nil }
-        return SessionConfiguration.make(lens: currentLens, mode: mode, video: currentVideoOption, photo: currentPhotoOption, access: access)
+        return SessionConfiguration.make(lens: currentLens, mode: mode, video: currentVideoOption, photo: currentPhotoOption, access: access,
+                                         needsFrames: needsFrames)
     }
 
     /// The current options as the screen may name them: none while formats are being read, and none the device has not reported.
@@ -449,6 +455,9 @@ final class CameraModel {
 
     func selectionChanged() {
         guard !isApplyingSelection else { return }
+        // A new lens, mode, format or look tries the viewfinder again.
+        isLookViewfinderUnavailable = false
+        clearNotice(from: .look)
         settleLook()
         persist()
         enqueueConfigure()
@@ -486,7 +495,8 @@ final class CameraModel {
     /// only the last of those runs, because the earlier ones are superseded before the chain reaches them.
     @discardableResult
     func enqueueConfigure() -> Task<CameraSessionError?, Never>? {
-        guard !isScanningFormats, !isRecording, let configurator, let configuration = sessionConfiguration, configuration != requestedConfiguration else { return nil }
+        guard !isScanningFormats, !isRecording, !isHeldForLibrary, let configurator, let configuration = sessionConfiguration,
+              configuration != requestedConfiguration else { return nil }
         requestedConfiguration = configuration
         configureGeneration += 1
         let generation = configureGeneration
@@ -505,6 +515,7 @@ final class CameraModel {
             }
             lastWorking = (configuration, selection)
             clearNotice(from: .configuration)
+            watchFrames(for: configuration)
             return nil
         }
         configureTask = task
@@ -592,6 +603,7 @@ extension CameraModel {
         attachSession(session, configuredWith: configuration, selection: selection)
         cameraSession = session
         await session.start()
+        watchFrames(for: configuration)
         phase = .ready
         releaseIfLibraryOpen()
         await withDiscardingTaskGroup { group in
@@ -683,6 +695,8 @@ extension CameraModel {
         case .pressure(let level, let isThermal):
             pressureLevel = level
             isThermalPressure = isThermal
+        case .framesUnavailable:
+            framesUnavailable()
         }
     }
 }
