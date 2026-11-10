@@ -250,9 +250,8 @@ actor CameraSession: SessionConfigurator {
 
     /// Attached only while a look needs frames; detached otherwise, so a configuration without a look has the outputs it
     /// always had. An output that cannot be added never fails the configure: `.framesUnavailable` says so and the
-    /// viewfinder keeps the preview layer. The connection's rotation angle is never set (rotating a data output's buffers
-    /// needs a lengthy pipeline reconfiguration, AVCaptureSession.h `videoRotationAngle`); only its mirroring is, here,
-    /// while the session is being configured, and the pipeline turns the image itself.
+    /// viewfinder keeps the preview layer. Its connection is made neutral here, while the session is being configured, so
+    /// buffers always arrive in the sensor's own orientation, unmirrored, and the pipeline does all turning and mirroring.
     private func attachFrameOutput(_ isAttached: Bool) {
         let isPresent = session.outputs.contains(frameOutput)
         guard isAttached else {
@@ -267,16 +266,21 @@ actor CameraSession: SessionConfigurator {
             }
             session.addOutput(frameOutput)
         }
-        let isFront = videoInput?.device.position == .front
-        let connection = frameOutput.connection(with: .video)
-        let canMirror = connection?.isVideoMirroringSupported ?? false
-        let plan = FrameOrientation.plan(angle: 0, isFront: isFront, connectionCanMirror: canMirror)
-        if let connection, canMirror {
-            // isVideoMirrored cannot be set while the connection adjusts it itself (AVCaptureSession.h).
-            connection.automaticallyAdjustsVideoMirroring = false
-            connection.isVideoMirrored = plan.connectionMirrors
+        if let connection = frameOutput.connection(with: .video) {
+            // The one place the angle is set: once per configuration, inside beginConfiguration/commitConfiguration, never
+            // on a running session. AVCaptureSession.h:1085 warns that a data output's rotation physically rotates buffers
+            // and needs a lengthy pipeline reconfiguration, so it belongs before running; :1087 says some devices default
+            // the front camera's video data to 180 degrees and advises setting 0; :1089 says ProRes RAW buffers must be at 0.
+            if connection.isVideoRotationAngleSupported(0) {
+                connection.videoRotationAngle = 0
+            }
+            // isVideoMirrored cannot be set while the connection adjusts it itself (AVCaptureSession.h:1050).
+            if connection.isVideoMirroringSupported {
+                connection.automaticallyAdjustsVideoMirroring = false
+                connection.isVideoMirrored = false
+            }
         }
-        frames.setCamera(isFront: isFront, connectionCanMirror: canMirror)
+        frames.setCamera(isFront: videoInput?.device.position == .front)
     }
 
     /// The largest photo follows the selected size; it must be one the active format lists (AVCapturePhotoOutput.h,

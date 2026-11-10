@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreImage
 import Foundation
 import Testing
 @testable import OpenCam
@@ -11,16 +12,28 @@ import Testing
         #expect(slot.take() == 3); #expect(slot.take() == nil); #expect(slot.dropped == 2)
         slot.put(4); #expect(slot.take() == 4); #expect(slot.dropped == 2)
     }
-    @Test func theImageIsAlwaysTurnedByThePipelineAndMirroredOnTheConnectionWhenItCan() {
-        #expect(FrameOrientation.plan(angle: 90, isFront: false, connectionCanMirror: true)
-                == FrameOrientation(connectionMirrors: false, imageRotation: .right, imageMirrors: false))
-        #expect(FrameOrientation.plan(angle: 90, isFront: true, connectionCanMirror: true)
-                == FrameOrientation(connectionMirrors: true, imageRotation: .right, imageMirrors: false))
-        #expect(FrameOrientation.plan(angle: 90, isFront: true, connectionCanMirror: false)
-                == FrameOrientation(connectionMirrors: false, imageRotation: .right, imageMirrors: true))
-        #expect(FrameOrientation.plan(angle: 180, isFront: false, connectionCanMirror: false).imageRotation == .down)
-        #expect(FrameOrientation.plan(angle: 270, isFront: false, connectionCanMirror: false).imageRotation == .left)
-        #expect(FrameOrientation.plan(angle: 0, isFront: false, connectionCanMirror: false).imageRotation == .up)
+    @Test func thePipelineTurnsTheImageThenMirrorsItForAFrontCamera() {
+        #expect(FrameOrientation.plan(angle: 90, isFront: false) == FrameOrientation(imageRotation: .right, imageMirrors: false))
+        #expect(FrameOrientation.plan(angle: 90, isFront: true) == FrameOrientation(imageRotation: .right, imageMirrors: true))
+        #expect(FrameOrientation.plan(angle: 180, isFront: false).imageRotation == .down)
+        #expect(FrameOrientation.plan(angle: 270, isFront: true) == FrameOrientation(imageRotation: .left, imageMirrors: true))
+        #expect(FrameOrientation.plan(angle: 0, isFront: false) == FrameOrientation(imageRotation: .up, imageMirrors: false))
+    }
+    /// A 2 x 1 picture, red on the left and blue on the right, through the transform the frame callback uses.
+    @Test func theTransformMirrorsAndTurnsRealPixels() throws {
+        let red = CIImage(color: CIColor(red: 1, green: 0, blue: 0)).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let blue = CIImage(color: CIColor(red: 0, green: 0, blue: 1)).cropped(to: CGRect(x: 0, y: 0, width: 2, height: 1))
+        let picture = red.composited(over: blue)
+
+        let mirrored = FrameOrientation.plan(angle: 0, isFront: true).apply(to: picture)
+        #expect(mirrored.extent.size == CGSize(width: 2, height: 1))
+        let left = try PixelReader.rgb(mirrored, x: Int(mirrored.extent.minX), y: Int(mirrored.extent.minY))
+        let right = try PixelReader.rgb(mirrored, x: Int(mirrored.extent.minX) + 1, y: Int(mirrored.extent.minY))
+        #expect(right.x > 0.5); #expect(right.z < 0.5)   // red is now on the right
+        #expect(left.z > 0.5); #expect(left.x < 0.5)
+
+        let turned = FrameOrientation.plan(angle: 90, isFront: false).apply(to: picture)
+        #expect(turned.extent.size == CGSize(width: 1, height: 2))
     }
     @Test func watchStallsOnlyAfterTwoSecondsWithoutAFrame() {
         #expect(!FrameWatch.isStalled(framesSinceConfigure: 0, elapsed: .milliseconds(1900)))

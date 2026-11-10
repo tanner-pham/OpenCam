@@ -11,12 +11,11 @@ nonisolated final class FramePipeline: NSObject, AVCaptureVideoDataOutputSampleB
         var adjustments: Adjustments?
         var angle: CGFloat = 0
         var isFront = false
-        var connectionCanMirror = false
         var slot = FrameSlot<CIImage>()
         var deliveredCount = 0
 
         var orientation: FrameOrientation {
-            FrameOrientation.plan(angle: angle, isFront: isFront, connectionCanMirror: connectionCanMirror)
+            FrameOrientation.plan(angle: angle, isFront: isFront)
         }
     }
 
@@ -43,12 +42,9 @@ nonisolated final class FramePipeline: NSObject, AVCaptureVideoDataOutputSampleB
         state.withLock { $0.angle = angle }
     }
 
-    /// The camera now attached, and whether its data connection mirrors; from `CameraSession.apply`.
-    func setCamera(isFront: Bool, connectionCanMirror: Bool) {
-        state.withLock { state in
-            state.isFront = isFront
-            state.connectionCanMirror = connectionCanMirror
-        }
+    /// Whether the camera now attached faces the user; from `CameraSession.apply`.
+    func setCamera(isFront: Bool) {
+        state.withLock { $0.isFront = isFront }
     }
 
     /// The newest drawn-ready frame, once.
@@ -67,10 +63,7 @@ nonisolated final class FramePipeline: NSObject, AVCaptureVideoDataOutputSampleB
             return (state.adjustments, state.orientation)
         }
         guard let adjustments, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        var image = CIImage(cvPixelBuffer: pixelBuffer).oriented(orientation.imageRotation)
-        if orientation.imageMirrors {
-            image = image.oriented(.upMirrored)
-        }
+        let image = orientation.apply(to: CIImage(cvPixelBuffer: pixelBuffer))
         let looked = renderer.renderColourAndVignette(image, cube: cubes.cube(for: adjustments), vignette: adjustments.vignette)
         state.withLock { state in
             // The look changed or was turned off while this frame was rendered; it must not land after that.
