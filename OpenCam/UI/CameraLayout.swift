@@ -8,6 +8,12 @@ struct CameraLayout: View {
 
     /// The side of the system's vertical bar; nil where the system draws its bars across the top and bottom instead.
     @Environment(\.toolbarVerticalEdge) private var stripEdge
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    /// The folded phone's outer display is compact in one direction in either orientation; the open phone's inner display
+    /// is regular in both.
+    private var isFoldedDisplay: Bool { horizontalSizeClass == .compact || verticalSizeClass == .compact }
 
     var body: some View {
         // The outer reader stays inside the safe area, so it reports the bars' insets; the layout itself spans the full
@@ -28,14 +34,14 @@ struct CameraLayout: View {
     }
 
     /// What the controls keep clear of at the top and bottom; the leading and trailing safe area (the side bar) is never
-    /// ignored. With the system's bar on the side (the folded phone, and the open phone in landscape) the top and bottom
-    /// insets are only the screen's corners and home indicator, which the layouts already allow for, so they use the full
-    /// height. Without one (the open phone in portrait) the status sits at the top and the toolbar floats at the bottom,
-    /// and the controls stay clear of both. The floating toolbar's glass reaches about 13 pt above the bottom safe area it
-    /// reports (measured on the open phone in the Simulator), so the controls keep a further `Theme.Space.l` from it.
+    /// ignored. On the open phone the controls stay inside the whole top and bottom safe area in both orientations, and the
+    /// layouts let the picture give up height for it. Without a vertical bar the toolbar floats at the bottom, and its glass
+    /// reaches about 13 pt above the bottom safe area it reports (measured in the Simulator), so the controls keep a further
+    /// `Theme.Space.l` from it. The folded phone's layouts were designed for its outer display, corners and home indicator
+    /// included, and keep the full height there.
     private func barInsets(_ safeArea: EdgeInsets) -> EdgeInsets {
-        guard stripEdge == nil else { return EdgeInsets() }
-        let bottom = safeArea.bottom > 0 ? safeArea.bottom + Theme.Space.l : 0
-        return EdgeInsets(top: safeArea.top, leading: 0, bottom: bottom, trailing: 0)
+        guard !isFoldedDisplay else { return EdgeInsets() }
+        let floatingBar = stripEdge == nil && safeArea.bottom > 0 ? Theme.Space.l : 0
+        return EdgeInsets(top: safeArea.top, leading: 0, bottom: safeArea.bottom + floatingBar, trailing: 0)
     }
 }

@@ -8,14 +8,11 @@ struct FoldedVerticalView: View {
     var insets = EdgeInsets()
 
     var body: some View {
-        VStack(spacing: 0) {
-            // 3:4 across the full width when it fits (the folded phone); otherwise as large as the controls below leave
-            // room for, still 3:4, so the shutter row always shows.
+        // 3:4 across the full width when it fits (the folded phone); otherwise as large as the controls below leave room
+        // for, still 3:4, so the readouts, shutter row and notice line always show in full.
+        PictureAboveControlsLayout(pictureAspect: 3 / 4) {
             ViewfinderArea(phase: model.phase)
-                .aspectRatio(3 / 4, contentMode: .fit)
                 .clipped()
-                .frame(maxWidth: size.width)
-                .layoutPriority(1)
 
             VStack(spacing: Theme.Space.s) {
                 HStack(spacing: 0) {
