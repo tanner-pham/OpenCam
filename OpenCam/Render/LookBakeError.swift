@@ -1,7 +1,6 @@
 import Foundation
 
-/// The brief's tests compare `LookBakeError.undecodable` with no payload, so the sizes the description names are
-/// carried by the cases' associated values being absent: callers log the context they hold (see `LookCapture`).
+/// Why a bake failed. The cases carry no values; `LookCapture` logs the context (path and byte count) when it catches one.
 nonisolated enum LookBakeError: Error, CustomStringConvertible, Equatable {
     case undecodable
     case encodeFailed

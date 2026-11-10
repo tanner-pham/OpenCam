@@ -25,6 +25,20 @@ import Testing
         #expect(abs(try centre(heic) - 0.686) < 0.02)
         #expect(!hasEditFile(dir))
     }
+    @Test func identityLookLeavesThePhotoAndWritesNothing() async throws {
+        let (dir, dng, heic) = try urls()
+        let identity = CameraLook(id: UUID(), name: "Plain", adjustments: Adjustments())
+        let photo = try grey(); try photo.write(to: heic)
+        let heif = PhotoCaptureResult(saved: [heic], error: nil)
+        let heifOutcome = await LookCapture.finish(heif, look: identity, format: .heif, heicURL: heic, dngURL: dng, edits: EditStore(directory: dir))
+        #expect(heifOutcome == LookCaptureOutcome(result: heif, notice: nil))
+        #expect(try Data(contentsOf: heic) == photo)
+        try Data("dng bytes".utf8).write(to: dng)
+        let raw = PhotoCaptureResult(saved: [dng], error: nil)
+        let rawOutcome = await LookCapture.finish(raw, look: identity, format: .raw, heicURL: heic, dngURL: dng, edits: EditStore(directory: dir))
+        #expect(rawOutcome == LookCaptureOutcome(result: raw, notice: nil))
+        #expect(!hasEditFile(dir))
+    }
     @Test func bakingFailureStillSavesThePhoto() async throws {   // Review Focus 2
         let (dir, dng, heic) = try urls()
         let written = Data("not a photo".utf8); try written.write(to: heic)

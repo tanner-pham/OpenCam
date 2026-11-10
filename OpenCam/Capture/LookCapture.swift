@@ -8,10 +8,12 @@ nonisolated enum LookCapture {
     static let lookNotSaved = "Look not saved with the photo."
     private static let logger = Logger(subsystem: "local.opencam.app", category: "LookCapture")
 
+    /// A look whose adjustments are the identity changes nothing, so the photo is left alone and no edit file is written.
     /// HEIF in `result.saved` is baked in place by one atomic write. A RAW-only capture gets an edit file beside the
     /// untouched DNG. `result` comes back unchanged; only the notice differs.
     @concurrent static func finish(_ result: PhotoCaptureResult, look: CameraLook, format: PhotoFormat, heicURL: URL, dngURL: URL,
                                    edits: EditStore, renderer: LookRenderer = .shared) async -> LookCaptureOutcome {
+        guard !look.adjustments.isIdentity else { return LookCaptureOutcome(result: result, notice: nil) }   // nothing to bake or save
         switch format {
         case .heif, .rawPlusHEIF:
             guard result.saved.contains(heicURL) else { return LookCaptureOutcome(result: result, notice: nil) }

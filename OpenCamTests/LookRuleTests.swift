@@ -63,6 +63,25 @@ import Testing
         #expect(model.cameraLook != nil)
         try? await model.applySelection()
         #expect(model.mode == .video); #expect(model.record.colour == .hlg)
-        #expect(model.cameraLook == nil); #expect(model.notice == "Look turned off. Looks need Rec. 709 or P3.")
+        #expect(model.cameraLook == nil)   // the failed-format notice stays; see turningTheLookOffKeepsAFailedFormatNotice
+    }
+
+    /// The same failed configure, but its own notice is already up: the look turns off without replacing it.
+    @Test func turningTheLookOffKeepsAFailedFormatNotice() async throws {
+        let looks = try LookStore(directory: TestFiles.directory())
+        let look = try looks.save(name: "Warm fade", adjustments: Adjustments().setting(.temperature, to: 20))
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: false, defaults: try Fixture.freshDefaults(),
+                                captureStore: try CaptureStore(directory: TestFiles.directory()), lookStore: looks)
+        model.phase = .ready
+        model.mode = .video
+        model.record = RecordSelection(family: .proRes, quality: "422 HQ", resolution: uhd, frameRate: 30, colour: .hlg)
+        let fake = FakeSessionConfigurator(failingLensIDs: [])
+        model.attachSession(fake, configuredWith: try #require(model.sessionConfiguration), selection: model.currentSelection)
+        await fake.setFailingLensIDs([model.lensID])
+        model.mode = .photo
+        model.selectLook(look.id)
+        try? await model.applySelection()
+        #expect(model.cameraLook == nil)
+        #expect(model.notice == "That format could not be used."); #expect(model.noticeSource == .configuration)
     }
 }

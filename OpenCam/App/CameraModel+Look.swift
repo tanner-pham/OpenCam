@@ -41,12 +41,14 @@ extension CameraModel {
         return LookAvailability.summaryName(cameraLook.name)
     }
 
-    /// A look the current mode and colour cannot take becomes None, with a notice. Sets the look directly, so it never
+    /// A look the current mode and colour cannot take becomes None. Its own notice is shown only when there is no notice or
+    /// the current one is from `.look`, so a capture or configuration notice is never replaced. Sets the look directly, so it never
     /// asks the camera to change. A sweep's options are not the user's choice, so nothing is settled while one runs; the
     /// sweep settles once against the restored selection when it ends.
     func settleLook() {
         guard !isSweeping, cameraLook != nil, !isLookOffered else { return }
         cameraLook = nil
+        guard notice == nil || noticeSource == .look else { return }
         show(LookAvailability.turnedOff, from: .look)
     }
 }
