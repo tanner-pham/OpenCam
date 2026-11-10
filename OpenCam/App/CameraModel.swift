@@ -577,6 +577,9 @@ final class CameraModel {
         guard generation == configureGeneration else { return }
         restore(lastWorking)
         configureTask = nil
+        // The failed configure moved the chain on, which drops a pending confirmation; the session still runs the restored
+        // configuration, so it is timed again. A sweep option is never confirmed.
+        if phase == .ready, !isSweeping { confirmWhenRunning(lastWorking.configuration, since: runtimeErrorCount) }
     }
 
     /// Puts back `working`'s lens, mode, record and photo as one change, as the session now runs it, and saves them.

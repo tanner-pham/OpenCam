@@ -235,6 +235,25 @@ import Testing
         #expect(!CameraModel.isMediaServicesReset(wrapped))
     }
 
+    /// A confirmation armed for a sweep option never confirms it once a failed restore has moved the chain on, though the
+    /// session is left on that option.
+    @Test func aConfirmationTheChainHasMovedPastConfirmsNothing() async throws {
+        let (model, fake, _) = try attachedModel()
+        let user = model.currentSelection
+        #expect(await confirmed(model))
+        model.confirmationDelay = .milliseconds(300)
+        model.isSweeping = true
+        model.record = Self.other
+        await model.waitForQueuedConfigures()
+        await fake.setFailingLensIDs([model.lensID])
+        model.record = user.record
+        await model.waitForQueuedConfigures()
+        #expect(model.record == Self.other)
+        model.isSweeping = false
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(model.confirmed?.selection == user)
+    }
+
     /// The clip ends as it always has; only then does the camera restart.
     @Test func aStopWhileRecordingRecoversOnceTheClipHasEnded() async throws {
         let (model, fake, _) = try attachedModel()

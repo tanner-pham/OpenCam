@@ -82,9 +82,12 @@ extension CameraModel {
     /// Confirms `configuration` once it has run for `confirmationDelay` with no runtime error since `errors` (the count read
     /// before its configure and start, so an error handled while they were awaited is not lost), as the session's last applied
     /// configuration, outside a sweep (a sweep option is never the user's) and while nothing holds the session. A stopped
-    /// camera that got there is ready again.
+    /// camera that got there is ready again. It must also still be the requested configuration with no configure queued since
+    /// it was armed (`configureGeneration`), so an older confirmation never confirms what the chain has moved past, such as a
+    /// sweep option left in place by a failed restore.
     func confirmWhenRunning(_ configuration: SessionConfiguration, since errors: Int) {
         confirmation?.cancel()
+        let generation = configureGeneration
         let delay = confirmationDelay
         confirmation = Task {
             do {
@@ -92,7 +95,8 @@ extension CameraModel {
             } catch {
                 return
             }
-            guard errors == runtimeErrorCount, let lastWorking, lastWorking.configuration == configuration, !isSessionHeld,
+            guard errors == runtimeErrorCount, generation == configureGeneration, requestedConfiguration == configuration,
+                  let lastWorking, lastWorking.configuration == configuration, !isSessionHeld,
                   phase == .ready || isCameraStopped else { return }
             confirmed = lastWorking
             isRecoveryUnconfirmed = false
