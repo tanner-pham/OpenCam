@@ -380,6 +380,9 @@ final class CameraModel {
         if option.format.includesRAW { requested.append(dngURL) }
         if option.format != .raw { requested.append(heicURL) }
         let pendingConfigure = configureTask
+        let look = cameraLook
+        let format = option.format
+        let edits = EditStore(directory: store.directory)
         photoCaptures[sequence] = Task {
             defer { photoCaptures[sequence] = nil }
             _ = await pendingConfigure?.value
@@ -389,20 +392,27 @@ final class CameraModel {
             } catch {
                 result = PhotoCaptureResult(saved: [], error: error)
             }
-            photoFinished(requested: requested, result: result)
+            // The photo is already on disk; the bake runs inside this task, so a configure or the Library waits for it,
+            // and the last capture is set only after it, so the strip shows the baked picture.
+            var lookNotice: String?
+            if let look {
+                lookNotice = await LookCapture.finish(result, look: look, format: format, heicURL: heicURL, dngURL: dngURL, edits: edits).notice
+            }
+            photoFinished(requested: requested, result: result, lookNotice: lookNotice)
         }
     }
 
-    /// The notice always describes the latest capture: a full save clears an earlier photo notice.
-    private func photoFinished(requested: [URL], result: PhotoCaptureResult) {
+    /// The notice always describes the latest capture: a full save clears an earlier photo notice. The save report's
+    /// notice wins over the look's. Internal so tests can deliver a result without a session.
+    func photoFinished(requested: [URL], result: PhotoCaptureResult, lookNotice: String? = nil) {
         if let error = result.error {
             Self.logger.error("\(error.description, privacy: .public)")
         }
         let report = PhotoSaveReport.make(requested: requested, saved: result.saved, error: result.error)
         if let saved = report.lastCapture { lastCapture = saved }
         // A full save replaces an earlier capture notice with none.
-        if let reportNotice = report.notice {
-            show(reportNotice, from: .capture)
+        if let notice = report.notice ?? lookNotice {
+            show(notice, from: .capture)
         } else {
             clearNotice(from: .capture)
         }
