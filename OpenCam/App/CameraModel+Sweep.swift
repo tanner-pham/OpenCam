@@ -81,7 +81,7 @@ extension CameraModel: SweepDriver {
 
     /// Marks `url` as a sweep clip; `startRecording` calls it for every clip it starts during a sweep.
     func recordSweepClip(_ url: URL) {
-        sweepClips.insert(url)
+        sweepClips.insert(CaptureStore.clipKey(for: url))
     }
 
     // MARK: SweepDriver

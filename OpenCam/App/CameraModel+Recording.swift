@@ -23,7 +23,7 @@ extension CameraModel {
             do throws(RecordingError) {
                 try await configurator.startRecording(option: option, url: url, minFreeBytes: minFreeBytes)
                 // A clip that ended as it started has already reported; the idle timecode must not keep a start time.
-                guard isRecording, recordingClip?.url == url else { return }
+                guard isRecording, let recordingClip, CaptureStore.clipKey(for: recordingClip.url) == CaptureStore.clipKey(for: url) else { return }
                 recordingStart = Date()
             } catch {
                 recordingDidFinish(RecordingResult(url: url, option: option, outcome: .failed(error.description), sidecar: nil))
@@ -59,7 +59,7 @@ extension CameraModel {
             recordingStartTask = nil
             return
         }
-        guard clip == nil || clip == recordingClip.url else { return }
+        guard clip.map({ CaptureStore.clipKey(for: $0) == CaptureStore.clipKey(for: recordingClip.url) }) ?? true else { return }
         let path = recordingClip.url.path(percentEncoded: false)
         let message = "[CameraModel:\(context)] No recording result arrived — {path: \(path)}"
         let outcome: RecordingOutcome
@@ -70,7 +70,7 @@ extension CameraModel {
             outcome = .failed(message)
         }
         recordingDidFinish(RecordingResult(url: recordingClip.url, option: recordingClip.option, outcome: outcome, sidecar: nil))
-        unreportedClips.insert(recordingClip.url)
+        unreportedClips.insert(CaptureStore.clipKey(for: recordingClip.url))
     }
 
     /// The free space at which recording stops: the 2 GB reserve, or free space minus the `-freeSpaceMarginMB` margin.
@@ -93,7 +93,7 @@ extension CameraModel {
     /// unless `-keepSweepClips on` (its sidecar stays).
     /// A result for a clip the model already ended without one changes no recording state, which may belong to a newer clip.
     func recordingDidFinish(_ result: RecordingResult) {
-        if unreportedClips.remove(result.url) == nil {
+        if unreportedClips.remove(CaptureStore.clipKey(for: result.url)) == nil {
             isRecording = false
             recordingStart = nil
             recordingStartTask = nil
@@ -102,7 +102,7 @@ extension CameraModel {
         if case .failed(let message) = result.outcome {
             Self.logger.error("\(message, privacy: .public)")
         }
-        let isSweepClip = sweepClips.remove(result.url) != nil
+        let isSweepClip = sweepClips.remove(CaptureStore.clipKey(for: result.url)) != nil
         if isSweeping, let sweep {
             refreshFreeBytes()
             sweep.recordingDidFinish(result)

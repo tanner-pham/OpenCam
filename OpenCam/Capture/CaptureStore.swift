@@ -42,6 +42,12 @@ final class CaptureStore {
         directory.appending(path: Self.fileName(sequence: sequence, kind: kind), directoryHint: .notDirectory)
     }
 
+    /// What identifies a capture file when matching it: its name, which is unique in the one captures folder. A system
+    /// callback may report the same file as `/private/var/…` where it was given `/var/…`, so whole URLs are never compared.
+    nonisolated static func clipKey(for url: URL) -> String {
+        url.lastPathComponent
+    }
+
     /// "OC_0001.DNG": the number padded to four digits, wider when it needs more.
     static func fileName(sequence: Int, kind: CaptureFileKind) -> String {
         let digits = String(sequence)

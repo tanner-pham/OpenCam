@@ -42,8 +42,9 @@ final class CameraModel {
     var isSweeping = false
     /// Options that failed the last sweep of each lens on this OS build; loaded on the device only.
     var failedCombinations = FailedCombinations(osBuild: "", failedByLens: [:])
-    /// Every clip a sweep started whose result has not arrived yet; it stays a sweep clip whenever the result comes.
-    @ObservationIgnored var sweepClips: Set<URL> = []
+    /// Every clip a sweep started whose result has not arrived yet, by `CaptureStore.clipKey`; it stays a sweep clip
+    /// whenever the result comes.
+    @ObservationIgnored var sweepClips: Set<String> = []
 
     @ObservationIgnored private let defaults: UserDefaults
     /// `-keepSweepClips on` keeps each sweep clip; otherwise only its sidecar stays.
@@ -80,8 +81,9 @@ final class CameraModel {
     @ObservationIgnored var recordingStartTask: Task<Void, Never>?
     /// The clip being recorded, from the press until its result; a stop or restart that finds no result coming ends it.
     @ObservationIgnored var recordingClip: (url: URL, option: VideoOption)?
-    /// Clips the model ended without their result; a result that still arrives changes no recording state.
-    @ObservationIgnored var unreportedClips: Set<URL> = []
+    /// Clips the model ended without their result, by `CaptureStore.clipKey`; a result that still arrives changes no
+    /// recording state.
+    @ObservationIgnored var unreportedClips: Set<String> = []
     /// What put `notice` there; nil when no notice is shown.
     @ObservationIgnored var noticeSource: NoticeSource?
 

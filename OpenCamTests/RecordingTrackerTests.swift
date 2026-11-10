@@ -32,6 +32,27 @@ import Testing
         #expect(done == .nothingInFlight)
     }
 
+    @Test func theSameFileReportedThroughPrivateVarIsTheSameClip() throws {
+        let container = "/var/mobile/Containers/Data/Application/0A1B/Documents/Captures"
+        let given = URL(filePath: "\(container)/OC_0002.MOV")
+        let reported = URL(filePath: "/private\(container)/OC_0002.MOV")
+        var tracker = RecordingTracker()
+        tracker.begin(clip(URL(filePath: "\(container)/OC_0001.MOV")))
+        tracker.begin(clip(given))
+        let start = tracker.didStart(url: reported)
+        #expect(!start)
+        let stop = tracker.requestStop()
+        #expect(stop == .stopNow)
+        // A different file name, in either spelling, is still the earlier clip.
+        let earlierFinish = tracker.finish(url: URL(filePath: "/private\(container)/OC_0001.MOV"))
+        let earlier = try #require(earlierFinish)
+        #expect(!earlier.isCurrent); #expect(tracker.pending?.url == given)
+        let currentFinish = tracker.finish(url: reported)
+        let current = try #require(currentFinish)
+        #expect(current.isCurrent); #expect(current.recording.url == given); #expect(tracker.pending == nil)
+        #expect(CaptureStore.clipKey(for: given) == CaptureStore.clipKey(for: reported))
+    }
+
     @Test func aFileThatWasNeverStartedIsNotMatched() {
         var tracker = RecordingTracker()
         tracker.begin(clip(second))
