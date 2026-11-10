@@ -47,4 +47,16 @@ import Testing
         let first = try #require(values.first), last = try #require(values.last)
         #expect(abs(last - first) > 0.05)   // the slider does something
     }
+    /// Pins the stage order: exposure (stage 2) before contrast (5) before saturation (8).
+    /// Expected values worked out by hand in that order: (0.6, 0.4, 0.3) +0.5 stop gives (0.70176, 0.47069, 0.35515),
+    /// contrast +30 about 0.5 gives (0.76228, 0.46189, 0.31170), saturation +40 about its luma 0.51491 gives (0.86123, 0.44068, 0.23041).
+    @Test func severalStagesApplyInTheFixedOrder() {
+        let rgb = SIMD3<Float>(0.6, 0.4, 0.3)
+        let all = Adjustments().setting(.exposure, to: 0.5).setting(.contrast, to: 30).setting(.saturation, to: 40)
+        let out = ColourMath.apply(all, to: rgb)
+        #expect(maxDiff(out, SIMD3(0.86123, 0.44068, 0.23041)) < 1e-4)
+        // Contrast and saturation commute (both scale about a point), so a reordering that matters moves exposure.
+        let reordered = apply(.exposure, 0.5, apply(.contrast, 30, apply(.saturation, 40, rgb)))
+        #expect(maxDiff(reordered, out) > 0.02)
+    }
 }

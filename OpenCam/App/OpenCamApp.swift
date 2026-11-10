@@ -46,6 +46,7 @@ struct OpenCamApp: App {
             .preferredColorScheme(.dark)
             .environment(\.previewSource, session?.previewSource)
             .task { forceOrientation() }
+            .task { await LookRenderer.warmUp() }
             .task {
                 guard let model, let session else { return }
                 await model.start(session: session)
