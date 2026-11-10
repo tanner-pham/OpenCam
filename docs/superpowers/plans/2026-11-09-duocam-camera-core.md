@@ -1,4 +1,4 @@
-# DuoCam Camera Core (P1a) Implementation Plan
+# OpenCam Camera Core (P1a) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -12,14 +12,14 @@
 
 ## Global Constraints
 
-- "iPhone Duo only, iOS 27.1 or later, Xcode 27.2, Swift 6, SwiftUI." Deployment target `27.1`, `SWIFT_VERSION = 6.0`, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` (as the prototype). Every type in `DuoCam/Capability/` is `nonisolated`, `Sendable`, and imports Foundation only.
-- Targets: app `DuoCam` (bundle id `local.duocam.app`) and unit tests `DuoCamTests` (`local.duocam.app.tests`, Swift Testing). `DuoCam.xcodeproj` at the repo root with file-system-synchronized groups. `TARGETED_DEVICE_FAMILY = 1`. Source folders `DuoCam/App`, `Capability`, `Capture`, `UI`, `Support`. All paths are relative to the repo root.
+- "iPhone Duo only, iOS 27.1 or later, Xcode 27.2, Swift 6, SwiftUI." Deployment target `27.1`, `SWIFT_VERSION = 6.0`, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` (as the prototype). Every type in `OpenCam/Capability/` is `nonisolated`, `Sendable`, and imports Foundation only.
+- Targets: app `OpenCam` (bundle id `local.opencam.app`) and unit tests `OpenCamTests` (`local.opencam.app.tests`, Swift Testing). `OpenCam.xcodeproj` at the repo root with file-system-synchronized groups. `TARGETED_DEVICE_FAMILY = 1`. Source folders `OpenCam/App`, `Capability`, `Capture`, `UI`, `Support`. All paths are relative to the repo root.
 - "No third-party dependencies." "SwiftUI with system components and system glass throughout; dark appearance only." All four interface orientations.
 - "The Simulator has no camera. Every capture path is verified on the physical Duo. UI is verified in the Duo simulator with a stand-in image." The stand-in reads `No camera in Simulator`.
 - Outer display "466 x 678 pt at 3x"; the strip is "about 86 pt wide". Strip items are `ToolbarItem(placement: .bottomBar)` with `.axisBehavior(.verticalPreferred)`.
 - Anti-goals, verbatim: "A control that names a format or tool the device cannot actually use at that moment." "Imitation blur or glass drawn by hand where a system material exists." "Controls covering the picture on the outer display when the strip or the letterbox bars could hold them." "A recording that drops frames without saying so."
-- Captures: `Documents/Captures/` named `DC_0001.DNG`, `DC_0001.HEIC`, `DC_0002.MOV`, `DC_0002.json`; `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` true. Storage reserve `2_000_000_000` bytes; GB means 10^9 bytes everywhere.
-- Simulator: tests and screenshots use only the simulator `DuoCam Dev` (`com.apple.CoreSimulator.SimDeviceType.iPhone-Duo`, `com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4`) by UDID. Never `booted`, never another simulator.
+- Captures: `Documents/Captures/` named `OC_0001.DNG`, `OC_0001.HEIC`, `OC_0002.MOV`, `OC_0002.json`; `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` true. Storage reserve `2_000_000_000` bytes; GB means 10^9 bytes everywhere.
+- Simulator: tests and screenshots use only the simulator `OpenCam Dev` (`com.apple.CoreSimulator.SimDeviceType.iPhone-Duo`, `com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4`) by UDID. Never `booted`, never another simulator.
 - Code: no force unwraps, force casts or `try!` (tests included); no `Any`-typed values in our APIs (AVFoundation dictionaries are built at the call site from typed structs); one type per file; errors are specific enums conforming to `Error, CustomStringConvertible` with messages `[Module:Function] Description — {context}`, e.g. `[CameraSession:configure] Cannot add input — {lens: wide}`. The one unchecked crossing is `PreviewSource` (`@unchecked Sendable`), because `AVCaptureSession` is not Sendable in the SDK; no `@preconcurrency import`, no `nonisolated(unsafe)`.
 - Copy: plain, factual, sentence case, no em dashes in UI strings, no marketing or AI words, no "Analyzing" or "Thinking" states, never name a format or tool the device cannot use at that moment (a dimmed chip with its reason is allowed, per the spec's Record settings section).
 - Git: conventional commits, no attribution lines, never force-push.
@@ -38,15 +38,15 @@
 ### Task 1: Project, test script, capability model and fixture
 
 **Files:**
-- Create: `DuoCam.xcodeproj/project.pbxproj`, modelled on `prototype/DuoCamPrototype.xcodeproj/project.pbxproj` (objectVersion 77, `PBXFileSystemSynchronizedRootGroup`s `DuoCam` and `DuoCamTests`), plus a `bundle.unit-test` target with `TEST_HOST = $(BUILT_PRODUCTS_DIR)/DuoCam.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/DuoCam`, `BUNDLE_LOADER = $(TEST_HOST)` and a target dependency
-- Create: `DuoCam.xcodeproj/xcshareddata/xcschemes/DuoCam.xcscheme` (builds DuoCam, tests DuoCamTests)
-- Create: `Config/DuoCam-Info.plist`, a copy of `probe/Info-extra.plist`, outside the synchronized group so it is not copied as a resource (`INFOPLIST_FILE = Config/DuoCam-Info.plist`, `GENERATE_INFOPLIST_FILE = YES`)
-- Create: `scripts/sim-udid.sh`, `scripts/test.sh`, `scripts/make-fixture/main.swift`, `DuoCam/App/DuoCamApp.swift` (black `WindowGroup`, replaced in Task 4)
-- Create in `DuoCam/Capability/`: `CaptureCapabilities.swift`, `CapabilityError.swift`, `Lens.swift`, `LensKind.swift`, `VideoOption.swift`, `VideoCodec.swift`, `CodecFamily.swift`, `BitrateTier.swift`, `Resolution.swift`, `ColourMode.swift`, `PhotoOption.swift`, `PhotoFormat.swift`
-- Create: `DuoCam/Support/CapabilitiesFixture.json` (generated)
-- Test: `DuoCamTests/CaptureCapabilitiesTests.swift`, `DuoCamTests/Fixture.swift` (`enum Fixture { static func load() throws -> CaptureCapabilities; static func freshDefaults() throws -> UserDefaults }`, the second a new `UserDefaults(suiteName: UUID().uuidString)`; used by later suites)
+- Create: `OpenCam.xcodeproj/project.pbxproj`, modelled on `prototype/DuoCamPrototype.xcodeproj/project.pbxproj` (objectVersion 77, `PBXFileSystemSynchronizedRootGroup`s `OpenCam` and `OpenCamTests`), plus a `bundle.unit-test` target with `TEST_HOST = $(BUILT_PRODUCTS_DIR)/OpenCam.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/OpenCam`, `BUNDLE_LOADER = $(TEST_HOST)` and a target dependency
+- Create: `OpenCam.xcodeproj/xcshareddata/xcschemes/OpenCam.xcscheme` (builds OpenCam, tests OpenCamTests)
+- Create: `Config/OpenCam-Info.plist`, a copy of `probe/Info-extra.plist`, outside the synchronized group so it is not copied as a resource (`INFOPLIST_FILE = Config/OpenCam-Info.plist`, `GENERATE_INFOPLIST_FILE = YES`)
+- Create: `scripts/sim-udid.sh`, `scripts/test.sh`, `scripts/make-fixture/main.swift`, `OpenCam/App/OpenCamApp.swift` (black `WindowGroup`, replaced in Task 4)
+- Create in `OpenCam/Capability/`: `CaptureCapabilities.swift`, `CapabilityError.swift`, `Lens.swift`, `LensKind.swift`, `VideoOption.swift`, `VideoCodec.swift`, `CodecFamily.swift`, `BitrateTier.swift`, `Resolution.swift`, `ColourMode.swift`, `PhotoOption.swift`, `PhotoFormat.swift`
+- Create: `OpenCam/Support/CapabilitiesFixture.json` (generated)
+- Test: `OpenCamTests/CaptureCapabilitiesTests.swift`, `OpenCamTests/Fixture.swift` (`enum Fixture { static func load() throws -> CaptureCapabilities; static func freshDefaults() throws -> UserDefaults }`, the second a new `UserDefaults(suiteName: UUID().uuidString)`; used by later suites)
 
-Other build settings: `INFOPLIST_KEY_CFBundleDisplayName = DuoCam`, `INFOPLIST_KEY_UIUserInterfaceStyle = Dark`, `INFOPLIST_KEY_NSCameraUsageDescription = "Shows the camera picture and records photos and video."`, `INFOPLIST_KEY_NSMicrophoneUsageDescription = "Records sound with video."`, `CODE_SIGN_STYLE = Automatic`, `DEVELOPMENT_TEAM = ""` (the owner sets a team locally for device builds; never commit one).
+Other build settings: `INFOPLIST_KEY_CFBundleDisplayName = OpenCam`, `INFOPLIST_KEY_UIUserInterfaceStyle = Dark`, `INFOPLIST_KEY_NSCameraUsageDescription = "Shows the camera picture and records photos and video."`, `INFOPLIST_KEY_NSMicrophoneUsageDescription = "Records sound with video."`, `CODE_SIGN_STYLE = Automatic`, `DEVELOPMENT_TEAM = ""` (the owner sets a team locally for device builds; never commit one).
 
 **Interfaces:**
 - Consumes: nothing.
@@ -99,9 +99,9 @@ Photo: `wide` all three formats at 8064x6048 and 4032x3024; `ultraWide` all thre
 
 ```bash
 #!/bin/zsh
-# scripts/sim-udid.sh: prints the UDID of "DuoCam Dev", creating and booting it if needed
+# scripts/sim-udid.sh: prints the UDID of "OpenCam Dev", creating and booting it if needed
 set -euo pipefail
-NAME="DuoCam Dev"; TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-Duo; RUNTIME=com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4
+NAME="OpenCam Dev"; TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-Duo; RUNTIME=com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4
 UDID="$(xcrun simctl list devices | grep -E "^ +$NAME \(" | head -1 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')"
 if [[ -z "$UDID" ]]; then UDID="$(xcrun simctl create "$NAME" "$TYPE" "$RUNTIME")"; fi
 xcrun simctl bootstatus "$UDID" -b >/dev/null
@@ -114,11 +114,11 @@ print -r -- "$UDID"
 set -euo pipefail
 cd "$(dirname "$0")/.."
 UDID="$(scripts/sim-udid.sh)"
-xcodebuild test -quiet -project DuoCam.xcodeproj -scheme DuoCam -destination "id=$UDID" \
-  -derivedDataPath .build CODE_SIGNING_ALLOWED=NO ${1:+-only-testing:DuoCamTests/$1}
+xcodebuild test -quiet -project OpenCam.xcodeproj -scheme OpenCam -destination "id=$UDID" \
+  -derivedDataPath .build CODE_SIGNING_ALLOWED=NO ${1:+-only-testing:OpenCamTests/$1}
 ```
 
-Run: `chmod +x scripts/*.sh && scripts/sim-udid.sh && xcrun simctl list devices | grep -c "DuoCam Dev"` — Expected: a UDID, then `1`.
+Run: `chmod +x scripts/*.sh && scripts/sim-udid.sh && xcrun simctl list devices | grep -c "OpenCam Dev"` — Expected: a UDID, then `1`.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -150,19 +150,19 @@ Run: `chmod +x scripts/*.sh && scripts/sim-udid.sh && xcrun simctl list devices 
 - [ ] **Step 3: Run it to see it fail** — `scripts/test.sh CaptureCapabilitiesTests`. Expected: build error `cannot find 'CaptureCapabilities' in scope`.
 - [ ] **Step 4: Implement the types in Interfaces, then generate the fixture**
 
-Run: `swiftc DuoCam/Capability/*.swift scripts/make-fixture/main.swift -o .build/make-fixture && .build/make-fixture > DuoCam/Support/CapabilitiesFixture.json && grep -c '"lensID"' DuoCam/Support/CapabilitiesFixture.json`
+Run: `swiftc OpenCam/Capability/*.swift scripts/make-fixture/main.swift -o .build/make-fixture && .build/make-fixture > OpenCam/Support/CapabilitiesFixture.json && grep -c '"lensID"' OpenCam/Support/CapabilitiesFixture.json`
 Expected: `1116` (video 352 + 352 + 304 + 48 + 48, photo 6 + 3 + 1 + 1 + 1).
 
 - [ ] **Step 5: Run to see it pass** — `scripts/test.sh CaptureCapabilitiesTests`. Expected: `** TEST SUCCEEDED **`.
-- [ ] **Step 6: Commit** — `git add DuoCam.xcodeproj Config scripts DuoCam DuoCamTests && git commit -m "feat: add project, simulator test script and capability model with fixture"`
+- [ ] **Step 6: Commit** — `git add OpenCam.xcodeproj Config scripts OpenCam OpenCamTests && git commit -m "feat: add project, simulator test script and capability model with fixture"`
 
 ---
 
 ### Task 2: Record and photo selection resolvers
 
 **Files:**
-- Create in `DuoCam/Capability/`: `RecordSelection.swift`, `RecordRow.swift`, `Chip.swift`, `RecordSelectionResolver.swift`, `PhotoSelection.swift`, `PhotoRow.swift`, `PhotoSelectionResolver.swift`
-- Test: `DuoCamTests/RecordSelectionResolverTests.swift`, `DuoCamTests/PhotoSelectionResolverTests.swift`
+- Create in `OpenCam/Capability/`: `RecordSelection.swift`, `RecordRow.swift`, `Chip.swift`, `RecordSelectionResolver.swift`, `PhotoSelection.swift`, `PhotoRow.swift`, `PhotoSelectionResolver.swift`
+- Test: `OpenCamTests/RecordSelectionResolverTests.swift`, `OpenCamTests/PhotoSelectionResolverTests.swift`
 
 **Interfaces:**
 - Consumes: Task 1 types.
@@ -266,13 +266,13 @@ Rules the signatures do not decide:
 - [ ] **Step 2: Run to see them fail** — `scripts/test.sh RecordSelectionResolverTests`. Expected: `cannot find 'RecordSelectionResolver'`.
 - [ ] **Step 3: Implement the types to the rules above.**
 - [ ] **Step 4: Run to see them pass** — `scripts/test.sh RecordSelectionResolverTests && scripts/test.sh PhotoSelectionResolverTests`. Expected: `** TEST SUCCEEDED **` twice.
-- [ ] **Step 5: Commit** — `git add DuoCam/Capability DuoCamTests && git commit -m "feat: add record and photo selection resolvers with computed reasons"`
+- [ ] **Step 5: Commit** — `git add OpenCam/Capability OpenCamTests && git commit -m "feat: add record and photo selection resolvers with computed reasons"`
 
 ---
 
 ### Task 3: Data rate and remaining time
 
-**Files:** Create `DuoCam/Capability/DataRateEstimator.swift`; Test `DuoCamTests/DataRateEstimatorTests.swift`
+**Files:** Create `OpenCam/Capability/DataRateEstimator.swift`; Test `OpenCamTests/DataRateEstimatorTests.swift`
 
 **Interfaces:**
 - Consumes: `VideoOption`, `BitrateTier.bitsPerPixelPerFrame`.
@@ -323,17 +323,17 @@ Figures: ProRes Mbit/s at 1920 x 1080, 29.97 fps: Proxy 45, LT 102, 422 147, 422
 - [ ] **Step 2: Run to see them fail** — `scripts/test.sh DataRateEstimatorTests`. Expected: `cannot find 'DataRateEstimator'`.
 - [ ] **Step 3: Implement `DataRateEstimator`.**
 - [ ] **Step 4: Run to see them pass.**
-- [ ] **Step 5: Commit** — `git add DuoCam/Capability DuoCamTests && git commit -m "feat: add data rate and remaining time estimates"`
+- [ ] **Step 5: Commit** — `git add OpenCam/Capability OpenCamTests && git commit -m "feat: add data rate and remaining time estimates"`
 
 ---
 
 ### Task 4: Record settings UI
 
 **Files:**
-- Create in `DuoCam/UI/`: `Theme.swift` (prototype copy), `ChipRow.swift`, `ChipButton.swift` (split from the prototype's `ChipRow.swift`), `RecordSettingsSheet.swift`, `VideoRecordRows.swift`, `PhotoRows.swift`
-- Create in `DuoCam/App/`: `CaptureMode.swift` (`nonisolated enum CaptureMode: String, Codable, Sendable { case video, photo }`), `LaunchConfig.swift`, `LaunchOrientation.swift`, `LaunchScreen.swift`, `SimulatedState.swift`
-- Create: `scripts/shot.sh`. Modify: `DuoCam/App/DuoCamApp.swift`
-- Test: `DuoCamTests/LaunchConfigTests.swift`
+- Create in `OpenCam/UI/`: `Theme.swift` (prototype copy), `ChipRow.swift`, `ChipButton.swift` (split from the prototype's `ChipRow.swift`), `RecordSettingsSheet.swift`, `VideoRecordRows.swift`, `PhotoRows.swift`
+- Create in `OpenCam/App/`: `CaptureMode.swift` (`nonisolated enum CaptureMode: String, Codable, Sendable { case video, photo }`), `LaunchConfig.swift`, `LaunchOrientation.swift`, `LaunchScreen.swift`, `SimulatedState.swift`
+- Create: `scripts/shot.sh`. Modify: `OpenCam/App/OpenCamApp.swift`
+- Test: `OpenCamTests/LaunchConfigTests.swift`
 
 **Interfaces:**
 - Consumes: Tasks 1 to 3.
@@ -352,7 +352,7 @@ struct RecordSettingsSheet: View { let mode: CaptureMode; let capabilities: Capt
 struct ChipRow: View { let title: String; let chips: [Chip]; let selectedID: String; let reason: String?; let columns: Int; let onSelect: (String) -> Void }
 ```
 
-Flags: `-orientation landscape|portrait`, `-mode video|photo`, `-screen main|record|sweep`, `-recording on|off`, `-state <SimulatedState>`, `-freeSpaceMarginMB <Int>`, `-keepSweepClips on`; unknown values fall back to defaults. The sheet renders the five `RecordRow`s in video mode (chips from `chips`, caption from `reasonLine`, a tap calls `select` and writes the binding) with `DataRateEstimator.footer` below, or the two `PhotoRow`s in photo mode; titles "Record settings" / "Photo settings"; close is `Button(role: .close)`; chips keep the prototype styling (selected `.glassProminent` tinted `Theme.accent`, others `.glass`, unavailable at 0.35 opacity and disabled). For this task `DuoCamApp` loads the fixture, holds `@State` selections from `defaultSelection()` on lens `wide` with `freeBytes` 141_000_000_000, presents the sheet over black when `-screen record`, and applies `-orientation` with `requestGeometryUpdate` as the prototype app does.
+Flags: `-orientation landscape|portrait`, `-mode video|photo`, `-screen main|record|sweep`, `-recording on|off`, `-state <SimulatedState>`, `-freeSpaceMarginMB <Int>`, `-keepSweepClips on`; unknown values fall back to defaults. The sheet renders the five `RecordRow`s in video mode (chips from `chips`, caption from `reasonLine`, a tap calls `select` and writes the binding) with `DataRateEstimator.footer` below, or the two `PhotoRow`s in photo mode; titles "Record settings" / "Photo settings"; close is `Button(role: .close)`; chips keep the prototype styling (selected `.glassProminent` tinted `Theme.accent`, others `.glass`, unavailable at 0.35 opacity and disabled). For this task `OpenCamApp` loads the fixture, holds `@State` selections from `defaultSelection()` on lens `wide` with `freeBytes` 141_000_000_000, presents the sheet over black when `-screen record`, and applies `-orientation` with `requestGeometryUpdate` as the prototype app does.
 
 `scripts/shot.sh <name> [launch args...]`:
 
@@ -362,9 +362,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 NAME="$1"; shift
 UDID="$(scripts/sim-udid.sh)"
-xcodebuild build -quiet -project DuoCam.xcodeproj -scheme DuoCam -destination "id=$UDID" -derivedDataPath .build CODE_SIGNING_ALLOWED=NO
-xcrun simctl install "$UDID" .build/Build/Products/Debug-iphonesimulator/DuoCam.app
-xcrun simctl launch --terminate-running-process "$UDID" local.duocam.app "$@" >/dev/null
+xcodebuild build -quiet -project OpenCam.xcodeproj -scheme OpenCam -destination "id=$UDID" -derivedDataPath .build CODE_SIGNING_ALLOWED=NO
+xcrun simctl install "$UDID" .build/Build/Products/Debug-iphonesimulator/OpenCam.app
+xcrun simctl launch --terminate-running-process "$UDID" local.opencam.app "$@" >/dev/null
 sleep 4
 mkdir -p docs/screenshots/p1a
 xcrun simctl io "$UDID" screenshot --display=1 "docs/screenshots/p1a/$NAME.png"
@@ -397,18 +397,18 @@ scripts/shot.sh t4-record-photo-v -orientation portrait -mode photo -screen reco
 
 Pass when the video shots show Codec ProRes, HEVC, H.264 (no RAW: the fixture has none) with HEVC selected; Quality Max/High/Medium/Low; Resolution 4K and 1080p with sizes; Frame rate 24 to 120 with 100 and 120 dimmed and "HEVC High at 4K records at up to 60 fps."; Colour with Apple Log dimmed and "Apple Log is not available with HEVC."; footer "About 0.2 GB per minute. 677 min left."; nothing clipped; the close button in the strip. The photo shot shows RAW, RAW + HEIF, HEIF with RAW + HEIF and 48 MP selected.
 
-- [ ] **Step 6: Commit** — `git add DuoCam scripts DuoCamTests docs/screenshots/p1a && git commit -m "feat: add record settings panel driven by the capability model"`
+- [ ] **Step 6: Commit** — `git add OpenCam scripts OpenCamTests docs/screenshots/p1a && git commit -m "feat: add record settings panel driven by the capability model"`
 
 ---
 
 ### Task 5: CameraModel and folded layouts with the strip
 
 **Files:**
-- Create in `DuoCam/App/`: `CameraModel.swift`, `CameraSheet.swift`, `CameraPhase.swift`
-- Create in `DuoCam/UI/`: `CameraRootView.swift`, `FoldedHorizontalView.swift`, `FoldedVerticalView.swift`, `FoldedVerticalVideoView.swift`, `StripToolbar.swift`, `TopReadoutBar.swift`, `ReadoutView.swift`, `TimecodeReadout.swift`, `BottomBar.swift`, `FormatButton.swift`, `CaptureButton.swift`, `AudioMetersView.swift`, `ViewfinderStandIn.swift`, `ViewfinderArea.swift`
-- Create: `DuoCam/Support/SavedSelections.swift`
-- Modify: `DuoCam/App/DuoCamApp.swift` (root becomes `CameraRootView`)
-- Test: `DuoCamTests/CameraModelTests.swift`, `DuoCamTests/SavedSelectionsTests.swift`
+- Create in `OpenCam/App/`: `CameraModel.swift`, `CameraSheet.swift`, `CameraPhase.swift`
+- Create in `OpenCam/UI/`: `CameraRootView.swift`, `FoldedHorizontalView.swift`, `FoldedVerticalView.swift`, `FoldedVerticalVideoView.swift`, `StripToolbar.swift`, `TopReadoutBar.swift`, `ReadoutView.swift`, `TimecodeReadout.swift`, `BottomBar.swift`, `FormatButton.swift`, `CaptureButton.swift`, `AudioMetersView.swift`, `ViewfinderStandIn.swift`, `ViewfinderArea.swift`
+- Create: `OpenCam/Support/SavedSelections.swift`
+- Modify: `OpenCam/App/OpenCamApp.swift` (root becomes `CameraRootView`)
+- Test: `OpenCamTests/CameraModelTests.swift`, `OpenCamTests/SavedSelectionsTests.swift`
 
 **Interfaces:**
 - Consumes: Tasks 1 to 4.
@@ -503,18 +503,18 @@ scripts/shot.sh t5-recording-h -orientation landscape -mode video -recording on
 
 Pass when: horizontal shots have the strip on the left with four glass items grouped at its bottom; readouts in the top letterbox bar; the bottom bar holds "HEVC  4K  Rec. 709", meters, remaining time and record button, none over the picture; vertical shots have the strip on the right; the stand-in reads "No camera in Simulator"; `t5-recording-h` shows a running timecode and the stop symbol. Compare spacing with `prototype/screenshots/h-video.png` and `v-photo.png`.
 
-- [ ] **Step 6: Commit** — `git add DuoCam DuoCamTests docs/screenshots/p1a && git commit -m "feat: add camera model and folded layouts with the strip toolbar"`
+- [ ] **Step 6: Commit** — `git add OpenCam OpenCamTests docs/screenshots/p1a && git commit -m "feat: add camera model and folded layouts with the strip toolbar"`
 
 ---
 
 ### Task 6: CameraSession, preview and interruptions
 
 **Files:**
-- Create in `DuoCam/Capability/`: `StandardFrameRates.swift`, `LensLabel.swift`
-- Create in `DuoCam/Capture/`: `CameraSession.swift`, `CameraSessionError.swift`, `PreviewSource.swift`, `SessionConfiguration.swift`, `SessionEvent.swift`, `InterruptionReason.swift`, `PressureLevel.swift`, `CaptureAccess.swift`, `AccessState.swift`, `LensDiscovery.swift`, `DeviceIdentity.swift`
-- Create in `DuoCam/UI/`: `CameraPreviewView.swift`, `PreviewUIView.swift`
-- Modify: `DuoCam/App/CameraModel.swift`, `DuoCam/App/DuoCamApp.swift`, `DuoCam/UI/ViewfinderArea.swift`
-- Test: `DuoCamTests/CaptureHelpersTests.swift`
+- Create in `OpenCam/Capability/`: `StandardFrameRates.swift`, `LensLabel.swift`
+- Create in `OpenCam/Capture/`: `CameraSession.swift`, `CameraSessionError.swift`, `PreviewSource.swift`, `SessionConfiguration.swift`, `SessionEvent.swift`, `InterruptionReason.swift`, `PressureLevel.swift`, `CaptureAccess.swift`, `AccessState.swift`, `LensDiscovery.swift`, `DeviceIdentity.swift`
+- Create in `OpenCam/UI/`: `CameraPreviewView.swift`, `PreviewUIView.swift`
+- Modify: `OpenCam/App/CameraModel.swift`, `OpenCam/App/OpenCamApp.swift`, `OpenCam/UI/ViewfinderArea.swift`
+- Test: `OpenCamTests/CaptureHelpersTests.swift`
 
 **Interfaces:**
 - Consumes: Task 5 `CameraModel`; Task 1 `Lens`, `VideoOption`, `PhotoOption`, `ColourMode(captureColorSpace:)`.
@@ -537,7 +537,7 @@ enum DeviceIdentity { static func osBuild() -> String; static func modelIdentifi
 enum CameraSessionError: Error, CustomStringConvertible { case deviceMissing(lensID: String), cannotAddInput(lensID: String), cannotAddOutput(name: String), noMatchingFormat(option: String), lockFailed(reason: String) }
 actor CameraSession {
     nonisolated let previewSource: PreviewSource; nonisolated let events: AsyncStream<SessionEvent>
-    init()                                                  // executor: DispatchSerialQueue "duocam.session" via unownedExecutor
+    init()                                                  // executor: DispatchSerialQueue "opencam.session" via unownedExecutor
     static func requestAccess() async -> CaptureAccess
     func configure(_ configuration: SessionConfiguration) throws(CameraSessionError)
     func start(); func stop()
@@ -551,7 +551,7 @@ Decisions the signatures leave open:
 - Events: `AVCaptureSession.wasInterruptedNotification` (`AVCaptureSessionInterruptionReasonKey`), `interruptionEndedNotification`, `runtimeErrorNotification`, KVO on `systemPressureState` (thermal when factors contain `.systemTemperature` or `.cameraTemperature`).
 - Notices: cameraInUse "Camera paused. Another app is using it."; multipleForegroundApps "Camera paused while another app is on screen."; systemPressure "Camera paused to protect the phone."; microphoneInUse "Microphone in use by another app."; other "Camera paused."; background `nil`.
 - `PreviewUIView` uses `AVCaptureVideoPreviewLayer` as `layerClass`, `.resizeAspect`, and on the main actor builds `AVCaptureDevice.RotationCoordinator(device:previewLayer:)` from the layer's input device (`as?`, never `as!`), applying `videoRotationAngleForHorizonLevelPreview`.
-- `CameraModel.start(session:)`: request access (phase `.cameraDenied` / `.cameraRestricted` on refusal), discover lenses, configure the current lens with `video: nil`, start, fold `events` into `notice` and `phase`. `DuoCamApp` calls it from `.task` outside the Simulator; `ViewfinderArea` shows `CameraPreviewView` in `.ready`.
+- `CameraModel.start(session:)`: request access (phase `.cameraDenied` / `.cameraRestricted` on refusal), discover lenses, configure the current lens with `video: nil`, start, fold `events` into `notice` and `phase`. `OpenCamApp` calls it from `.task` outside the Simulator; `ViewfinderArea` shows `CameraPreviewView` in `.ready`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -578,7 +578,7 @@ Decisions the signatures leave open:
 - [ ] **Step 2: Run to see them fail** — `scripts/test.sh CaptureHelpersTests`.
 - [ ] **Step 3: Implement the files to the decisions above.**
 - [ ] **Step 4: Run all tests, then `scripts/shot.sh t6-video-h -orientation landscape`** — Expected: `** TEST SUCCEEDED **`; the shot matches `t5-video-h`.
-- [ ] **Step 5: Commit** — `git add DuoCam DuoCamTests docs/screenshots/p1a && git commit -m "feat: add camera session, preview and interruption events"`
+- [ ] **Step 5: Commit** — `git add OpenCam OpenCamTests docs/screenshots/p1a && git commit -m "feat: add camera session, preview and interruption events"`
 
 **On the device** (owner runs from Xcode on the Duo):
 - [ ] First launch asks for camera, then microphone. With both allowed the live picture shows upright and aspect-fit in all four orientations, nothing over it.
@@ -591,10 +591,10 @@ Decisions the signatures leave open:
 ### Task 7: Capability scan with cache
 
 **Files:**
-- Create in `DuoCam/Capability/`: `FormatDescriptor.swift`, `PhotoSize.swift`, `CapabilityMapper.swift`, `CapabilityCache.swift`
-- Create: `DuoCam/Capture/CapabilityScanner.swift`
-- Modify: `DuoCam/App/CameraModel.swift`, `DuoCam/UI/ViewfinderArea.swift`
-- Test: `DuoCamTests/CapabilityMapperTests.swift`, `DuoCamTests/CapabilityCacheTests.swift`
+- Create in `OpenCam/Capability/`: `FormatDescriptor.swift`, `PhotoSize.swift`, `CapabilityMapper.swift`, `CapabilityCache.swift`
+- Create: `OpenCam/Capture/CapabilityScanner.swift`
+- Modify: `OpenCam/App/CameraModel.swift`, `OpenCam/UI/ViewfinderArea.swift`
+- Test: `OpenCamTests/CapabilityMapperTests.swift`, `OpenCamTests/CapabilityCacheTests.swift`
 
 **Interfaces:**
 - Consumes: Task 6 `LensDiscovery`, `DeviceIdentity`, `StandardFrameRates`, `CameraModel.start`; Task 5 `replaceCapabilities`.
@@ -622,7 +622,7 @@ extension CameraModel { func loadCapabilities(lenses: [Lens]) async }   // cache
 
 Mapping: `aprn` RAW "ProRes RAW", `aprh` RAW "ProRes RAW HQ", `ap4x` "4444 XQ", `ap4h` "4444", `apch` "422 HQ", `apcn` "422", `apcs` "422 LT", `apco` "422 Proxy"; `hvc1` and `avc1` give the four tiers when `allowsCompressionProperties`, else one quality "Standard"; all other FourCCs (`jpeg`, `jxlc`, `muxa`, unknown) are dropped. Rates via `StandardFrameRates.collapse`. A zoom-2 lens reuses its device's descriptors. Photo: one option per format per size; RAW formats only when `hasBayerRAW` and zoom factor 1.
 
-The scanner is a thin adapter modelled on `probe/DuoCamProbe/Inventory.swift` `scanOutputs`: a throwaway session per device with photo and movie outputs; one format per class (dimensions, colour-space set, frame-rate set); per class set `activeFormat`, then each supported `activeColorSpace` (wide-colour automation off), reading `availableVideoCodecTypes` each time; restore the original format. Reading codecs per colour space goes one step past "set the active format and read the codecs", because the codec list may depend on the colour space. The cache lives in `Application Support/DuoCam/`; after a scan a copy goes to `Documents/capabilities.json` for comparison with the probe report. While scanning, `ViewfinderArea` reads `Reading camera formats…`. The Simulator uses the fixture and never scans; there `-state scanning` sets phase `.scanning`.
+The scanner is a thin adapter modelled on `probe/DuoCamProbe/Inventory.swift` `scanOutputs`: a throwaway session per device with photo and movie outputs; one format per class (dimensions, colour-space set, frame-rate set); per class set `activeFormat`, then each supported `activeColorSpace` (wide-colour automation off), reading `availableVideoCodecTypes` each time; restore the original format. Reading codecs per colour space goes one step past "set the active format and read the codecs", because the codec list may depend on the colour space. The cache lives in `Application Support/OpenCam/`; after a scan a copy goes to `Documents/capabilities.json` for comparison with the probe report. While scanning, `ViewfinderArea` reads `Reading camera formats…`. The Simulator uses the fixture and never scans; there `-state scanning` sets phase `.scanning`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -672,11 +672,11 @@ The scanner is a thin adapter modelled on `probe/DuoCamProbe/Inventory.swift` `s
 - [ ] **Step 2: Run to see them fail** — `scripts/test.sh CapabilityMapperTests`.
 - [ ] **Step 3: Implement mapper, cache, scanner and `loadCapabilities`; `start(session:)` now loads capabilities before `configure` and passes `currentVideoOption` / `currentPhotoOption`.**
 - [ ] **Step 4: Run all tests, then `scripts/shot.sh t7-scanning -orientation landscape -state scanning`** — Expected: pass; the viewfinder area shows only "Reading camera formats…".
-- [ ] **Step 5: Commit** — `git add DuoCam DuoCamTests docs/screenshots/p1a && git commit -m "feat: scan camera formats once per OS build and cache the capabilities"`
+- [ ] **Step 5: Commit** — `git add OpenCam OpenCamTests docs/screenshots/p1a && git commit -m "feat: scan camera formats once per OS build and cache the capabilities"`
 
 **On the device:**
 - [ ] First launch shows "Reading camera formats…", then the picture; note the scan time. The second launch skips it.
-- [ ] Copy `capabilities.json` (Files > On My iPhone > DuoCam) and the probe's `duocam-probe-report.json` to the Mac and compare:
+- [ ] Copy `capabilities.json` (Files > On My iPhone > OpenCam) and the probe's `duocam-probe-report.json` to the Mac and compare:
 
 ```bash
 jq '[.cameras[] | {deviceType, codecs: ([.formats[].movieCodecTypes[]] | unique), colours: ([.formats[].colorSpaces[]] | unique)}]' duocam-probe-report.json
@@ -691,9 +691,9 @@ Pass when each lens's FourCCs equal its camera's minus `jpeg`, `jxlc`, `muxa`, a
 ### Task 8: Photo capture
 
 **Files:**
-- Create in `DuoCam/Capture/`: `PhotoCapturer.swift`, `PhotoCaptureDelegate.swift`, `PhotoSettingsPlan.swift`, `PhotoCaptureError.swift`, `CaptureStore.swift`, `CaptureStoreError.swift`, `CaptureFileKind.swift`
-- Modify: `DuoCam/Capture/CameraSession.swift`, `DuoCam/App/CameraModel.swift`
-- Test: `DuoCamTests/PhotoCaptureTests.swift`
+- Create in `OpenCam/Capture/`: `PhotoCapturer.swift`, `PhotoCaptureDelegate.swift`, `PhotoSettingsPlan.swift`, `PhotoCaptureError.swift`, `CaptureStore.swift`, `CaptureStoreError.swift`, `CaptureFileKind.swift`
+- Modify: `OpenCam/Capture/CameraSession.swift`, `OpenCam/App/CameraModel.swift`
+- Test: `OpenCamTests/PhotoCaptureTests.swift`
 
 **Interfaces:**
 - Consumes: Task 6 `CameraSession`; Task 2 `PhotoSelection`; Task 1 `PhotoFormat`.
@@ -706,7 +706,7 @@ enum CaptureFileKind: String, Sendable { case dng = "DNG", heic = "HEIC", mov = 
     init(directory: URL) throws(CaptureStoreError); let directory: URL
     func reserveSequence() -> Int                                        // never reused in this run
     func url(sequence: Int, kind: CaptureFileKind) -> URL
-    static func fileName(sequence: Int, kind: CaptureFileKind) -> String // "DC_0001.DNG"
+    static func fileName(sequence: Int, kind: CaptureFileKind) -> String // "OC_0001.DNG"
     static func nextSequence(existingNames: [String]) -> Int
 }
 struct PhotoSettingsPlan: Equatable, Sendable { let rawPixelFormat: OSType?; let wantsProcessedHEIF: Bool; let prioritizesSpeed: Bool
@@ -723,8 +723,8 @@ RAW takes the first Bayer format in `availableRawPhotoPixelFormatTypes` (product
 @Suite struct PhotoCaptureTests {
     let bayer = kCVPixelFormatType_14Bayer_BGGR
     @Test func namesAndSequence() {
-        #expect(CaptureStore.fileName(sequence: 1, kind: .dng) == "DC_0001.DNG"); #expect(CaptureStore.fileName(sequence: 12345, kind: .mov) == "DC_12345.MOV")
-        #expect(CaptureStore.nextSequence(existingNames: ["DC_0001.DNG", "DC_0001.HEIC", "DC_0002.MOV", "DC_0002.json", "sweep-2026-11-09-143005.json", "notes.txt"]) == 3)
+        #expect(CaptureStore.fileName(sequence: 1, kind: .dng) == "OC_0001.DNG"); #expect(CaptureStore.fileName(sequence: 12345, kind: .mov) == "OC_12345.MOV")
+        #expect(CaptureStore.nextSequence(existingNames: ["OC_0001.DNG", "OC_0001.HEIC", "OC_0002.MOV", "OC_0002.json", "sweep-2026-11-09-143005.json", "notes.txt"]) == 3)
         #expect(CaptureStore.nextSequence(existingNames: []) == 1)
     }
     @Test func rawRules() {
@@ -743,10 +743,10 @@ RAW takes the first Bayer format in `availableRawPhotoPixelFormatTypes` (product
 - [ ] **Step 2: Run to see them fail** — `scripts/test.sh PhotoCaptureTests`.
 - [ ] **Step 3: Implement the files; `capturePressed` in photo mode reserves a number and captures.**
 - [ ] **Step 4: Run all tests.**
-- [ ] **Step 5: Commit** — `git add DuoCam DuoCamTests && git commit -m "feat: capture RAW DNG and HEIF photos"`
+- [ ] **Step 5: Commit** — `git add OpenCam OpenCamTests && git commit -m "feat: capture RAW DNG and HEIF photos"`
 
 **On the device:**
-- [ ] 1x, RAW + HEIF 48 MP: one press writes `DC_000n.DNG` and `.HEIC`; both open in Files; on the Mac `mdls -name kMDItemPixelWidth -name kMDItemPixelHeight` on the DNG shows the sensor size.
+- [ ] 1x, RAW + HEIF 48 MP: one press writes `OC_000n.DNG` and `.HEIC`; both open in Files; on the Mac `mdls -name kMDItemPixelWidth -name kMDItemPixelHeight` on the DNG shows the sensor size.
 - [ ] 0.5x RAW writes a DNG. On 2x the RAW chips read "RAW needs the 0.5x or 1x lens." and HEIF works. Front lenses: HEIF works; note whether either reports Bayer RAW.
 - [ ] Ten quick presses give ten distinct numbers, no overwrite, no crash.
 
@@ -755,9 +755,9 @@ RAW takes the first Bayer format in `availableRawPhotoPixelFormatTypes` (product
 ### Task 9: Video recording, sidecar, audio and meters
 
 **Files:**
-- Create in `DuoCam/Capture/`: `MovieRecorder.swift`, `MovieOutputSettings.swift`, `RecordingOutcome.swift`, `StopReason.swift`, `RecordingResult.swift`, `RecordingError.swift`, `ClipInspector.swift`, `ClipFacts.swift`, `ClipSidecar.swift`, `AudioMeter.swift`, `FreeSpace.swift`
-- Modify: `DuoCam/Capture/CameraSession.swift`, `DuoCam/Capture/CaptureAccess.swift`, `DuoCam/App/CameraModel.swift`
-- Test: `DuoCamTests/RecordingTests.swift` (suites below)
+- Create in `OpenCam/Capture/`: `MovieRecorder.swift`, `MovieOutputSettings.swift`, `RecordingOutcome.swift`, `StopReason.swift`, `RecordingResult.swift`, `RecordingError.swift`, `ClipInspector.swift`, `ClipFacts.swift`, `ClipSidecar.swift`, `AudioMeter.swift`, `FreeSpace.swift`
+- Modify: `OpenCam/Capture/CameraSession.swift`, `OpenCam/Capture/CaptureAccess.swift`, `OpenCam/App/CameraModel.swift`
+- Test: `OpenCamTests/RecordingTests.swift` (suites below)
 
 **Interfaces:**
 - Consumes: Task 3 `DataRateEstimator`; Task 6 `CameraSession`, `CaptureAccess`; Task 8 `CaptureStore`.
@@ -788,11 +788,11 @@ extension CameraModel { func recordingDidFinish(_ result: RecordingResult) }
 ```
 
 Notes:
-- `MovieRecorder` wraps `AVCaptureMovieFileOutput`: `minFreeDiskSpaceLimit` = the reserve, or free space minus N MB with `-freeSpaceMarginMB N` (to test the storage path); settings via `setOutputSettings(_:for:)` with the dictionary built only there; `videoRotationAngle` from `RotationCoordinator(device:previewLayer: nil)` at start; after `fileOutput(_:didFinishRecordingTo:from:error:)` it inspects the clip, writes `DC_000n.json` beside it, and yields a `RecordingResult`.
+- `MovieRecorder` wraps `AVCaptureMovieFileOutput`: `minFreeDiskSpaceLimit` = the reserve, or free space minus N MB with `-freeSpaceMarginMB N` (to test the storage path); settings via `setOutputSettings(_:for:)` with the dictionary built only there; `videoRotationAngle` from `RotationCoordinator(device:previewLayer: nil)` at start; after `fileOutput(_:didFinishRecordingTo:from:error:)` it inspects the clip, writes `OC_000n.json` beside it, and yields a `RecordingResult`.
 - The SDK comments `AVVideoAverageBitRateKey` as "H.264 only"; the measured `megabitsPerSecond` in the sidecar is how HEVC tiers are checked.
 - A default-microphone input is added only when `CaptureAccess.recordsSound`. Meters poll `audioLevels()` 10 times a second; with no audio input they stay empty.
 - Colour: log `kCMFormatDescriptionLogTransferFunction_AppleLog2` / `_AppleLog` -> appleLog2 / appleLog; transfer `ITU_R_2100_HLG` -> hlg; primaries `P3_D65` -> p3; primaries and transfer `ITU_R_709_2` -> rec709; otherwise nil.
-- Notices: completed nil; storageFull "Recording stopped. Storage is full. Clip saved."; interrupted "Recording stopped. The camera was interrupted. Clip saved."; any not-playable stop or failure "Recording failed. The clip could not be saved."; when `droppedFrames > 0` and no other notice, "DC_0002 dropped 5 frames.".
+- Notices: completed nil; storageFull "Recording stopped. Storage is full. Clip saved."; interrupted "Recording stopped. The camera was interrupted. Clip saved."; any not-playable stop or failure "Recording failed. The clip could not be saved."; when `droppedFrames > 0` and no other notice, "OC_0002 dropped 5 frames.".
 - `capturePressed` in video mode reserves a number and starts, or stops.
 
 - [ ] **Step 1: Write the failing tests**
@@ -844,9 +844,9 @@ Notes:
     @Test func interruptionResetsUI() throws {
         let model = CameraModel(config: .parse(["app", "-recording", "on"]), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
         let option = try #require(model.currentVideoOption)
-        model.recordingDidFinish(RecordingResult(url: URL(filePath: "/tmp/DC_0002.MOV"), option: option, outcome: .stopped(.interrupted, isPlayable: true), sidecar: nil))
+        model.recordingDidFinish(RecordingResult(url: URL(filePath: "/tmp/OC_0002.MOV"), option: option, outcome: .stopped(.interrupted, isPlayable: true), sidecar: nil))
         #expect(!model.isRecording && model.recordingStart == nil)
-        #expect(model.notice == "Recording stopped. The camera was interrupted. Clip saved."); #expect(model.lastCapture?.lastPathComponent == "DC_0002.MOV")
+        #expect(model.notice == "Recording stopped. The camera was interrupted. Clip saved."); #expect(model.lastCapture?.lastPathComponent == "OC_0002.MOV")
     }
 }
 @Suite struct AudioMeterTests {
@@ -860,10 +860,10 @@ Notes:
 - [ ] **Step 2: Run to see them fail** — `scripts/test.sh RecordingOutcomeTests` (the file does not compile yet).
 - [ ] **Step 3: Implement the files to the notes above.**
 - [ ] **Step 4: Run all tests** — `scripts/test.sh`. Expected: `** TEST SUCCEEDED **`.
-- [ ] **Step 5: Commit** — `git add DuoCam DuoCamTests && git commit -m "feat: record video through the movie output with sidecar, audio and meters"`
+- [ ] **Step 5: Commit** — `git add OpenCam OpenCamTests && git commit -m "feat: record video through the movie output with sidecar, audio and meters"`
 
 **On the device:**
-- [ ] HEVC High 4K 30 Rec. 709 on 1x for 10 s: `DC_000n.MOV` and `.json` in Files; sidecar shows `hvc1`, 3840 x 2160, about 30 fps, `droppedFrames` 0, `hasAudio` true, `megabitsPerSecond` near 27. Repeat at Max and Low; if all three measure the same, the bitrate is ignored for HEVC: note it in the PR.
+- [ ] HEVC High 4K 30 Rec. 709 on 1x for 10 s: `OC_000n.MOV` and `.json` in Files; sidecar shows `hvc1`, 3840 x 2160, about 30 fps, `droppedFrames` 0, `hasAudio` true, `megabitsPerSecond` near 27. Repeat at Max and Low; if all three measure the same, the bitrate is ignored for HEVC: note it in the PR.
 - [ ] One ProRes and one Apple Log 2 option, if reported: sidecar `actual.colour` matches the request.
 - [ ] Meters move with speech. Microphone denied in Settings: the clip records, `hasAudio` is false.
 - [ ] Launch with `-freeSpaceMarginMB 300` (Xcode scheme argument) and record ProRes 4K until it stops itself: "Recording stopped. Storage is full. Clip saved." and the clip plays.
@@ -875,9 +875,9 @@ Notes:
 ### Task 10: Camera Control and live readouts
 
 **Files:**
-- Create in `DuoCam/Capture/`: `CaptureAction.swift`, `CameraControlPlan.swift`, `SystemControlKind.swift`, `CameraControlsDelegate.swift`, `LiveReadouts.swift`, `ReadoutFormatter.swift`, `Timecode.swift`
-- Modify: `DuoCam/Capture/CameraSession.swift`, `DuoCam/App/CameraModel.swift`, `DuoCam/UI/CameraRootView.swift`, `DuoCam/UI/TopReadoutBar.swift`, `DuoCam/UI/FoldedVerticalView.swift`, `DuoCam/UI/TimecodeReadout.swift`
-- Test: `DuoCamTests/ControlsAndReadoutsTests.swift`
+- Create in `OpenCam/Capture/`: `CaptureAction.swift`, `CameraControlPlan.swift`, `SystemControlKind.swift`, `CameraControlsDelegate.swift`, `LiveReadouts.swift`, `ReadoutFormatter.swift`, `Timecode.swift`
+- Modify: `OpenCam/Capture/CameraSession.swift`, `OpenCam/App/CameraModel.swift`, `OpenCam/UI/CameraRootView.swift`, `OpenCam/UI/TopReadoutBar.swift`, `OpenCam/UI/FoldedVerticalView.swift`, `OpenCam/UI/TimecodeReadout.swift`
+- Test: `OpenCamTests/ControlsAndReadoutsTests.swift`
 
 **Interfaces:**
 - Consumes: Task 6 `CameraSession`; `CameraModel.capturePressed` from Tasks 8 and 9.
@@ -929,7 +929,7 @@ extension CameraModel { func handleCaptureEvent(phase: AVCaptureEventPhase) }
 - [ ] **Step 2: Run to see them fail** — `scripts/test.sh ControlsAndReadoutsTests`.
 - [ ] **Step 3: Implement the files listed.**
 - [ ] **Step 4: Run all tests, then `scripts/shot.sh t10-video-h -orientation landscape`** — FPS reads "30", live values `--`.
-- [ ] **Step 5: Commit** — `git add DuoCam DuoCamTests docs/screenshots/p1a && git commit -m "feat: add Camera Control capture, system controls and live readouts"`
+- [ ] **Step 5: Commit** — `git add OpenCam OpenCamTests docs/screenshots/p1a && git commit -m "feat: add Camera Control capture, system controls and live readouts"`
 
 **On the device:**
 - [ ] Note whether the Duo has a Camera Control button (spec open risk 3). If so, a full press takes a photo, or starts and stops recording; the on-screen button still works.
@@ -941,9 +941,9 @@ extension CameraModel { func handleCaptureEvent(phase: AVCaptureEventPhase) }
 ### Task 11: Honest states and the last capture
 
 **Files:**
-- Create: `DuoCam/App/StatusText.swift`, `DuoCam/App/RemainingTime.swift`, `DuoCam/App/ViewfinderStatus.swift`, `DuoCam/UI/StatusOverlay.swift`, `DuoCam/UI/LibraryThumbnail.swift`
-- Modify: `DuoCam/App/CameraModel.swift`, `DuoCam/UI/ViewfinderArea.swift`, `DuoCam/UI/BottomBar.swift`, `DuoCam/UI/FoldedVerticalVideoView.swift`, `DuoCam/UI/StripToolbar.swift`, `DuoCam/Capture/CaptureStore.swift`
-- Test: `DuoCamTests/StatusTextTests.swift`
+- Create: `OpenCam/App/StatusText.swift`, `OpenCam/App/RemainingTime.swift`, `OpenCam/App/ViewfinderStatus.swift`, `OpenCam/UI/StatusOverlay.swift`, `OpenCam/UI/LibraryThumbnail.swift`
+- Modify: `OpenCam/App/CameraModel.swift`, `OpenCam/UI/ViewfinderArea.swift`, `OpenCam/UI/BottomBar.swift`, `OpenCam/UI/FoldedVerticalVideoView.swift`, `OpenCam/UI/StripToolbar.swift`, `OpenCam/Capture/CaptureStore.swift`
+- Test: `OpenCamTests/StatusTextTests.swift`
 
 **Interfaces:**
 - Consumes: `CameraPhase`, `CaptureAccess`, `PressureLevel`, `DataRateEstimator`, `CaptureStore`, the notices from Tasks 6 and 9.
@@ -987,8 +987,8 @@ Copy: `.scanning` "Reading camera formats…"; `.cameraDenied` "Camera access is
     @Test func remainingAndLatest() {
         #expect(StatusText.remaining(minutes: 4) == RemainingTime(text: "4 min", isWarning: true))
         #expect(StatusText.remaining(minutes: 0) == RemainingTime(text: "Storage full", isWarning: true))
-        #expect(CaptureStore.latestCaptureName(["DC_0001.DNG", "DC_0001.HEIC", "DC_0002.MOV", "DC_0002.json", "sweep-x.json"]) == "DC_0002.MOV")
-        #expect(CaptureStore.latestCaptureName(["DC_0003.DNG", "DC_0003.HEIC"]) == "DC_0003.HEIC"); #expect(CaptureStore.latestCaptureName([]) == nil)
+        #expect(CaptureStore.latestCaptureName(["OC_0001.DNG", "OC_0001.HEIC", "OC_0002.MOV", "OC_0002.json", "sweep-x.json"]) == "OC_0002.MOV")
+        #expect(CaptureStore.latestCaptureName(["OC_0003.DNG", "OC_0003.HEIC"]) == "OC_0003.HEIC"); #expect(CaptureStore.latestCaptureName([]) == nil)
     }
 }
 ```
@@ -1004,10 +1004,10 @@ scripts/shot.sh t11-cameraDenied-v -orientation portrait -mode photo -state came
 
 Pass when each shot shows exactly its copy: in the viewfinder area for scanning and camera denied (with "Open Settings"), in the bottom bar for the rest; nothing covers the picture when horizontal; the record button is disabled for storage full and camera denied.
 
-- [ ] **Step 5: Commit** — `git add DuoCam DuoCamTests docs/screenshots/p1a && git commit -m "feat: add honest capture states and the last-capture thumbnail"`
+- [ ] **Step 5: Commit** — `git add OpenCam OpenCamTests docs/screenshots/p1a && git commit -m "feat: add honest capture states and the last-capture thumbnail"`
 
 **On the device:**
-- [ ] Camera denied in Settings: "Camera access is off."; "Open Settings" opens DuoCam's page. Microphone denied: video records and the bottom bar says "No microphone access".
+- [ ] Camera denied in Settings: "Camera access is off."; "Open Settings" opens OpenCam's page. Microphone denied: video records and the bottom bar says "No microphone access".
 - [ ] After a photo and a clip, the strip thumbnail shows the newest and opens it full screen.
 - [ ] During a long 4K ProRes recording in warmth, note the first pressure notice and its level.
 
@@ -1016,9 +1016,9 @@ Pass when each shot shows exactly its copy: in the viewfinder area for scanning 
 ### Task 12: Format sweep and full device verification
 
 **Files:**
-- Create in `DuoCam/Capture/`: `FormatSweep.swift`, `SweepRow.swift`, `SweepStatus.swift`, `SweepReport.swift`; Create `DuoCam/Capability/FailedCombinations.swift`, `DuoCam/UI/SweepView.swift`
-- Modify: `DuoCam/App/CameraModel.swift` (owns `sweep: FormatSweep?` and `failedCombinations`, forwards each `RecordingResult` while the sweep runs), `DuoCam/UI/FormatButton.swift` (long press opens `.sweep` in video mode; `isWarning` style), `DuoCam/UI/RecordSettingsSheet.swift` (`sweepCaption: String?` shown under the footer), `DuoCam/UI/CameraRootView.swift`
-- Test: `DuoCamTests/FormatSweepTests.swift`, `DuoCamTests/FailedCombinationsTests.swift`
+- Create in `OpenCam/Capture/`: `FormatSweep.swift`, `SweepRow.swift`, `SweepStatus.swift`, `SweepReport.swift`; Create `OpenCam/Capability/FailedCombinations.swift`, `OpenCam/UI/SweepView.swift`
+- Modify: `OpenCam/App/CameraModel.swift` (owns `sweep: FormatSweep?` and `failedCombinations`, forwards each `RecordingResult` while the sweep runs), `OpenCam/UI/FormatButton.swift` (long press opens `.sweep` in video mode; `isWarning` style), `OpenCam/UI/RecordSettingsSheet.swift` (`sweepCaption: String?` shown under the footer), `OpenCam/UI/CameraRootView.swift`
+- Test: `OpenCamTests/FormatSweepTests.swift`, `OpenCamTests/FailedCombinationsTests.swift`
 
 **Interfaces:**
 - Consumes: Task 9 `startRecording`, `stopRecording`, `RecordingResult`, `ClipFacts`; Task 6 `configure`, `DeviceIdentity`; Task 8 `CaptureStore`.
@@ -1038,7 +1038,7 @@ struct SweepReport: Codable, Sendable { let startedAt: Date; let finishedAt: Dat
     var progressText: String { get }   // "12 of 84"
     func run() async; func cancel(); func recordingDidFinish(_ result: RecordingResult)
 }
-nonisolated struct FailedCombinations: Codable, Sendable, Equatable {   // Application Support/DuoCam/failed-combinations.json
+nonisolated struct FailedCombinations: Codable, Sendable, Equatable {   // Application Support/OpenCam/failed-combinations.json
     var osBuild: String; var failedByLens: [String: [VideoOption]]
     static let caption = "This combination did not record in the last format sweep."
     static func load(directory: URL, osBuild: String) -> FailedCombinations          // empty when missing, unreadable or from another OS build
@@ -1098,7 +1098,7 @@ Pass rule: no error; FourCC equals the request; dimensions equal in either orien
 - [ ] **Step 2: Run to see them fail** — `scripts/test.sh FormatSweepTests && scripts/test.sh FailedCombinationsTests`.
 - [ ] **Step 3: Implement the files listed.**
 - [ ] **Step 4: Run all tests, then `scripts/shot.sh t12-sweep-h -orientation landscape -screen sweep`** — Expected: pass; the sheet shows "Format sweep", "The sweep needs the camera." and a disabled Start.
-- [ ] **Step 5: Commit** — `git add DuoCam DuoCamTests docs/screenshots/p1a && git commit -m "feat: add the format sweep and its report"`
+- [ ] **Step 5: Commit** — `git add OpenCam OpenCamTests docs/screenshots/p1a && git commit -m "feat: add the format sweep and its report"`
 
 **On the device: full P1a verification** (results and sweep reports go in the PR):
 - [ ] Sweep on 1x, 0.5x, 2x and one front lens. Each writes a report; progress reads "n of N"; a mid-sweep Cancel writes one with `cancelled: true`. List every failed row with its reason. Then select one failed combination: Record settings reads "This combination did not record in the last format sweep." and the format summary shows the warning style; a passing combination shows neither. A second sweep of the same lens replaces the list.
@@ -1106,5 +1106,5 @@ Pass rule: no error; FourCC equals the request; dimensions equal in either orien
 - [ ] Review Focus 2 to 5: the Task 9 storage, interruption and microphone checks pass, and on 1x with ProRes 4K selected, switching to a front lens moves the selection without a crash.
 - [ ] Photos in every format on every lens that offers it open in Files and on the Mac.
 - [ ] Strip: four items at the bottom of the left strip when horizontal; nothing under the camera hole; the Record settings close button sits in the strip.
-- [ ] Files shows `Captures` with `DC_` files, sidecars and sweep reports.
+- [ ] Files shows `Captures` with `OC_` files, sidecars and sweep reports.
 - [ ] Written in the PR for later plans: the Dolby Vision answer, the outer front lens name, whether Camera Control exists, the first pressure level seen.

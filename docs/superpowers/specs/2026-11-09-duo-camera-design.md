@@ -1,4 +1,4 @@
-# DuoCam design (working title)
+# OpenCam design
 
 Status: approved by Tanner on 2026-11-09. Built so far: a throwaway UI prototype and the P0 probe (compiled, never run).
 Date: 2026-11-09
@@ -16,6 +16,7 @@ A personal camera app for the iPhone Duo that makes the folded phone feel like a
 - Codec and resolution choice works like Blackmagic's Pocket Cinema Camera record settings. Every option is included so he can test them.
 - Required capabilities: RAW photos, high quality video, RAW video, Apple Log 2, an Apple Log 2 preview LUT in the viewfinder, audio source choice with headphone monitoring, Lightroom-level colour control and masking for the RAW photos, Apple Pencil for correction and touch-ups, on-device subject masking.
 - Long-running work with cheaper subagents doing most tasks; the main session orchestrates and reviews.
+- The app is named OpenCam.
 
 ## Goals
 
@@ -208,7 +209,6 @@ Verified API notes for the builder are in `docs/research/`.
 
 ## Calls made without Tanner (check these)
 
-- Working title "DuoCam".
 - Project order P0 to P3, and that the editor gets its own design round.
 - The SwiftUI prototype is the design mockup and is throwaway.
 - Readouts sit in the letterbox bars instead of over the picture.
