@@ -17,6 +17,8 @@ actor FakeSessionConfigurator: SessionConfigurator {
     private(set) var calls: [String] = []
     private(set) var recordingURLs: [URL] = []
     private(set) var stopRecordingCount = 0
+    /// Runs once, inside the next `start()`, before it returns.
+    private var onNextStart: (@Sendable () async -> Void)?
 
     init(failingLensIDs: Set<String>, isClipInFlight: Bool = false,
          onStartRecording: @escaping @Sendable (URL, VideoOption) async -> Void = { _, _ in }) {
@@ -39,9 +41,16 @@ actor FakeSessionConfigurator: SessionConfigurator {
         calls.append("configure")
     }
 
-    func start() {
+    func start() async {
         isRunning = true
         calls.append("start")
+        let hook = onNextStart
+        onNextStart = nil
+        await hook?()
+    }
+
+    func setOnNextStart(_ hook: @escaping @Sendable () async -> Void) {
+        onNextStart = hook
     }
 
     func releaseCameras() {

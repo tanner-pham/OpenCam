@@ -41,7 +41,8 @@ final class CameraModel {
     var sweep: FormatSweep?
     /// The saved looks, read at launch and whenever the Library closes.
     var looks: [Look] = []
-    /// The look the camera applies; nil is None. Set only by `CameraModel+Look`.
+    /// The look the camera applies; nil is None. Set by `CameraModel+Look`, and by `select(_:)` when a recovery returns to
+    /// the default selection.
     var cameraLook: CameraLook?
     /// True when the look's frames could not be drawn with the current format; the viewfinder shows the plain preview until
     /// the next lens, mode, format or look change tries again. The look stays selected.
@@ -69,11 +70,35 @@ final class CameraModel {
     /// The tail of the serial configure chain; each task returns its configure error, or nil.
     @ObservationIgnored var configureTask: Task<CameraSessionError?, Never>?
     /// Bumped per requested configuration; a queued configure that is no longer the latest is skipped.
-    @ObservationIgnored private var configureGeneration = 0
+    @ObservationIgnored var configureGeneration = 0
     /// The configuration last sent to the chain, so an unchanged selection does not reconfigure.
     @ObservationIgnored var requestedConfiguration: SessionConfiguration?
     /// What the session last applied, and the selection that produced it; a failed configure returns to them.
-    @ObservationIgnored private var lastWorking: (configuration: SessionConfiguration, selection: SavedSelections)?
+    @ObservationIgnored var lastWorking: (configuration: SessionConfiguration, selection: SavedSelections)?
+    /// The last configuration that ran for `confirmationDelay` with no runtime error, and its selection; a selection that
+    /// stops the camera once running returns to it (`CameraModel+Recovery`).
+    @ObservationIgnored var confirmed: (configuration: SessionConfiguration, selection: SavedSelections)?
+    /// `runningConfirmation`, shortened by tests.
+    @ObservationIgnored var confirmationDelay: Duration = CameraModel.runningConfirmation
+    /// Waits `confirmationDelay` after a configuration starts running, then confirms it.
+    @ObservationIgnored var confirmation: Task<Void, Never>?
+    /// Counts the runtime errors handled by `cameraStopped`, so a confirmation or a recovery that a newer one overtook does nothing.
+    @ObservationIgnored var runtimeErrorCount = 0
+    /// True from an automatic recovery until a configuration is confirmed; another runtime error meanwhile ends in the
+    /// stopped state, so recovery never loops.
+    @ObservationIgnored var isRecoveryUnconfirmed = false
+    /// The configuration rule 5 restarted automatically; it is not restarted automatically again until a user action
+    /// (a selection change or Try again) clears it, so a configuration that keeps stopping cannot loop.
+    @ObservationIgnored var autoRestarted: SessionConfiguration?
+    /// True when a runtime error came during a recording or a sweep; the recovery runs once that ends.
+    @ObservationIgnored var isRecoveryDeferred = false
+    /// True from a media-services reset until its `.restarted`, a later runtime error that is not a reset, or the model's own
+    /// next start of the session: the session restarts itself meanwhile, so the camera is not in the stopped state and nothing
+    /// here starts it. Never set while the camera is released for the Library or held by a rescan, whose session is stopped on
+    /// purpose and restarts nothing itself; their own configure and start bring it back.
+    var isResettingMediaServices = false
+    /// The mode a first launch picks, for the default selection.
+    @ObservationIgnored let launchMode: CaptureMode
     /// True while several selection properties are set as one change (a restore or a capabilities load);
     /// the caller persists and reconfigures once at the end.
     @ObservationIgnored private var isApplyingSelection = false
@@ -127,6 +152,7 @@ final class CameraModel {
         self.isSimulator = isSimulator
         self.freeSpaceMarginMB = config.freeSpaceMarginMB
         self.keepsSweepClips = config.keepsSweepClips
+        self.launchMode = config.mode
         if isSimulator {
             self.phase = config.simulatedState == .scanning ? .scanning : .simulator
         } else {
@@ -274,9 +300,10 @@ final class CameraModel {
     }
 
     /// Record settings, and the format sweep from the summary's long press, open only once the device's formats are
-    /// known and never while recording, so no control names a format the clip is not recording.
+    /// known and never while recording, so no control names a format the clip is not recording. A stopped camera keeps
+    /// them, so another format can be chosen.
     var canOpenRecordSettings: Bool {
-        hasCamera && !isRecording && !isSweeping && !(capabilities.videoOptions.isEmpty && capabilities.photoOptions.isEmpty)
+        (hasCamera || isCameraStopped) && !isRecording && !isSweeping && !(capabilities.videoOptions.isEmpty && capabilities.photoOptions.isEmpty)
     }
 
     func openRecordSettings() {
@@ -466,6 +493,8 @@ final class CameraModel {
 
     func selectionChanged() {
         guard !isApplyingSelection else { return }
+        // A selection change is a user action: it gives the automatic restart back.
+        autoRestarted = nil
         // A new lens, mode, format or look tries the viewfinder again.
         isLookViewfinderUnavailable = false
         clearNotice(from: .look)
@@ -481,7 +510,7 @@ final class CameraModel {
     }
 
     /// Hands the model a session already running `configuration`, which was built from `selection`;
-    /// later selection changes reconfigure it.
+    /// later selection changes reconfigure it. The caller arms its confirmation once the session's start has returned.
     func attachSession(_ configurator: any SessionConfigurator, configuredWith configuration: SessionConfiguration, selection: SavedSelections) {
         self.configurator = configurator
         requestedConfiguration = configuration
@@ -518,6 +547,8 @@ final class CameraModel {
             _ = await previous?.value
             await Self.waitForAll(captures)
             guard generation == configureGeneration else { return nil }
+            // Read before the configure and start, so an error handled while they are awaited still stops the confirmation.
+            let errors = runtimeErrorCount
             do throws(CameraSessionError) {
                 try await configurator.configure(configuration)
             } catch {
@@ -526,6 +557,10 @@ final class CameraModel {
             }
             lastWorking = (configuration, selection)
             clearNotice(from: .configuration)
+            // A stopped camera runs again with the new selection; a running one is confirmed once it has run long enough.
+            if await startIfStopped(configurator) || phase == .ready {
+                confirmWhenRunning(configuration, since: errors)
+            }
             watchFrames(for: configuration)
             return nil
         }
@@ -543,18 +578,50 @@ final class CameraModel {
         }
         show(Self.formatFailedNotice, from: .configuration)
         guard generation == configureGeneration else { return }
+        restore(lastWorking)
+        configureTask = nil
+        // The failed configure moved the chain on, which drops a pending confirmation; the session still runs the restored
+        // configuration, so it is timed again. A sweep option is never confirmed.
+        if phase == .ready, !isSweeping { confirmWhenRunning(lastWorking.configuration, since: runtimeErrorCount) }
+    }
+
+    /// Puts back `working`'s lens, mode, record and photo as one change, as the session now runs it, and saves them.
+    /// Nothing is queued: `requestedConfiguration` becomes `working`'s configuration.
+    func restore(_ working: (configuration: SessionConfiguration, selection: SavedSelections)) {
         isApplyingSelection = true
-        lensID = lastWorking.selection.lensID
-        mode = lastWorking.selection.mode
-        record = lastWorking.selection.record
-        photo = lastWorking.selection.photo
+        lensID = working.selection.lensID
+        mode = working.selection.mode
+        record = working.selection.record
+        photo = working.selection.photo
         isApplyingSelection = false
         settleLook()
         // The selection change reset the viewfinder's fallback; the session is back on a configuration that may have no
         // frames (an earlier fallback), so the viewfinder follows what was restored, not what was asked for.
-        isLookViewfinderUnavailable = cameraLook != nil && !lastWorking.configuration.needsFrames
-        requestedConfiguration = lastWorking.configuration
-        configureTask = nil
+        isLookViewfinderUnavailable = cameraLook != nil && !working.configuration.needsFrames
+        requestedConfiguration = working.configuration
+        persist()
+    }
+
+    /// What a first launch picks: the launch mode, the default lens, its default record and photo selections, no look.
+    /// Nil without a lens.
+    var defaultSelection: SavedSelections? {
+        let resolved = Self.resolve(lensID: nil, record: nil, photo: nil, in: capabilities)
+        guard !resolved.lensID.isEmpty else { return nil }
+        return SavedSelections(mode: launchMode, lensID: resolved.lensID, record: resolved.record ?? record,
+                               photo: resolved.photo ?? photo, look: nil)
+    }
+
+    /// Selects `selection` as one change and saves it; nothing is queued.
+    func select(_ selection: SavedSelections) {
+        isApplyingSelection = true
+        lensID = selection.lensID
+        mode = selection.mode
+        record = selection.record
+        photo = selection.photo
+        cameraLook = selection.look
+        isApplyingSelection = false
+        isLookViewfinderUnavailable = false
+        settleLook()
         persist()
     }
 
@@ -607,6 +674,8 @@ extension CameraModel {
             return
         }
         let selection = currentSelection
+        // Read before the configure and start, so an error handled while they are awaited is not lost.
+        let errors = runtimeErrorCount
         do {
             try await session.configure(configuration)
         } catch {
@@ -617,8 +686,13 @@ extension CameraModel {
         attachSession(session, configuredWith: configuration, selection: selection)
         cameraSession = session
         await session.start()
+        isResettingMediaServices = false
         watchFrames(for: configuration)
         phase = .ready
+        // Timed only once the start has returned, so a slow start never drops it, and for whatever the session last applied:
+        // a selection changed during the first configure was applied by the chain before the phase was ready, so it armed
+        // nothing itself. One the chain has still to apply arms its own once it has.
+        if let lastWorking { confirmWhenRunning(lastWorking.configuration, since: errors) }
         releaseIfLibraryOpen()
         await withDiscardingTaskGroup { group in
             group.addTask { await self.followRecordings(of: session) }
@@ -686,17 +760,29 @@ extension CameraModel {
             isInterrupted = false
             clearNotice(from: .interruption)
             rewatchFrames()
-        case .runtimeError(let message):
-            // Sets no notice; the phase says the camera stopped.
+        case .runtimeError(let message) where Self.isMediaServicesReset(message):
+            // Sets no notice; the phase says the camera stopped. The session restarts itself and `.restarted` follows, so no
+            // pending confirmation may mark the camera ready and nothing here starts it meanwhile.
             Self.logger.error("\(message, privacy: .public)")
-            phase = .failed("The camera stopped.")
+            runtimeErrorCount += 1
+            confirmation?.cancel()
+            confirmation = nil
+            // Released for the Library or held by a rescan, the session is stopped on purpose and that flow's own configure
+            // and start bring it back, so the phase stays as it is.
+            guard phase != .released, !isCameraReleasedForLibrary, !isScanningFormats, !isSessionStoppedForRescan else { break }
+            isResettingMediaServices = true
+            phase = .failed(Self.cameraStopped)
+        case .runtimeError(let message):
+            cameraStopped(message)
         case .restarted:
+            isResettingMediaServices = false
             // The session runs again, so a pause notice is stale; any other notice stays. A clip recording before the
             // reset is gone, and the movie output may never report it. With the Library open the camera ends released, a
             // release queued whatever the phase was (one that already ran makes the queued one do nothing). With the Library
             // closed after a failed return the session holds no camera, so the failed state stands until the next close
             // retries.
-            if !isCameraReleasedForLibrary || isLibraryPresented {
+            // A rescan holds the session stopped and ends by configuring and starting it itself, so the phase is its own.
+            if !isScanningFormats, !isSessionStoppedForRescan, !isCameraReleasedForLibrary || isLibraryPresented {
                 phase = .ready
                 releaseIfLibraryOpen()
             }

@@ -53,6 +53,8 @@ extension CameraModel {
         } else {
             show(Self.rescanFailedNotice, from: .scan)
         }
+        // Read before the configure and start, so an error handled while they are awaited is not lost.
+        let errors = runtimeErrorCount
         do throws(CameraSessionError) {
             try await applySelection()
         } catch {
@@ -62,9 +64,12 @@ extension CameraModel {
             return
         }
         await configurator?.start()
+        isResettingMediaServices = false
         // The look's frames can only arrive once the session runs, so the watch starts here, not in the configure above.
         isSessionStoppedForRescan = false
         rewatchFrames()
+        // Once it has run long enough it is confirmed, and a camera that stopped during the rescan is ready again.
+        if let lastWorking { confirmWhenRunning(lastWorking.configuration, since: errors) }
     }
 
     static let rescanFailedNotice = "Camera formats could not be read."

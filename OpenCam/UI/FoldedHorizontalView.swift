@@ -13,7 +13,7 @@ struct FoldedHorizontalView: View {
         VStack(spacing: 0) {
             TopReadoutBar(model: model, stripEdge: stripEdge)
                 .frame(height: Theme.Size.topBar)
-            ViewfinderArea(phase: model.phase, look: model.viewfinderLook)
+            ViewfinderArea(phase: model.phase, look: model.viewfinderLook, onRetry: model.isCameraStopped ? { model.retryCamera() } : nil)
                 .frame(width: size.width, height: size.width * 9 / 16)
                 .clipped()
             BottomBar(model: model, stripEdge: stripEdge)
