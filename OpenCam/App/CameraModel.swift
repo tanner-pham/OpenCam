@@ -633,9 +633,14 @@ extension CameraModel {
             phase = .failed("The camera stopped.")
         case .restarted:
             // The session runs again, so a pause notice is stale; any other notice stays. A clip recording before the
-            // reset is gone, and the movie output may never report it. While the Library is open the camera is released or
-            // about to be (its release may not have finished), so it stays released until the Library closes.
-            phase = isLibraryPresented && configurator != nil ? .released : .ready
+            // reset is gone, and the movie output may never report it. With the Library open the camera ends released, a
+            // release queued whatever the phase was (one that already ran makes the queued one do nothing). With the Library
+            // closed after a failed return the session holds no camera, so the failed state stands until the next close
+            // retries.
+            if !isCameraReleasedForLibrary || isLibraryPresented {
+                phase = .ready
+                releaseIfLibraryOpen()
+            }
             isInterrupted = false
             clearNotice(from: .interruption)
             endRecordingWithoutResult(clip: nil, context: "restarted")
