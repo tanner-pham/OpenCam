@@ -5,3 +5,4 @@ xcuserdata/
 .superpowers/
 # Local API notes quoted from the SDK headers; kept out of the public repo.
 docs/research/
+.claude/worktrees/
