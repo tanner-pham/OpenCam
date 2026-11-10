@@ -15,7 +15,8 @@ final class CameraModel {
     var sheet: CameraSheet?
     var phase: CameraPhase
     var freeBytes: Int64
-    var notice: String?
+    /// Set only through `show(_:from:)` and cleared only through `clearNotice(from:)`, so each event clears only its own.
+    private(set) var notice: String?
     var meterLevels: [Double] = [0.62, 0.54]
     var lastCapture: URL?
     private(set) var capabilities: CaptureCapabilities
@@ -60,10 +61,8 @@ final class CameraModel {
     @ObservationIgnored private var photoCaptures: [Int: Task<Void, Never>] = [:]
     /// The start of the recording in flight, so a stop pressed while it is still starting waits for it.
     @ObservationIgnored private var recordingStartTask: Task<Void, Never>?
-    /// The notice the last recording set, cleared by the next recording that has nothing to report.
-    @ObservationIgnored private var lastRecordingNotice: String?
-    /// The notice the current interruption set, cleared when it ends.
-    @ObservationIgnored private var interruptionNotice: String?
+    /// What put `notice` there; nil when no notice is shown.
+    @ObservationIgnored private var noticeSource: NoticeSource?
 
     static let formatFailedNotice = "That format could not be used."
     init(config: LaunchConfig, capabilities: CaptureCapabilities, isSimulator: Bool, defaults: UserDefaults = .standard,
@@ -213,7 +212,7 @@ final class CameraModel {
             return store
         } catch {
             Self.logger.error("\(error.description, privacy: .public)")
-            notice = failureNotice
+            show(failureNotice, from: .capture)
             return nil
         }
     }
@@ -250,10 +249,11 @@ final class CameraModel {
         }
         let report = PhotoSaveReport.make(requested: requested, saved: result.saved, error: result.error)
         if let saved = report.lastCapture { lastCapture = saved }
+        // A full save replaces an earlier capture notice with none.
         if let reportNotice = report.notice {
-            notice = reportNotice
-        } else if let notice, PhotoSaveReport.notices.contains(notice) {
-            self.notice = nil
+            show(reportNotice, from: .capture)
+        } else {
+            clearNotice(from: .capture)
         }
         refreshFreeBytes()
     }
@@ -377,7 +377,7 @@ final class CameraModel {
                 return error
             }
             lastWorking = (configuration, selection)
-            if notice == Self.formatFailedNotice { notice = nil }
+            clearNotice(from: .configuration)
             return nil
         }
         configureTask = task
@@ -392,7 +392,7 @@ final class CameraModel {
             phase = .failed("The camera could not start.")
             return
         }
-        notice = Self.formatFailedNotice
+        show(Self.formatFailedNotice, from: .configuration)
         guard generation == configureGeneration else { return }
         isApplyingSelection = true
         lensID = lastWorking.selection.lensID
@@ -510,11 +510,10 @@ extension CameraModel {
             RecordingOutcome.droppedFramesNotice(clipName: clipName, droppedFrames: $0)
         }
         if let recordingNotice {
-            notice = recordingNotice
-        } else if let lastRecordingNotice, notice == lastRecordingNotice {
-            notice = nil
+            show(recordingNotice, from: .capture)
+        } else {
+            clearNotice(from: .capture)
         }
-        lastRecordingNotice = recordingNotice
         refreshFreeBytes()
         enqueueConfigure()
     }
@@ -563,7 +562,7 @@ extension CameraModel {
         if let capabilities {
             adoptScan(capabilities, lenses: lenses)
         } else {
-            notice = Self.rescanFailedNotice
+            show(Self.rescanFailedNotice, from: .scan)
         }
         try? await applySelection()
         await configurator?.start()
@@ -606,7 +605,7 @@ extension CameraModel {
         // Notices count cameras, and a skipped camera can carry two lenses (1x and 2x).
         let skipped = Set(lenses.filter { capabilities.skippedLensIDs.contains($0.id) }.map(\.deviceUniqueID))
         if let skippedNotice = Self.skippedCamerasNotice(count: skipped.count) {
-            notice = skippedNotice
+            show(skippedNotice, from: .scan)
         }
         for directory in [capabilitySource.cacheDirectory, capabilitySource.documentsDirectory].compactMap({ $0 }) {
             do {
@@ -617,21 +616,35 @@ extension CameraModel {
         }
     }
 
+    private func show(_ text: String, from source: NoticeSource) {
+        notice = text
+        noticeSource = source
+    }
+
+    /// Clears the notice only when `source` put it there.
+    private func clearNotice(from source: NoticeSource) {
+        guard noticeSource == source else { return }
+        notice = nil
+        noticeSource = nil
+    }
+
     func apply(_ event: SessionEvent) {
         switch event {
         case .interrupted(let reason):
-            notice = reason.notice
-            interruptionNotice = reason.notice
+            // An interruption without a notice (backgrounding) changes nothing; one with a notice never covers a capture notice.
+            if let interruptionNotice = reason.notice, noticeSource != .capture {
+                show(interruptionNotice, from: .interruption)
+            }
         case .interruptionEnded:
-            // Only the interruption's own notice goes; a recording or photo notice set meanwhile stays.
-            if let interruptionNotice, notice == interruptionNotice { notice = nil }
-            interruptionNotice = nil
+            clearNotice(from: .interruption)
         case .runtimeError(let message):
+            // Sets no notice; the phase says the camera stopped.
             Self.logger.error("\(message, privacy: .public)")
             phase = .failed("The camera stopped.")
         case .restarted:
+            // The session runs again, so a pause notice is stale; any other notice stays.
             phase = .ready
-            notice = nil
+            clearNotice(from: .interruption)
         case .microphoneUnavailable(let message):
             // Reads the same as microphone denied: video still records, without sound.
             Self.logger.error("\(message, privacy: .public)")
