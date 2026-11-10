@@ -76,6 +76,7 @@ extension CameraModel {
     func startIfStopped(_ configurator: any SessionConfigurator) async -> Bool {
         guard isCameraStopped, !isSessionHeld else { return false }
         await configurator.start()
+        isResettingMediaServices = false
         return true
     }
 

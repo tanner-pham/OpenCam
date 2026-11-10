@@ -92,6 +92,7 @@ extension CameraModel {
             return
         }
         await configurator.start()
+        isResettingMediaServices = false
         isCameraReleasedForLibrary = false
         // The session runs again; once it has run long enough it is confirmed, and a camera that stopped meanwhile is ready.
         if let lastWorking { confirmWhenRunning(lastWorking.configuration, since: errors) }

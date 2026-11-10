@@ -254,6 +254,21 @@ import Testing
         #expect(model.confirmed?.selection == user)
     }
 
+    /// A reset while the camera is released for the Library brings no `.restarted`; the Library's return configures and
+    /// starts the camera as usual and it is ready again.
+    @Test func aResetWhileReleasedForTheLibraryEndsReadyAfterTheReturn() async throws {
+        let (model, fake, _) = try attachedModel()
+        model.openLibrary()
+        await model.libraryHandoff?.value
+        model.apply(.runtimeError("[CameraSession:runtimeError] Session stopped — {code: -11819}"))
+        #expect(!model.isResettingMediaServices)
+        model.isLibraryPresented = false
+        await model.closeLibrary()
+        #expect(await fake.calls == ["release", "configure", "start"])
+        #expect(await eventually { model.phase == .ready })
+        #expect(model.canOpenRecordSettings)
+    }
+
     /// The clip ends as it always has; only then does the camera restart.
     @Test func aStopWhileRecordingRecoversOnceTheClipHasEnded() async throws {
         let (model, fake, _) = try attachedModel()

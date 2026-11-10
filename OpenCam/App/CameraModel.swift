@@ -92,8 +92,10 @@ final class CameraModel {
     @ObservationIgnored var autoRestarted: SessionConfiguration?
     /// True when a runtime error came during a recording or a sweep; the recovery runs once that ends.
     @ObservationIgnored var isRecoveryDeferred = false
-    /// True from a media-services reset until its `.restarted` (or a later runtime error that is not a reset): the session
-    /// restarts itself meanwhile, so the camera is not in the stopped state and nothing here starts it.
+    /// True from a media-services reset until its `.restarted`, a later runtime error that is not a reset, or the model's own
+    /// next start of the session: the session restarts itself meanwhile, so the camera is not in the stopped state and nothing
+    /// here starts it. Never set while the camera is released for the Library or held by a rescan, whose session is stopped on
+    /// purpose and restarts nothing itself; their own configure and start bring it back.
     var isResettingMediaServices = false
     /// The mode a first launch picks, for the default selection.
     @ObservationIgnored let launchMode: CaptureMode
@@ -684,6 +686,7 @@ extension CameraModel {
         attachSession(session, configuredWith: configuration, selection: selection)
         cameraSession = session
         await session.start()
+        isResettingMediaServices = false
         watchFrames(for: configuration)
         phase = .ready
         // Timed only once the start has returned, so a slow start never drops it; a newer configuration already applied by
@@ -763,7 +766,8 @@ extension CameraModel {
             runtimeErrorCount += 1
             confirmation?.cancel()
             confirmation = nil
-            isResettingMediaServices = true
+            isResettingMediaServices = phase != .released && !isCameraReleasedForLibrary && !isScanningFormats
+                && !isSessionStoppedForRescan
             phase = .failed(Self.cameraStopped)
         case .runtimeError(let message):
             cameraStopped(message)

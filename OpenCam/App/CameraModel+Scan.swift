@@ -64,6 +64,7 @@ extension CameraModel {
             return
         }
         await configurator?.start()
+        isResettingMediaServices = false
         // The look's frames can only arrive once the session runs, so the watch starts here, not in the configure above.
         isSessionStoppedForRescan = false
         rewatchFrames()
