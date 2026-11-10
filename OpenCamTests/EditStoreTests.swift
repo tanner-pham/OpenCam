@@ -31,4 +31,26 @@ import Testing
         try Data("{".utf8).write(to: dir.appending(path: "OC_0004.edit.json"))
         #expect(throws: EditStoreError.self) { try EditStore(directory: dir).load(stem: "OC_0004") }
     }
+    @Test func newerVersionFileIsReadOnly() throws {
+        let dir = try TestFiles.directory()
+        let url = dir.appending(path: "OC_0005.edit.json")
+        let json = #"{"version": 3, "lookName": "Warm fade", "adjustments": {"exposure": 1}, "masks": [{"kind": "sky"}]}"#
+        try Data(json.utf8).write(to: url)
+        let store = EditStore(directory: dir)
+        var edit = try store.load(stem: "OC_0005")
+        edit.adjustments.exposure = 2
+        #expect(throws: EditStoreError.newerVersion(path: url.path(percentEncoded: false), version: 3)) { try store.save(edit, stem: "OC_0005") }
+        #expect(throws: EditStoreError.self) { try store.save(PhotoEdit(), stem: "OC_0005") }
+        #expect(throws: EditStoreError.self) { try store.remove(stem: "OC_0005") }
+        #expect(try Data(contentsOf: url) == Data(json.utf8))
+    }
+    @Test func editFilesDoNotDisturbCaptureNumbering() throws {
+        let dir = try TestFiles.directory()
+        try Data().write(to: dir.appending(path: "OC_0001.HEIC"))
+        try Data("{}".utf8).write(to: dir.appending(path: "OC_0001.edit.json"))
+        #expect(try CaptureStore(directory: dir).reserveSequence() == 2)
+        #expect(CaptureStore.latestCaptureName(["OC_0001.HEIC", "OC_0009.edit.json"]) == "OC_0001.HEIC")
+        // nextSequence reads the number before the first dot, so an edit file with a higher number does raise it. Harmless: numbers only skip ahead.
+        #expect(CaptureStore.nextSequence(existingNames: ["OC_0001.HEIC", "OC_0009.edit.json"]) == 10)
+    }
 }

@@ -31,6 +31,7 @@ nonisolated struct EditStore: Sendable {
     func save(_ edit: PhotoEdit, stem: String) throws(EditStoreError) {
         if edit.isIdentity { return try remove(stem: stem) }
         let url = url(forStem: stem)
+        try refuseNewer(url)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
@@ -45,10 +46,19 @@ nonisolated struct EditStore: Sendable {
         let url = url(forStem: stem)
         let path = url.path(percentEncoded: false)
         guard FileManager.default.fileExists(atPath: path) else { return }
+        try refuseNewer(url)
         do {
             try FileManager.default.removeItem(at: url)
         } catch {
             throw .unwritable(path: path, reason: error.localizedDescription)
+        }
+    }
+
+    /// A file written by a newer build is read-only here, so its data is never overwritten or removed.
+    private func refuseNewer(_ url: URL) throws(EditStoreError) {
+        guard let data = try? Data(contentsOf: url), let existing = try? JSONDecoder().decode(PhotoEdit.self, from: data) else { return }
+        if existing.version > PhotoEdit.currentVersion {
+            throw .newerVersion(path: url.path(percentEncoded: false), version: existing.version)
         }
     }
 }

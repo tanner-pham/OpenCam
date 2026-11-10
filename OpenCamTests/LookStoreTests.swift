@@ -31,4 +31,26 @@ import Testing
         #expect(Set(store.all().map(\.name)) == [thirtyFiveCopy, forty, "Warm copy"]); #expect(store.all().last?.name == "Warm copy")
         #expect(throws: LookStoreError.notFound(id: look.id)) { try store.rename(look.id, to: "X") }
     }
+    @Test func deletingALookLeavesPhotoEditsUnchanged() throws {
+        let store = try LookStore(directory: TestFiles.directory())
+        let edits = EditStore(directory: try TestFiles.directory())
+        let look = try store.save(name: "Warm fade", adjustments: warm)
+        let edit = PhotoEdit(adjustments: look.adjustments, lookName: look.name)
+        try edits.save(edit, stem: "OC_0001")
+        try store.delete(look.id)
+        #expect(store.all().isEmpty)
+        #expect(try edits.load(stem: "OC_0001") == edit)
+    }
+    @Test func unreadableLookThrowsReadError() throws {
+        let store = try LookStore(directory: TestFiles.directory())
+        let id = UUID()
+        try Data("{".utf8).write(to: store.directory.appending(path: "\(id.uuidString).json"))
+        do {
+            _ = try store.rename(id, to: "X")
+            Issue.record("Expected an error")
+        } catch {
+            guard case .unreadable = error else { Issue.record("Wrong error: \(error)"); return }
+            #expect(error.description.hasPrefix("[LookStore:read] Cannot read the look"))
+        }
+    }
 }

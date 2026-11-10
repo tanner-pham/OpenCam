@@ -116,7 +116,7 @@ nonisolated struct LookStore: Sendable {
         do {
             return try Self.decoder.decode(Look.self, from: Data(contentsOf: url))
         } catch {
-            throw .unwritable(path: path, reason: "Unreadable: \(error.localizedDescription)")
+            throw .unreadable(path: path, reason: error.localizedDescription)
         }
     }
 
