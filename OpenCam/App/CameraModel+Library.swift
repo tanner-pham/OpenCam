@@ -18,7 +18,13 @@ extension CameraModel {
             return
         }
         isLibraryPresented = true
-        guard configurator != nil, phase == .ready || phase == .released else { return }
+        releaseIfLibraryOpen()
+    }
+
+    /// While the Library is open, a working camera lets go: called when the Library opens, and by `start` once the session
+    /// runs, because the Library can open before the camera is ready (the permission prompt, a `-screen library` launch).
+    func releaseIfLibraryOpen() {
+        guard isLibraryPresented, configurator != nil, phase == .ready || phase == .released else { return }
         phase = .released
         enqueueLibraryHandoff { await $0.releaseCameraForLibrary() }
     }

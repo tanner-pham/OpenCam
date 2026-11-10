@@ -257,8 +257,10 @@ final class CameraModel {
     /// Audio meters and the remaining-time estimate describe video recording, so photo mode hides them.
     var showsVideoReadouts: Bool { mode == .video }
 
+    /// Never while the Library covers the camera, whatever the phase says: a Camera Control press under it would capture
+    /// something nobody can see.
     var canCapture: Bool {
-        guard !isSweeping, StatusText.canRecord(phase: phase, mode: mode, minutesRemaining: minutesRemaining) else { return false }
+        guard !isSweeping, !isLibraryPresented, StatusText.canRecord(phase: phase, mode: mode, minutesRemaining: minutesRemaining) else { return false }
         switch mode {
         case .video: return currentVideoOption != nil
         case .photo: return currentPhotoOption != nil
@@ -559,6 +561,7 @@ extension CameraModel {
         cameraSession = session
         await session.start()
         phase = .ready
+        releaseIfLibraryOpen()
         await withDiscardingTaskGroup { group in
             group.addTask { await self.followRecordings(of: session) }
             group.addTask { await self.pollMeters(of: session) }
@@ -630,9 +633,9 @@ extension CameraModel {
             phase = .failed("The camera stopped.")
         case .restarted:
             // The session runs again, so a pause notice is stale; any other notice stays. A clip recording before the
-            // reset is gone, and the movie output may never report it. Released for the Library, the session holds no
-            // camera, so it stays released until the Library closes.
-            phase = isCameraReleasedForLibrary ? .released : .ready
+            // reset is gone, and the movie output may never report it. While the Library is open the camera is released or
+            // about to be (its release may not have finished), so it stays released until the Library closes.
+            phase = isLibraryPresented && configurator != nil ? .released : .ready
             isInterrupted = false
             clearNotice(from: .interruption)
             endRecordingWithoutResult(clip: nil, context: "restarted")

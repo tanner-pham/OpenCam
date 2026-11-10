@@ -74,6 +74,61 @@ import Testing
         #expect(model.lastCapture.map(CaptureStore.clipKey(for:)) == "OC_0004.JPG")
     }
 
+    /// Opened before the camera was ready (the permission prompt, a `-screen library` launch): when `start` reaches ready it
+    /// lets the camera go at once, and the close brings it back.
+    @Test func aCameraThatBecomesReadyUnderTheLibraryIsReleased() async throws {
+        let (model, fake) = try readyModel()
+        model.phase = .scanning
+        model.openLibrary()
+        #expect(model.isLibraryPresented); #expect(model.phase == .scanning); #expect(model.libraryHandoff == nil)
+        // What `start` does once its session runs.
+        model.phase = .ready
+        model.releaseIfLibraryOpen()
+        #expect(model.phase == .released)
+        await model.libraryHandoff?.value
+        #expect(await fake.calls == ["release"]); #expect(await !fake.isRunning)
+        model.isLibraryPresented = false
+        await model.closeLibrary()
+        #expect(await fake.calls == ["release", "configure", "start"]); #expect(model.phase == .ready)
+    }
+
+    /// Without a Library the helper changes nothing.
+    @Test func aCameraThatBecomesReadyWithoutTheLibraryStaysReady() async throws {
+        let (model, fake) = try readyModel()
+        model.releaseIfLibraryOpen()
+        #expect(model.phase == .ready); #expect(model.libraryHandoff == nil); #expect(await fake.calls.isEmpty)
+    }
+
+    /// Whatever the phase says, a press or a Camera Control click under the Library never captures.
+    @Test func nothingIsCapturedWhileTheLibraryIsOpen() async throws {
+        let (model, fake) = try readyModel()
+        #expect(model.mode == .video); #expect(model.canCapture)
+        model.isLibraryPresented = true
+        model.phase = .ready
+        #expect(!model.canCapture)
+        model.capturePressed()
+        model.handleCaptureEvent(phase: .ended)
+        #expect(!model.isRecording); #expect(await fake.recordingURLs.isEmpty)
+        model.mode = .photo
+        #expect(!model.canCapture)
+        model.isLibraryPresented = false
+        #expect(model.canCapture)
+    }
+
+    /// A restart reported after the Library opened but before the release finished keeps the camera released.
+    @Test func aRestartBeforeTheReleaseFinishesStaysReleased() async throws {
+        let (model, fake) = try readyModel()
+        model.openLibrary()
+        #expect(!model.isCameraReleasedForLibrary)
+        model.apply(.restarted)
+        #expect(model.phase == .released)
+        await model.libraryHandoff?.value
+        #expect(model.phase == .released); #expect(await fake.calls == ["release"])
+        model.isLibraryPresented = false
+        await model.closeLibrary()
+        #expect(model.phase == .ready)
+    }
+
     @Test func aLibraryThatCouldNotBeBuiltSaysSoOnTheCamera() throws {
         let (model, _) = try readyModel(isLibraryAvailable: false)
         #expect(model.canOpenLibrary)
