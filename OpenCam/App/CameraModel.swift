@@ -25,6 +25,9 @@ final class CameraModel {
     private(set) var access: CaptureAccess
     private(set) var pressureLevel: PressureLevel = .nominal
     private(set) var isThermalPressure = false
+    /// True while the scanner sets formats on the cameras (first scan or rescan). Lens and mode cannot change then,
+    /// and no configure is queued; the selection in force when the scan ends is configured afterwards.
+    private(set) var isScanningFormats = false
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let isScripted: Bool
@@ -145,6 +148,9 @@ final class CameraModel {
         }
     }
 
+    /// The strip's Lens and Mode items follow this; `isScanningFormats` also keeps configures from queuing.
+    var canChangeLensOrMode: Bool { !isRecording && !isScanningFormats }
+
     func selectLens(_ id: String) {
         guard id != lensID, capabilities.lenses.contains(where: { $0.id == id }) else { return }
         lensID = id
@@ -216,7 +222,7 @@ final class CameraModel {
     /// only the last of those runs, because the earlier ones are superseded before the chain reaches them.
     @discardableResult
     private func enqueueConfigure() -> Task<CameraSessionError?, Never>? {
-        guard let configurator, let configuration = sessionConfiguration, configuration != requestedConfiguration else { return nil }
+        guard !isScanningFormats, let configurator, let configuration = sessionConfiguration, configuration != requestedConfiguration else { return nil }
         requestedConfiguration = configuration
         configureGeneration += 1
         let generation = configureGeneration
@@ -353,6 +359,9 @@ extension CameraModel {
         }
         let previousPhase = phase
         phase = .scanning
+        // No configure may queue from here, and none already queued may still be running when the scanner touches the cameras.
+        isScanningFormats = true
+        await waitForQueuedConfigures()
         await configurator?.stop()
         let lenses = capabilitySource.discoverLenses()
         let capabilities = await scanCapabilities(lenses: lenses)
@@ -380,6 +389,8 @@ extension CameraModel {
 
     /// Nil when the scan failed or no camera reported a usable format; the reason is logged.
     private func scanCapabilities(lenses: [Lens]) async -> CaptureCapabilities? {
+        isScanningFormats = true
+        defer { isScanningFormats = false }
         let formats: [FormatDescriptor]
         do {
             formats = try await capabilitySource.scan(lenses)

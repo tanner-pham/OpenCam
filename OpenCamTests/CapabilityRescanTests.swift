@@ -38,6 +38,33 @@ import Testing
         #expect(await fake.stopCount == 1); #expect(await fake.isRunning); #expect(await fake.applied.last?.lens.id == "W")
     }
 
+    @Test func lensChangeDuringARescanIsConfiguredOnceAfterTheScan() async throws {
+        let tele = Lens(id: "W@2", kind: .wide, deviceUniqueID: "W", zoomFactor: 2, label: "2x")
+        let lenses = [wide, tele], formats = [descriptor]
+        let hook = ScanHook()
+        let source = CapabilitySource(cacheDirectory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), documentsDirectory: nil,
+                                      discoverLenses: { lenses }, scan: { _ in await hook.run(); return formats })
+        let caps = CapabilityMapper.capabilities(lenses: lenses, formats: formats, osBuild: "B", modelIdentifier: "M")
+        let model = CameraModel(config: LaunchConfig(), capabilities: caps, isSimulator: false, defaults: try Fixture.freshDefaults(), capabilitySource: source)
+        model.phase = .ready
+        let fake = FakeSessionConfigurator(failingLensIDs: [])
+        model.attachSession(fake, configuredWith: try #require(model.sessionConfiguration), selection: model.currentSelection)
+        #expect(model.lensID == "W"); #expect(model.canChangeLensOrMode)
+
+        var appliedDuringScan: [SessionConfiguration] = [], couldChangeDuringScan = true
+        hook.action = {
+            couldChangeDuringScan = model.canChangeLensOrMode
+            model.selectLens("W@2")
+            await model.waitForQueuedConfigures()
+            appliedDuringScan = await fake.applied
+        }
+        await model.rescanCapabilities()
+
+        #expect(!couldChangeDuringScan); #expect(appliedDuringScan.isEmpty)
+        #expect(model.lensID == "W@2"); #expect(model.canChangeLensOrMode)
+        #expect(await fake.applied.map(\.lens.id) == ["W@2"])
+    }
+
     @Test func rescanIsUnavailableWhileRecording() async throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let model = CameraModel(config: .parse(["app", "-recording", "on"]), capabilities: try Fixture.load(), isSimulator: false,

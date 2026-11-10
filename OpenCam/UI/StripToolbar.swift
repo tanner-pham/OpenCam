@@ -32,7 +32,7 @@ struct StripToolbar: ToolbarContent {
                 Image(systemName: model.mode == .video ? "video.fill" : "camera.fill")
             }
             .accessibilityLabel("Mode")
-            .disabled(model.isRecording)
+            .disabled(!model.canChangeLensOrMode)
         case .lens:
             Menu {
                 Picker("Lens", selection: Binding(get: { model.lensID }, set: { model.selectLens($0) })) {
@@ -42,7 +42,7 @@ struct StripToolbar: ToolbarContent {
                 Text(model.currentLens?.label ?? "Lens")
             }
             .accessibilityLabel("Lens, \(model.currentLens?.label ?? "none")")
-            .disabled(model.isRecording)
+            .disabled(!model.canChangeLensOrMode)
         case .record:
             // Disabled while recording, so no change reaches the session mid-clip, and until the formats are known.
             Button("Record settings", systemImage: "slider.horizontal.3") { model.openRecordSettings() }
