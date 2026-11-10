@@ -20,8 +20,10 @@ extension CameraModel {
     var isLookOffered: Bool { LookAvailability.isOffered(mode: mode, colour: record.colour) }
     var lookChips: [Chip] { LookAvailability.chips(looks: looks, isOffered: isLookOffered) }
     var lookChipID: String { cameraLook?.id.uuidString ?? LookAvailability.noneID }
+    /// In video, while the viewfinder cannot show the look, it applies nowhere, so the row says that instead.
     var lookReason: String? {
-        LookAvailability.reasonLine(mode: mode, isOffered: isLookOffered, hasLook: cameraLook != nil)
+        if mode == .video, cameraLook != nil, isLookViewfinderUnavailable { return Self.framesUnavailableNotice }
+        return LookAvailability.reasonLine(mode: mode, isOffered: isLookOffered, hasLook: cameraLook != nil)
     }
 
     /// A choice from the Look row: None, or a look's id. Choosing clears the look's own notice.

@@ -60,6 +60,20 @@ import Testing
         #expect(model.notice == "The look cannot be shown in the viewfinder with this format.")
     }
 
+    /// In video the fallback leaves the look applied nowhere, and the Look row says why; photo mode keeps its line.
+    @Test func theLookRowSaysWhenVideoCannotShowTheLook() throws {
+        let (model, look) = try make()
+        model.mode = .photo
+        model.selectLook(look.id)
+        let photoReason = model.lookReason
+        model.framesUnavailable()
+        #expect(model.lookReason == photoReason)
+        model.mode = .video
+        #expect(model.lookReason == "Shown in the viewfinder only. Video is recorded without it.")
+        model.framesUnavailable()
+        #expect(model.lookReason == "The look cannot be shown in the viewfinder with this format.")
+    }
+
     /// After a fallback, a format that fails restores the configuration without frames, and the viewfinder follows it.
     @Test func aFailedFormatAfterAFallbackKeepsThePlainViewfinder() async throws {
         let (model, look) = try make()
