@@ -451,7 +451,13 @@ final class CameraModel {
 
     /// Waits for every photo capture already running.
     private func waitForPhotoCaptures() async {
-        for capture in Array(photoCaptures.values) {
+        await Self.waitForAll(Array(photoCaptures.values))
+    }
+
+    /// Waits for `captures`, taken when the caller queued its work: a capture started later may itself be waiting on
+    /// that work.
+    private static func waitForAll(_ captures: [Task<Void, Never>]) async {
+        for capture in captures {
             await capture.value
         }
     }
@@ -512,9 +518,7 @@ final class CameraModel {
         let captures = Array(photoCaptures.values)
         let task = Task { () -> CameraSessionError? in
             _ = await previous?.value
-            for capture in captures {
-                await capture.value
-            }
+            await Self.waitForAll(captures)
             guard generation == configureGeneration else { return nil }
             do throws(CameraSessionError) {
                 try await configurator.configure(configuration)
@@ -683,7 +687,7 @@ extension CameraModel {
             return
         }
         if isSweepClip {
-            if !keepsSweepClips { removeSweepClip(result.url) }
+            if !keepsSweepClips { FormatSweep.removeClip(at: result.url) }
             refreshFreeBytes()
             enqueueConfigure()
             return
@@ -931,16 +935,6 @@ extension CameraModel: SweepDriver {
     /// Marks `url` as a sweep clip; `startRecording` calls it for every clip it starts during a sweep.
     func recordSweepClip(_ url: URL) {
         sweepClips.insert(url)
-    }
-
-    private func removeSweepClip(_ url: URL) {
-        let path = url.path(percentEncoded: false)
-        guard FileManager.default.fileExists(atPath: path) else { return }
-        do {
-            try FileManager.default.removeItem(at: url)
-        } catch {
-            Self.logger.error("\(SweepError.clipNotDeleted(path: path, reason: error.localizedDescription).description, privacy: .public)")
-        }
     }
 
     // MARK: SweepDriver

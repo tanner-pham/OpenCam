@@ -20,7 +20,7 @@ struct OpenCamApp: App {
             let capabilities = try CaptureCapabilities.bundledFixture()
             _model = State(initialValue: CameraModel(config: config, capabilities: capabilities, isSimulator: true))
         } catch {
-            Self.logger.error("Fixture failed to load: \(String(describing: error), privacy: .public)")
+            Self.logger.error("[OpenCamApp:init] Fixture failed to load — {error: \(String(describing: error), privacy: .public)}")
             _model = State(initialValue: nil)
         }
         _session = State(initialValue: nil)

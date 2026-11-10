@@ -206,10 +206,15 @@ import OSLog
     /// Deletes the clip unless `-keepSweepClips on`; the sidecar stays.
     private func removeClip(_ result: RecordingResult) {
         guard !keepsClips else { return }
-        let path = result.url.path(percentEncoded: false)
+        Self.removeClip(at: result.url)
+    }
+
+    /// Deletes a sweep clip, if it exists; its sidecar stays. A failure is logged.
+    static func removeClip(at url: URL) {
+        let path = url.path(percentEncoded: false)
         guard FileManager.default.fileExists(atPath: path) else { return }
         do {
-            try FileManager.default.removeItem(at: result.url)
+            try FileManager.default.removeItem(at: url)
         } catch {
             Self.logger.error("\(SweepError.clipNotDeleted(path: path, reason: error.localizedDescription).description, privacy: .public)")
         }
