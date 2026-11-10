@@ -33,7 +33,7 @@ struct FormatButton: View {
     private var label: some View {
         Group {
             if isStacked {
-                VStack(spacing: 0) { ForEach(parts, id: \.self) { Text($0) } }
+                VStack(spacing: 0) { ForEach(Array(parts.enumerated()), id: \.offset) { Text($0.element) } }
             } else {
                 Text(parts.joined(separator: "  "))
             }

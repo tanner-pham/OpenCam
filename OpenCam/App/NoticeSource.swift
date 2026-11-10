@@ -12,4 +12,7 @@ nonisolated enum NoticeSource: Sendable, Equatable {
     case scan
     /// The Library could not be built at launch, so its item cannot open it.
     case library
+    /// A look turned off, or not shown in the viewfinder. Never replaces a capture or configuration notice. Cleared when a
+    /// look is chosen (`selectLook(chipID:)`) or the viewfinder can show it again.
+    case look
 }

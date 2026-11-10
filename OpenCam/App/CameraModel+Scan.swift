@@ -39,6 +39,8 @@ extension CameraModel {
         await waitForPhotoCaptures()
         // The scanner adds each camera to a session of its own, so the main session lets go of its camera first;
         // the configure below attaches it again.
+        isSessionStoppedForRescan = true
+        defer { isSessionStoppedForRescan = false }
         await configurator?.releaseCameras()
         let lenses = capabilitySource.discoverLenses()
         let capabilities = await scanCapabilities(lenses: lenses)
@@ -60,6 +62,9 @@ extension CameraModel {
             return
         }
         await configurator?.start()
+        // The look's frames can only arrive once the session runs, so the watch starts here, not in the configure above.
+        isSessionStoppedForRescan = false
+        rewatchFrames()
     }
 
     static let rescanFailedNotice = "Camera formats could not be read."

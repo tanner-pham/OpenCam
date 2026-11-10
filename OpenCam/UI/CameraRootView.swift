@@ -41,7 +41,9 @@ struct CameraRootView: View {
                                     record: $model.record,
                                     photo: $model.photo,
                                     freeBytes: model.freeBytes,
-                                    sweepCaption: model.sweepCaption)
+                                    sweepCaption: model.sweepCaption,
+                                    look: LookChoice(chips: model.lookChips, selectedID: model.lookChipID, reason: model.lookReason,
+                                                     scrollsIntoView: model.scrollsToLookRow) { model.selectLook(chipID: $0) })
             case .sweep:
                 SweepView(model: model)
             }

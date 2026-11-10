@@ -60,6 +60,10 @@ extension CameraModel: SweepDriver {
             Self.logger.error("[CameraModel:runSweep] The user's selection was not applied — {lens: \(lensID, privacy: .public)}")
         }
         isSweeping = false
+        // The look was suspended during the sweep: it is settled once against the restored selection, and one configure
+        // brings the data output back if the look is still on.
+        settleLook()
+        enqueueConfigure()
         // A selection still queued behind a stuck configure or recording applies when that ends, and is the user's, so it is
         // saved; after a failed restore the selection is a sweep option, which never is.
         if record == userRecord { persist() }

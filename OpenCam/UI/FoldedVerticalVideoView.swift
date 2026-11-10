@@ -10,7 +10,7 @@ struct FoldedVerticalVideoView: View {
 
     var body: some View {
         ZStack {
-            ViewfinderArea(phase: model.phase, captionTopInset: insets.top + Theme.Space.l + Theme.Size.minTarget + Theme.Space.s)
+            ViewfinderArea(phase: model.phase, look: model.viewfinderLook, captionTopInset: insets.top + Theme.Space.l + Theme.Size.minTarget + Theme.Space.s)
             VStack(spacing: 0) {
                 TopReadoutBar(model: model, isCompact: true)
                     .padding(.horizontal, Theme.Space.s)
@@ -39,7 +39,8 @@ struct FoldedVerticalVideoView: View {
     private var bottomControls: some View {
         GlassEffectContainer(spacing: Theme.Space.s) {
             HStack(spacing: Theme.Space.s) {
-                FormatButton(parts: model.summaryParts, isWarning: model.sweepCaption != nil,
+                // With a look the summary has a fourth part and no longer fits beside the meters and shutter on one line.
+                FormatButton(parts: model.summaryParts, isStacked: model.summaryLookName != nil, isWarning: model.sweepCaption != nil,
                              onLongPress: { model.openSweep() }) { model.openRecordSettings() }
                     .disabled(!model.canOpenRecordSettings)
                 // "Storage full" is wider than the minutes, so the meters give way to it.

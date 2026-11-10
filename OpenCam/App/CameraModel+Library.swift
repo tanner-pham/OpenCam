@@ -63,9 +63,15 @@ extension CameraModel {
         isCameraReleasedForLibrary = true
     }
 
+    /// While the camera is released for the Library, only the Library's return configures it, once, after clearing
+    /// `requestedConfiguration`; a look the Library changed meanwhile waits for that return.
+    var isHeldForLibrary: Bool { isCameraReleasedForLibrary && requestedConfiguration != nil }
+
     private func returnCameraFromLibrary() async {
         // Opened again before this step ran: the camera stays released for that Library.
         guard !isLibraryPresented else { return }
+        // Every look change happens under the Library, so the looks are read again on every path, before the selection is configured.
+        reloadLooks()
         defer { refreshLastCapture() }
         guard isCameraReleasedForLibrary, let configurator else {
             // Closed before the release ran: the session never let go, so the camera is simply back.
@@ -85,6 +91,10 @@ extension CameraModel {
         }
         await configurator.start()
         isCameraReleasedForLibrary = false
+        // A selection changed while the camera started was held; it is configured now, and its own configure watches frames.
+        if enqueueConfigure() == nil, let configuration = requestedConfiguration {
+            watchFrames(for: configuration)
+        }
         // A failure reported meanwhile stands, except this step's own earlier one, which the retry has just mended. A Library
         // opened meanwhile releases the camera again in a step of its own.
         guard phase == .released || phase == .failed(Self.cameraCouldNotStart) else { return }

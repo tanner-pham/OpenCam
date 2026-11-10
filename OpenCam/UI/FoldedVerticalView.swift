@@ -11,7 +11,7 @@ struct FoldedVerticalView: View {
         // 3:4 across the full width when it fits (the folded phone); otherwise as large as the controls below leave room
         // for, still 3:4, so the readouts, shutter row and notice line always show in full.
         PictureAboveControlsLayout(pictureAspect: 3 / 4) {
-            ViewfinderArea(phase: model.phase)
+            ViewfinderArea(phase: model.phase, look: model.viewfinderLook)
                 .clipped()
 
             VStack(spacing: Theme.Space.s) {

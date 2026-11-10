@@ -8,6 +8,8 @@ nonisolated struct SavedSelections: Codable, Sendable, Equatable {
     var lensID: String
     var record: RecordSelection
     var photo: PhotoSelection
+    /// The look the camera applies; nil is None. Absent from selections saved before looks existed.
+    var look: CameraLook? = nil
 
     static func load(from defaults: UserDefaults) -> SavedSelections? {
         guard let data = defaults.data(forKey: key) else { return nil }

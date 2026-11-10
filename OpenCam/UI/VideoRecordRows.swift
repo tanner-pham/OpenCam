@@ -5,6 +5,7 @@ struct VideoRecordRows: View {
     let resolver: RecordSelectionResolver
     @Binding var selection: RecordSelection
     let freeBytes: Int64
+    let look: LookChoice
     var sweepCaption: String? = nil
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
@@ -20,6 +21,8 @@ struct VideoRecordRows: View {
                         if let changed = resolver.select(row, chipID: chipID, in: selection) { selection = changed }
                     }
                 }
+                ChipRow(title: "Look", chips: look.chips, selectedID: look.selectedID, reason: look.reason, columns: 1,
+                        isSingleLine: true, onSelect: look.onSelect)
                 if let option = resolver.option(for: selection) {
                     Text(DataRateEstimator.footer(for: option, freeBytes: freeBytes))
                         .font(.footnote.monospacedDigit())
@@ -34,6 +37,7 @@ struct VideoRecordRows: View {
             .padding(.leading, verticalSizeClass == .compact ? 0 : Theme.Space.l)
             .padding(.trailing, Theme.Space.l)
         }
+        .defaultScrollAnchor(look.scrollsIntoView ? .bottom : .top, for: .initialOffset)
     }
 
     private func selectedID(_ row: RecordRow) -> String {

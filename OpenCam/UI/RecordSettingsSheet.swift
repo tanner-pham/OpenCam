@@ -9,14 +9,15 @@ struct RecordSettingsSheet: View {
     let freeBytes: Int64
     /// Shown under the footer when the selection failed the last format sweep.
     var sweepCaption: String? = nil
+    let look: LookChoice
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             Group {
                 switch mode {
-                case .video: VideoRecordRows(resolver: recordResolver, selection: $record, freeBytes: freeBytes, sweepCaption: sweepCaption)
-                case .photo: PhotoRows(resolver: photoResolver, selection: $photo)
+                case .video: VideoRecordRows(resolver: recordResolver, selection: $record, freeBytes: freeBytes, look: look, sweepCaption: sweepCaption)
+                case .photo: PhotoRows(resolver: photoResolver, selection: $photo, look: look)
                 }
             }
             .navigationTitle(mode == .video ? "Record settings" : "Photo settings")

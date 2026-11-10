@@ -10,4 +10,6 @@ nonisolated enum SessionEvent: Sendable, Equatable {
     /// The microphone could not attach; video continues without sound. Carries a log message only.
     case microphoneUnavailable(String)
     case pressure(PressureLevel, isThermal: Bool)
+    /// The data output that draws the look could not be added; the viewfinder keeps the preview layer.
+    case framesUnavailable
 }

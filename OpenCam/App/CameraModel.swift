@@ -39,6 +39,13 @@ final class CameraModel {
     private(set) var readouts = LiveReadouts()
     /// The latest format sweep, kept after it ends so its result stays on screen.
     var sweep: FormatSweep?
+    /// The saved looks, read at launch and whenever the Library closes.
+    var looks: [Look] = []
+    /// The look the camera applies; nil is None. Set only by `CameraModel+Look`.
+    var cameraLook: CameraLook?
+    /// True when the look's frames could not be drawn with the current format; the viewfinder shows the plain preview until
+    /// the next lens, mode, format or look change tries again. The look stays selected.
+    var isLookViewfinderUnavailable = false
     /// True from the start of a sweep until the user's selection is back. Lens, mode, selection, capture, Record settings
     /// and rescans are all held meanwhile, and nothing is saved as the user's selection.
     var isSweeping = false
@@ -79,6 +86,8 @@ final class CameraModel {
     /// Photo captures still running, by file number. A configure queued after a press waits for them,
     /// because Bayer RAW needs the zoom unchanged until the capture ends (AVCapturePhotoOutput.h).
     @ObservationIgnored private var photoCaptures: [Int: Task<Void, Never>] = [:]
+    /// The last photo capture pressed with a look; the next one with a look finishes after it.
+    @ObservationIgnored private var lookFinishTail: Task<Void, Never>?
     /// The start of the recording in flight, so a stop pressed while it is still starting waits for it.
     @ObservationIgnored var recordingStartTask: Task<Void, Never>?
     /// The clip being recorded, from the press until its result; a stop or restart that finds no result coming ends it.
@@ -90,16 +99,26 @@ final class CameraModel {
     @ObservationIgnored var noticeSource: NoticeSource?
     /// False when the Library could not be built at launch; its item then says so instead of opening it.
     @ObservationIgnored let isLibraryAvailable: Bool
+    /// The store shared with the Library and the editor; nil when none could be made, and the camera then has only None.
+    @ObservationIgnored let lookStore: LookStore?
+    /// True when Record settings opens scrolled to the Look row (a scripted launch with a look, for screenshots).
+    @ObservationIgnored let scrollsToLookRow: Bool
     /// The tail of the serial chain that releases the camera for the Library and takes it back.
     @ObservationIgnored var libraryHandoff: Task<Void, Never>?
     /// True from the moment the session let go of its camera for the Library until it runs again.
     @ObservationIgnored var isCameraReleasedForLibrary = false
+    /// Waits for the look's first frames after a configure; a stall falls back to the plain preview.
+    @ObservationIgnored var frameWatch: Task<Void, Never>?
+    /// True while a rescan holds the session stopped, until it runs again; no frame watch starts meanwhile.
+    @ObservationIgnored var isSessionStoppedForRescan = false
 
     static let formatFailedNotice = "That format could not be used."
     static let formatSetupFailed = "This format could not be set up."
     init(config: LaunchConfig, capabilities: CaptureCapabilities, isSimulator: Bool, defaults: UserDefaults = .standard,
-         capabilitySource: CapabilitySource = .device, captureStore: CaptureStore? = nil, isLibraryAvailable: Bool = true) {
+         capabilitySource: CapabilitySource = .device, captureStore: CaptureStore? = nil, isLibraryAvailable: Bool = true,
+         lookStore: LookStore? = nil) {
         self.captureStore = captureStore
+        self.lookStore = lookStore
         self.isLibraryAvailable = isLibraryAvailable
         self.capabilities = capabilities
         self.defaults = defaults
@@ -132,8 +151,18 @@ final class CameraModel {
         self.mode = saved?.mode ?? config.mode
         self.record = resolved.record ?? Self.placeholderRecord
         self.photo = resolved.photo ?? Self.placeholderPhoto
+        let looks = lookStore?.all() ?? []
+        self.looks = looks
+        if let name = config.cameraLookName {
+            self.cameraLook = looks.first { $0.name == name }.map(CameraLook.init)
+        } else {
+            self.cameraLook = CameraLook.reconciled(saved?.look, with: looks)
+        }
+        self.scrollsToLookRow = config.screen == .record && config.cameraLookName != nil
         // A device launch starts with no capabilities, so the saved choices wait for real ones and must not be overwritten meanwhile.
         self.isAwaitingRestore = !config.isScripted && capabilities.lenses.isEmpty
+        // A look the launch mode cannot take is None, with no notice.
+        if !isLookOffered { self.cameraLook = nil }
         if isSimulator { simulate(config.simulatedState) }
     }
 
@@ -177,12 +206,13 @@ final class CameraModel {
     /// What the session should capture for the current selection; nil without a lens.
     var sessionConfiguration: SessionConfiguration? {
         guard let currentLens else { return nil }
-        return SessionConfiguration.make(lens: currentLens, mode: mode, video: currentVideoOption, photo: currentPhotoOption, access: access)
+        return SessionConfiguration.make(lens: currentLens, mode: mode, video: currentVideoOption, photo: currentPhotoOption, access: access,
+                                         needsFrames: needsFrames)
     }
 
     /// The current options as the screen may name them: none while formats are being read, and none the device has not reported.
     /// Only a working camera, or the Simulator's labelled stand-in, names a format or a measurement.
-    private var hasCamera: Bool { phase == .ready || phase == .simulator }
+    var hasCamera: Bool { phase == .ready || phase == .simulator }
     var shownVideoOption: VideoOption? { hasCamera ? currentVideoOption : nil }
     private var shownPhotoOption: PhotoOption? { hasCamera ? currentPhotoOption : nil }
 
@@ -195,10 +225,10 @@ final class CameraModel {
         switch mode {
         case .video:
             guard let option = shownVideoOption else { return ["--"] }
-            return [option.codec.family.title, option.resolution.label, option.colour.shortName]
+            return [option.codec.family.title, option.resolution.label, option.colour.shortName] + (summaryLookName.map { [$0] } ?? [])
         case .photo:
             guard let option = shownPhotoOption else { return ["--"] }
-            return [option.format.rawValue, option.label]
+            return [option.format.rawValue, option.label] + (summaryLookName.map { [$0] } ?? [])
         }
     }
 
@@ -360,7 +390,14 @@ final class CameraModel {
         if option.format.includesRAW { requested.append(dngURL) }
         if option.format != .raw { requested.append(heicURL) }
         let pendingConfigure = configureTask
-        photoCaptures[sequence] = Task {
+        let look = cameraLook
+        let format = option.format
+        let edits = EditStore(directory: store.directory)
+        // Captures with a look finish in press order, one bake at a time: each waits for the one pressed before it, so an
+        // older photo never becomes the last capture after a newer one and 48 MP renders never overlap. Without a look the
+        // chain is neither read nor extended.
+        let earlierFinish = look != nil ? lookFinishTail : nil
+        let capture = Task {
             defer { photoCaptures[sequence] = nil }
             _ = await pendingConfigure?.value
             let result: PhotoCaptureResult
@@ -369,20 +406,30 @@ final class CameraModel {
             } catch {
                 result = PhotoCaptureResult(saved: [], error: error)
             }
-            photoFinished(requested: requested, result: result)
+            // The photo is already on disk; the bake runs inside this task, so a configure or the Library waits for it,
+            // and the last capture is set only after it, so the strip shows the baked picture.
+            var lookNotice: String?
+            if let look {
+                await earlierFinish?.value
+                lookNotice = await LookCapture.finish(result, look: look, format: format, heicURL: heicURL, dngURL: dngURL, edits: edits).notice
+            }
+            photoFinished(requested: requested, result: result, lookNotice: lookNotice)
         }
+        photoCaptures[sequence] = capture
+        if look != nil { lookFinishTail = capture }
     }
 
-    /// The notice always describes the latest capture: a full save clears an earlier photo notice.
-    private func photoFinished(requested: [URL], result: PhotoCaptureResult) {
+    /// The notice always describes the latest capture: a full save clears an earlier photo notice. The save report's
+    /// notice wins over the look's. Internal so tests can deliver a result without a session.
+    func photoFinished(requested: [URL], result: PhotoCaptureResult, lookNotice: String? = nil) {
         if let error = result.error {
             Self.logger.error("\(error.description, privacy: .public)")
         }
         let report = PhotoSaveReport.make(requested: requested, saved: result.saved, error: result.error)
         if let saved = report.lastCapture { lastCapture = saved }
         // A full save replaces an earlier capture notice with none.
-        if let reportNotice = report.notice {
-            show(reportNotice, from: .capture)
+        if let notice = report.notice ?? lookNotice {
+            show(notice, from: .capture)
         } else {
             clearNotice(from: .capture)
         }
@@ -414,11 +461,15 @@ final class CameraModel {
     }
 
     var currentSelection: SavedSelections {
-        SavedSelections(mode: mode, lensID: lensID, record: record, photo: photo)
+        SavedSelections(mode: mode, lensID: lensID, record: record, photo: photo, look: cameraLook)
     }
 
-    private func selectionChanged() {
+    func selectionChanged() {
         guard !isApplyingSelection else { return }
+        // A new lens, mode, format or look tries the viewfinder again.
+        isLookViewfinderUnavailable = false
+        clearNotice(from: .look)
+        settleLook()
         persist()
         enqueueConfigure()
     }
@@ -455,7 +506,8 @@ final class CameraModel {
     /// only the last of those runs, because the earlier ones are superseded before the chain reaches them.
     @discardableResult
     func enqueueConfigure() -> Task<CameraSessionError?, Never>? {
-        guard !isScanningFormats, !isRecording, let configurator, let configuration = sessionConfiguration, configuration != requestedConfiguration else { return nil }
+        guard !isScanningFormats, !isRecording, !isHeldForLibrary, let configurator, let configuration = sessionConfiguration,
+              configuration != requestedConfiguration else { return nil }
         requestedConfiguration = configuration
         configureGeneration += 1
         let generation = configureGeneration
@@ -474,6 +526,7 @@ final class CameraModel {
             }
             lastWorking = (configuration, selection)
             clearNotice(from: .configuration)
+            watchFrames(for: configuration)
             return nil
         }
         configureTask = task
@@ -496,6 +549,10 @@ final class CameraModel {
         record = lastWorking.selection.record
         photo = lastWorking.selection.photo
         isApplyingSelection = false
+        settleLook()
+        // The selection change reset the viewfinder's fallback; the session is back on a configuration that may have no
+        // frames (an earlier fallback), so the viewfinder follows what was restored, not what was asked for.
+        isLookViewfinderUnavailable = cameraLook != nil && !lastWorking.configuration.needsFrames
         requestedConfiguration = lastWorking.configuration
         configureTask = nil
         persist()
@@ -560,6 +617,7 @@ extension CameraModel {
         attachSession(session, configuredWith: configuration, selection: selection)
         cameraSession = session
         await session.start()
+        watchFrames(for: configuration)
         phase = .ready
         releaseIfLibraryOpen()
         await withDiscardingTaskGroup { group in
@@ -627,6 +685,7 @@ extension CameraModel {
         case .interruptionEnded:
             isInterrupted = false
             clearNotice(from: .interruption)
+            rewatchFrames()
         case .runtimeError(let message):
             // Sets no notice; the phase says the camera stopped.
             Self.logger.error("\(message, privacy: .public)")
@@ -644,6 +703,7 @@ extension CameraModel {
             isInterrupted = false
             clearNotice(from: .interruption)
             endRecordingWithoutResult(clip: nil, context: "restarted")
+            rewatchFrames()
         case .microphoneUnavailable(let message):
             // Reads the same as microphone denied: video still records, without sound.
             Self.logger.error("\(message, privacy: .public)")
@@ -651,6 +711,8 @@ extension CameraModel {
         case .pressure(let level, let isThermal):
             pressureLevel = level
             isThermalPressure = isThermal
+        case .framesUnavailable:
+            framesUnavailable()
         }
     }
 }

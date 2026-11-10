@@ -14,5 +14,11 @@ import Testing
         #expect(LaunchConfig.parse(["app", "-seedSamples", "on"]).isScripted)
         #expect(LaunchConfig.parse(["app", "-editorGroup", "masks", "-seedSamples", "off"]) == LaunchConfig())
     }
+    @Test func parsesCameraLookFlag() {
+        let c = LaunchConfig.parse(["app", "-cameraLook", "Warm fade", "-seedLook", "on"])
+        #expect(c.cameraLookName == "Warm fade"); #expect(c.isScripted)
+        #expect(LaunchConfig.parse(["app", "-cameraLook", "Warm fade"]).isScripted)   // the flag alone makes the launch scripted
+        #expect(LaunchConfig.parse(["app"]).cameraLookName == nil)
+    }
     @Test func unknownValuesFallBack() { #expect(LaunchConfig.parse(["app", "-mode", "cinema", "-screen", "monitor"]) == LaunchConfig()) }
 }

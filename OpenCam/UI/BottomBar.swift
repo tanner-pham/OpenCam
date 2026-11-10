@@ -20,7 +20,10 @@ struct BottomBar: View {
 
     private var controls: some View {
         HStack(spacing: Theme.Space.l) {
-            Color.clear.frame(width: Theme.Size.histogramWidth, height: Theme.Size.histogramHeight)
+            // Empty room for the histogram. Its width is fixed, as it always was, unless a look's name is in the summary: only
+            // then may it give way, so the row with no look is laid out exactly as before.
+            Color.clear.frame(minWidth: model.summaryLookName == nil ? Theme.Size.histogramWidth : 0, maxWidth: Theme.Size.histogramWidth,
+                              minHeight: Theme.Size.histogramHeight, maxHeight: Theme.Size.histogramHeight)
             Spacer(minLength: 0)
             FormatButton(parts: model.summaryParts, isWarning: model.sweepCaption != nil,
                          onLongPress: model.mode == .video ? { model.openSweep() } : nil) { model.openRecordSettings() }
