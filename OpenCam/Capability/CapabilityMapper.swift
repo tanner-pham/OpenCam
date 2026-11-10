@@ -79,14 +79,16 @@ nonisolated enum CapabilityMapper {
         }
     }
 
+    /// A lens with no options (its camera was skipped by the scan, or reported nothing usable) is left out.
     static func capabilities(lenses: [Lens], formats: [FormatDescriptor], osBuild: String, modelIdentifier: String) -> CaptureCapabilities {
         let video = lenses.flatMap { lens in
             videoOptions(from: descriptors(for: lens, lenses: lenses, in: formats)).map {
                 VideoOption(lensID: lens.id, codec: $0.codec, resolution: $0.resolution, frameRate: $0.frameRate, colour: $0.colour)
             }
         }
-        return CaptureCapabilities(lenses: lenses, videoOptions: video, photoOptions: photoOptions(from: formats, lenses: lenses),
-                                   osBuild: osBuild, modelIdentifier: modelIdentifier)
+        let photo = photoOptions(from: formats, lenses: lenses)
+        let kept = lenses.filter { lens in video.contains { $0.lensID == lens.id } || photo.contains { $0.lensID == lens.id } }
+        return CaptureCapabilities(lenses: kept, videoOptions: video, photoOptions: photo, osBuild: osBuild, modelIdentifier: modelIdentifier)
     }
 
     /// The scan reads each camera once, under its unzoomed lens; a zoomed lens reuses that lens's descriptors.

@@ -44,9 +44,9 @@ struct StripToolbar: ToolbarContent {
             .accessibilityLabel("Lens, \(model.currentLens?.label ?? "none")")
             .disabled(model.isRecording)
         case .record:
-            // Disabled while recording, so no change reaches the session mid-clip.
-            Button("Record settings", systemImage: "slider.horizontal.3") { model.sheet = .record }
-                .disabled(model.isRecording)
+            // Disabled while recording, so no change reaches the session mid-clip, and until the formats are known.
+            Button("Record settings", systemImage: "slider.horizontal.3") { model.openRecordSettings() }
+                .disabled(model.isRecording || !model.canOpenRecordSettings)
         case .library:
             Button("Library", systemImage: "photo.on.rectangle") {}
                 .disabled(true)

@@ -8,7 +8,8 @@ struct BottomBar: View {
         HStack(spacing: Theme.Space.l) {
             Color.clear.frame(width: Theme.Size.histogramWidth, height: Theme.Size.histogramHeight)
             Spacer(minLength: 0)
-            FormatButton(parts: model.summaryParts) { model.sheet = .record }
+            FormatButton(parts: model.summaryParts) { model.openRecordSettings() }
+                .disabled(!model.canOpenRecordSettings)
             Spacer(minLength: 0)
             if model.showsVideoReadouts {
                 AudioMetersView(levels: model.meterLevels)

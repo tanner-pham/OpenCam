@@ -27,7 +27,8 @@ struct FoldedVerticalVideoView: View {
     private var bottomControls: some View {
         GlassEffectContainer(spacing: Theme.Space.s) {
             HStack(spacing: Theme.Space.s) {
-                FormatButton(parts: model.summaryParts) { model.sheet = .record }
+                FormatButton(parts: model.summaryParts) { model.openRecordSettings() }
+                    .disabled(!model.canOpenRecordSettings)
                 HStack(spacing: Theme.Space.s) {
                     AudioMetersView(levels: model.meterLevels, width: 56)
                     Text(model.remainingText).font(Theme.Text.compactValue).fixedSize()

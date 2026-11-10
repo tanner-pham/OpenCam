@@ -23,4 +23,10 @@ import Testing
         #expect(caps.photoOptions(forLens: "W@2").map(\.format) == [.heif])
         #expect(Set(caps.photoOptions(forLens: "W").map(\.format)) == [.raw, .rawPlusHEIF, .heif])
     }
+    @Test func lensWithoutDescriptorsIsOmittedAndTheOthersSurvive() {
+        let front = Lens(id: "F", kind: .outerUltraWide, deviceUniqueID: "F", zoomFactor: 1, label: "Front")
+        let caps = CapabilityMapper.capabilities(lenses: [wide, tele, front], formats: [fmt(1920, 1080, [1...60], [0: ["hvc1"]])], osBuild: "B", modelIdentifier: "M")
+        #expect(caps.lenses.map(\.id) == ["W", "W@2"])
+        #expect(!caps.videoOptions(forLens: "W").isEmpty); #expect(caps.videoOptions(forLens: "F").isEmpty)
+    }
 }

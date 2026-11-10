@@ -1,15 +1,26 @@
 import AVFoundation
+import OSLog
 
 /// Asks each camera what it can record, modelled on the probe's `Inventory.scanOutputs`.
 /// Each camera gets a throwaway session with photo and movie outputs; the output lists follow the device's active format.
 nonisolated enum CapabilityScanner {
+    private static let logger = Logger(subsystem: "local.opencam.app", category: "CapabilityScanner")
+
     /// Runs on the concurrent executor, never the caller's actor. A zoomed lens shares its camera, so only unzoomed lenses are scanned.
+    /// A camera that cannot be added or configured is logged and skipped; the scan throws only when no camera gave a format.
     @concurrent
     static func scan(lenses: [Lens]) async throws(CameraSessionError) -> [FormatDescriptor] {
         var descriptors: [FormatDescriptor] = []
+        var firstError: CameraSessionError?
         for lens in lenses where lens.zoomFactor == 1 {
-            descriptors += try scan(lens)
+            do throws(CameraSessionError) {
+                descriptors += try scan(lens)
+            } catch {
+                logger.error("\(error.description, privacy: .public)")
+                firstError = firstError ?? error
+            }
         }
+        if descriptors.isEmpty, let firstError { throw firstError }
         return descriptors
     }
 

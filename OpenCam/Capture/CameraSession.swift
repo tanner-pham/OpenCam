@@ -1,7 +1,7 @@
 import AVFoundation
 
 /// Owns `AVCaptureSession` and every device it touches, on its own serial queue.
-actor CameraSession {
+actor CameraSession: SessionConfigurator {
     nonisolated let previewSource: PreviewSource
     nonisolated let events: AsyncStream<SessionEvent>
 
@@ -15,6 +15,8 @@ actor CameraSession {
     private var pressureObservation: NSKeyValueObservation?
     /// True from a media-services-reset restart until it succeeds, so a reset during that restart is not retried.
     private var isRestartingAfterReset = false
+    /// Restored when a later configure fails.
+    private var lastWorkingConfiguration: SessionConfiguration?
 
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
@@ -49,7 +51,25 @@ actor CameraSession {
         return CaptureAccess(camera: camera, microphone: microphone)
     }
 
+    /// On failure the last configuration that worked is applied again, so the session keeps running as it was,
+    /// and the original error is thrown. If that restore fails too, a runtime error is reported.
     func configure(_ configuration: SessionConfiguration) throws(CameraSessionError) {
+        do throws(CameraSessionError) {
+            try apply(configuration)
+            lastWorkingConfiguration = configuration
+        } catch {
+            if let lastWorkingConfiguration, lastWorkingConfiguration != configuration {
+                do {
+                    try apply(lastWorkingConfiguration)
+                } catch let restoreError {
+                    continuation.yield(.runtimeError("[CameraSession:configure] Cannot restore the last configuration — {lens: \(lastWorkingConfiguration.lens.id), error: \(restoreError)}"))
+                }
+            }
+            throw error
+        }
+    }
+
+    private func apply(_ configuration: SessionConfiguration) throws(CameraSessionError) {
         let lens = configuration.lens
         guard let device = AVCaptureDevice(uniqueID: lens.deviceUniqueID) else {
             throw .deviceMissing(lensID: lens.id)

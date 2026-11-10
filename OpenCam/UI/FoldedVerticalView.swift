@@ -19,7 +19,8 @@ struct FoldedVerticalView: View {
                     ReadoutView(caption: "WB", value: "--")
                 }
                 HStack {
-                    FormatButton(parts: model.summaryParts, isStacked: true) { model.sheet = .record }
+                    FormatButton(parts: model.summaryParts, isStacked: true) { model.openRecordSettings() }
+                        .disabled(!model.canOpenRecordSettings)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     CaptureButton(model: model)
                     Color.clear.frame(maxWidth: .infinity)

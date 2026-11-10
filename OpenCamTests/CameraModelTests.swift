@@ -18,6 +18,21 @@ import Testing
         #expect(model.freeBytes == 141_000_000_000); #expect(model.sheet == nil)
     }
 
+    @Test func nothingNamesAFormatBeforeTheScanHasProducedIt() throws {
+        let scanning = CameraModel(config: .parse(["app", "-state", "scanning"]), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
+        #expect(scanning.phase == .scanning)
+        #expect(scanning.summaryParts == ["--"]); #expect(scanning.frameRateText == "--"); #expect(scanning.remainingText == "-- min")
+        #expect(!scanning.canOpenRecordSettings)
+
+        let empty = CaptureCapabilities(lenses: [], videoOptions: [], photoOptions: [], osBuild: "", modelIdentifier: "")
+        let device = CameraModel(config: LaunchConfig(), capabilities: empty, isSimulator: false, defaults: try Fixture.freshDefaults())
+        device.phase = .ready
+        #expect(device.summaryParts == ["--"]); #expect(device.frameRateText == "--"); #expect(!device.canOpenRecordSettings)
+
+        let simulator = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
+        #expect(simulator.summaryParts != ["--"]); #expect(simulator.frameRateText == "30"); #expect(simulator.canOpenRecordSettings)
+    }
+
     @Test func launchScreenOpensItsSheet() throws {
         let caps = try Fixture.load()
         #expect(CameraModel(config: .parse(["app", "-screen", "record"]), capabilities: caps, isSimulator: true, defaults: try Fixture.freshDefaults()).sheet == .record)
