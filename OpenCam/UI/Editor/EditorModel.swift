@@ -14,7 +14,6 @@ import OSLog
     var group: EditorGroup
     var isShowingOriginal = false
     private let edits: EditStore
-    /// Used by the Looks group (Task 8).
     private let lookStore: LookStore
     private let renderer: LookRenderer
     /// The preview render; `renderer.renderedCGImage` unless a test replaces it.
@@ -25,6 +24,8 @@ import OSLog
     }
     private(set) var lookName: String?
     private(set) var phase: EditorPhase = .loading
+    /// The saved looks, as `LookStore.all()` orders them.
+    private(set) var looks: [Look] = []
 
     /// The edit rendered on the proxy.
     private(set) var preview: CGImage?
@@ -44,6 +45,13 @@ import OSLog
     private var renders = RenderCoalescer<Adjustments>()
     private var renderTask: Task<Void, Never>?
     private var shownGeneration = 0
+
+    /// The unedited proxy at `tileLongSide`, which every look tile is rendered from.
+    private var tileSource: CIImage?
+    /// Each tile's render by the adjustments it shows, kept while the editor is open; a renamed look reuses its tile.
+    private var tiles: [Adjustments: Task<CGImage?, Never>] = [:]
+    /// The tile render started last; the next one waits for it, so tiles draw one at a time.
+    private var lastTile: Task<CGImage?, Never>?
 
     /// `renderPreview` is a test seam for a render that fails; the app never passes it.
     init(item: LibraryItem, edits: EditStore, looks: LookStore, group: EditorGroup = .light, renderer: LookRenderer = .shared,
@@ -77,6 +85,7 @@ import OSLog
         savedEdit = edit
         lookName = edit.lookName
         adjustments = edit.adjustments
+        looks = lookStore.all()
         guard edit.version <= PhotoEdit.currentVersion else {
             Self.logger.error("[EditorModel:load] Edit is from a newer version, so the photo opens read-only — {stem: \(self.item.stem, privacy: .public), version: \(edit.version)}")
             phase = .failed(LibraryCopy.newerEdit)
@@ -98,6 +107,7 @@ import OSLog
         proxy = decoded
         proxySize = decoded.extent.size
         original = unedited
+        tileSource = await Self.makeTileSource(from: unedited)
         requestRender()
         await waitForPreview()
         guard preview != nil else {
@@ -175,5 +185,78 @@ import OSLog
         renderedAdjustments = rendered
         lastRenderPixelSize = CGSize(width: image.width, height: image.height)
         previewRenderCount += 1
+    }
+}
+
+// MARK: - Looks
+
+extension EditorModel {
+    /// Long side of a look tile's picture, in pixels.
+    nonisolated static let tileLongSide = 240
+
+    /// An edit like any other: copies the look's values and name into the edit, which renders through the preview path.
+    /// Nil clears the edit and the look.
+    func applyLook(_ look: Look?) {
+        adjustments = look?.adjustments ?? Adjustments()
+        lookName = look?.name
+    }
+
+    /// Saves the current values as a new look, which the edit then names as its look.
+    func saveAsLook(named name: String) throws(LookStoreError) -> Look {
+        let look = try lookStore.save(name: name, adjustments: adjustments)
+        lookName = look.name
+        refreshLooks()
+        return look
+    }
+
+    /// The edit keeps the name it copied, as photos in the library do.
+    func renameLook(_ id: UUID, to name: String) throws(LookStoreError) {
+        defer { refreshLooks() }
+        _ = try lookStore.rename(id, to: name)
+    }
+
+    func duplicateLook(_ id: UUID) throws(LookStoreError) {
+        defer { refreshLooks() }
+        _ = try lookStore.duplicate(id)
+    }
+
+    /// The current edit keeps its values and look name: a look is copied into an edit, never linked.
+    func deleteLook(_ id: UUID) throws(LookStoreError) {
+        defer { refreshLooks() }
+        try lookStore.delete(id)
+    }
+
+    /// The look (nil: no edit) on the unedited photo at `tileLongSide`, rendered off the main actor, one tile at a time and at
+    /// a lower priority than the preview, with its own colour table. Nil while the photo is not loaded or when the render fails.
+    func lookPreview(_ look: Look?) async -> CGImage? {
+        let values = look?.adjustments ?? Adjustments()
+        if let existing = tiles[values] { return await existing.value }
+        guard let source = tileSource else { return nil }
+        let previous = lastTile
+        let renderer = renderer
+        let task = Task(priority: .utility) {
+            _ = await previous?.value
+            return await renderer.renderedCGImageWithOwnTable(source, adjustments: values)
+        }
+        tiles[values] = task
+        lastTile = task
+        let image = await task.value
+        if image == nil {
+            Self.logger.error("[EditorModel:lookPreview] A look tile could not be rendered — {stem: \(self.item.stem, privacy: .public), look: \(look?.name ?? "None", privacy: .public)}")
+            tiles[values] = nil
+        }
+        return image
+    }
+
+    /// Reads the looks again and drops tiles no look shows any more.
+    private func refreshLooks() {
+        looks = lookStore.all()
+        let shown = Set(looks.map(\.adjustments)).union([Adjustments()])
+        tiles = tiles.filter { shown.contains($0.key) }
+    }
+
+    /// The unedited proxy redrawn at `tileLongSide`, off the main actor.
+    @concurrent private static func makeTileSource(from image: CGImage) async -> CIImage? {
+        PictureDecoder.capped(image, longSide: tileLongSide).map { CIImage(cgImage: $0) }
     }
 }

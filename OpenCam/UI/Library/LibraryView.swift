@@ -92,10 +92,9 @@ struct LibraryView: View {
                 .disabled(library.items.isEmpty && !isSelecting)
         }
         if isSelecting {
-            ToolbarItem(placement: .bottomBar) {
-                LibrarySelectionBar(count: selectedIDs.count) { isConfirmingDelete = true }
+            LibrarySelectionBar(count: selectedIDs.count, looks: library.looks, onApply: applyLook, onRemoveLook: removeLook) {
+                isConfirmingDelete = true
             }
-            .axisBehavior(.verticalPreferred)
         }
     }
 
@@ -147,6 +146,28 @@ struct LibraryView: View {
         if launch.screen == .editor, let photo = library.items.first(where: \.isEditable) {
             openEditor(photo, group: launch.editorGroup)
         }
+    }
+
+    private func applyLook(_ look: Look) {
+        changeLook { () throws(LibraryError) in try library.applyLook(look, to: selectedItems) }
+    }
+
+    private func removeLook() {
+        changeLook { () throws(LibraryError) in try library.removeLook(from: selectedItems) }
+    }
+
+    /// The store reloads, so the grid redraws with the new edits; the selection stays for another change.
+    private func changeLook(_ change: () throws(LibraryError) -> LookChange) {
+        do throws(LibraryError) {
+            alertTitle = try change().message
+        } catch {
+            // The store has logged each cause; the person sees a fixed sentence.
+            alertTitle = LibraryCopy.saveFailed
+        }
+    }
+
+    private var selectedItems: [LibraryItem] {
+        library.items.filter { selectedIDs.contains($0.id) }
     }
 
     private func deleteSelected() {

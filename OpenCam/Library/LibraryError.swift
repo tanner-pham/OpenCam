@@ -13,7 +13,7 @@ nonisolated enum LibraryError: Error, CustomStringConvertible, Equatable {
         case .deleteFailed(let path, let reason):
             "[LibraryStore:delete] Cannot delete the file — {path: \(path), reason: \(reason)}"
         case .editFailed(let stem, let reason):
-            "[LibraryStore:delete] Cannot remove the edit — {stem: \(stem), reason: \(reason)}"
+            "[LibraryStore:changeEdits] Cannot write or remove the edit — {stem: \(stem), reason: \(reason)}"
         case .newerEdit(let path, let version):
             "[LibraryStore:delete] Edit was written by a newer version, so the photo was kept — {path: \(path), version: \(version)}"
         case .seedFailed(let path, let reason):

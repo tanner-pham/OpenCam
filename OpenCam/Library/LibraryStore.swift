@@ -66,6 +66,50 @@ import OSLog
         }
     }
 
+    /// Each photo's edit becomes a copy of the look, so later changes to the look never reach it. Clips are skipped.
+    func applyLook(_ look: Look, to items: [LibraryItem]) throws(LibraryError) -> LookChange {
+        let edit = PhotoEdit(adjustments: look.adjustments, lookName: look.name)
+        return try changeEdits(of: items, action: .applied) { item throws(EditStoreError) in
+            try edits.save(edit, stem: item.stem)
+            return true
+        }
+    }
+
+    /// Removes the whole edit of each photo that has a look; photos without one and clips are left as they are.
+    func removeLook(from items: [LibraryItem]) throws(LibraryError) -> LookChange {
+        try changeEdits(of: items, action: .removed) { item throws(EditStoreError) in
+            guard edit(for: item).lookName != nil else { return false }
+            try edits.remove(stem: item.stem)
+            return true
+        }
+    }
+
+    /// Runs `change` on each photo (true when it changed the photo). A photo whose edit is from a newer version is left as it
+    /// is and counted; any other failure is logged and the rest still run. Then the store reloads and the first failure throws.
+    private func changeEdits(of items: [LibraryItem], action: LookChange.Action,
+                             _ change: (LibraryItem) throws(EditStoreError) -> Bool) throws(LibraryError) -> LookChange {
+        var changed = 0, clips = 0, newer = 0
+        var firstProblem: LibraryError?
+        for item in items {
+            guard item.isEditable else {
+                clips += 1
+                continue
+            }
+            do {
+                if try change(item) { changed += 1 }
+            } catch {
+                Self.logger.error("\(error.description, privacy: .public)")
+                switch error {
+                case .newerVersion: newer += 1
+                case .unreadable, .unwritable: firstProblem = firstProblem ?? .editFailed(stem: item.stem, reason: error.description)
+                }
+            }
+        }
+        reload()
+        if let firstProblem { throw firstProblem }
+        return LookChange(action: action, photosChanged: changed, clipsSkipped: clips, newerSkipped: newer)
+    }
+
     /// Each item goes whole or stays: a photo's edit file is removed first, then its files. A photo whose edit is from a newer
     /// version stays whole, because an orphan edit file would still raise the next number. The other items are still deleted;
     /// then the store reloads and the first error is thrown, `.newerEdit` before any other kind.

@@ -80,8 +80,18 @@ struct OpenCamApp: App {
         }
         #endif
         do throws(LookStoreError) {
+            let looks = try LookStore.appDefault()
+            #if targetEnvironment(simulator)
+            if config.seedsLook {
+                do throws(LookStoreError) {
+                    _ = try LookSeeder.seedWarmFade(into: looks)
+                } catch {
+                    logger.error("\(error.description, privacy: .public)")
+                }
+            }
+            #endif
             let library = LibraryStore(captures: captures, edits: EditStore(directory: captures.directory),
-                                       looks: try LookStore.appDefault(), thumbnails: ThumbnailCache.appDefault())
+                                       looks: looks, thumbnails: ThumbnailCache.appDefault())
             library.reload()
             return library
         } catch {

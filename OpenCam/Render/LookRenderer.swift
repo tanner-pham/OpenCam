@@ -38,9 +38,18 @@ nonisolated final class LookRenderer: Sendable {
 
     /// The full pipeline: colour table, then sharpening, noise reduction, grain and vignette. The result keeps `image.extent`.
     func render(_ image: CIImage, adjustments: Adjustments) -> CIImage {
+        render(image, adjustments: adjustments, cube: adjustments.hasColourChanges ? cubes.cube(for: adjustments) : Self.identityCube)
+    }
+
+    /// `render` with a colour table built for this call alone. Look tiles draw many different tables in a row; going through
+    /// the one-entry cache would push out the editor preview's table each time.
+    func renderWithOwnTable(_ image: CIImage, adjustments: Adjustments) -> CIImage {
+        render(image, adjustments: adjustments, cube: adjustments.hasColourChanges ? LookCompiler.cube(for: adjustments) : Self.identityCube)
+    }
+
+    private func render(_ image: CIImage, adjustments: Adjustments, cube: ColourCube) -> CIImage {
         let extent = image.extent
         let scale = max(1, max(extent.width, extent.height) / Self.referenceLongSide)
-        let cube = adjustments.hasColourChanges ? cubes.cube(for: adjustments) : Self.identityCube
         // Spatial filters sample past the edges, so they read the edge pixels repeated rather than transparency.
         var out = applyColourStage(image, cube: cube).clampedToExtent()
 
@@ -88,6 +97,11 @@ nonisolated final class LookRenderer: Sendable {
 
     @concurrent func renderedCGImage(_ image: CIImage, adjustments: Adjustments) async -> CGImage? {
         await cgImage(render(image, adjustments: adjustments))
+    }
+
+    /// `renderedCGImage` through `renderWithOwnTable`, for look tiles.
+    @concurrent func renderedCGImageWithOwnTable(_ image: CIImage, adjustments: Adjustments) async -> CGImage? {
+        await cgImage(renderWithOwnTable(image, adjustments: adjustments))
     }
 
     /// The one rule both entry points use: the no-change table is skipped, any other table is applied.
