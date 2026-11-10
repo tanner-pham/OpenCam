@@ -17,7 +17,7 @@ nonisolated enum ClipInspector {
             guard let format = formats.first else { throw RecordingError.noVideoTrack(path: path) }
             let audioTracks = try await asset.loadTracks(withMediaType: .audio)
             let duration = timeRange.duration.seconds
-            let frameCount = canCount ? countFrames(track) : 0
+            let frameCount = canCount ? countFrames(track) : nil
             let dimensions = CMVideoFormatDescriptionGetDimensions(format)
             return ClipFacts(
                 codecFourCC: fourCC(CMFormatDescriptionGetMediaSubType(format)),
@@ -41,7 +41,9 @@ nonisolated enum ClipInspector {
     }
 
     /// The frames the requested rate implies for the duration, minus the frames present; never negative.
-    static func droppedFrames(durationSeconds: Double, frameRate: Int, frameCount: Int) -> Int {
+    /// Nil when the frame count is unknown.
+    static func droppedFrames(durationSeconds: Double, frameRate: Int, frameCount: Int?) -> Int? {
+        guard let frameCount else { return nil }
         guard durationSeconds.isFinite, durationSeconds > 0 else { return 0 }
         let expected = Int((durationSeconds * Double(frameRate)).rounded())
         return max(0, expected - frameCount)

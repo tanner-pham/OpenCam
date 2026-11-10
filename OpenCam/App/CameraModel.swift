@@ -62,6 +62,8 @@ final class CameraModel {
     @ObservationIgnored private var recordingStartTask: Task<Void, Never>?
     /// The notice the last recording set, cleared by the next recording that has nothing to report.
     @ObservationIgnored private var lastRecordingNotice: String?
+    /// The notice the current interruption set, cleared when it ends.
+    @ObservationIgnored private var interruptionNotice: String?
 
     static let formatFailedNotice = "That format could not be used."
     init(config: LaunchConfig, capabilities: CaptureCapabilities, isSimulator: Bool, defaults: UserDefaults = .standard,
@@ -503,8 +505,9 @@ extension CameraModel {
         }
         if result.outcome.isPlayable { lastCapture = result.url }
         let clipName = result.url.deletingPathExtension().lastPathComponent
-        let recordingNotice = result.outcome.notice ?? result.sidecar?.actual.flatMap {
-            RecordingOutcome.droppedFramesNotice(clipName: clipName, droppedFrames: $0.droppedFrames)
+        // An unknown dropped-frame count gives no notice.
+        let recordingNotice = result.outcome.notice ?? result.sidecar?.actual?.droppedFrames.flatMap {
+            RecordingOutcome.droppedFramesNotice(clipName: clipName, droppedFrames: $0)
         }
         if let recordingNotice {
             notice = recordingNotice
@@ -618,8 +621,11 @@ extension CameraModel {
         switch event {
         case .interrupted(let reason):
             notice = reason.notice
+            interruptionNotice = reason.notice
         case .interruptionEnded:
-            notice = nil
+            // Only the interruption's own notice goes; a recording or photo notice set meanwhile stays.
+            if let interruptionNotice, notice == interruptionNotice { notice = nil }
+            interruptionNotice = nil
         case .runtimeError(let message):
             Self.logger.error("\(message, privacy: .public)")
             phase = .failed("The camera stopped.")

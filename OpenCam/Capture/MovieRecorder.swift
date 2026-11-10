@@ -18,6 +18,7 @@ nonisolated final class MovieRecorder: NSObject, AVCaptureFileOutputRecordingDel
         let url: URL
         let option: VideoOption
         let recordedAt: Date
+        let onFinish: @Sendable () -> Void
     }
 
     init(results: AsyncStream<RecordingResult>.Continuation) {
@@ -27,7 +28,9 @@ nonisolated final class MovieRecorder: NSObject, AVCaptureFileOutputRecordingDel
 
     /// `minFreeBytes` stops the recording when free space falls to it. The clip is rotated horizon-level, except
     /// ProRes RAW, which records unrotated (rotation is unsupported for RAW buffers, AVCaptureSession.h).
-    func start(option: VideoOption, url: URL, minFreeBytes: Int64, device: AVCaptureDevice) throws(RecordingError) {
+    /// `onFinish` runs on the output's queue as soon as the file is finished, however the recording ended; not when this throws.
+    func start(option: VideoOption, url: URL, minFreeBytes: Int64, device: AVCaptureDevice,
+               onFinish: @escaping @Sendable () -> Void) throws(RecordingError) {
         guard !output.isRecording else { throw .alreadyRecording }
         guard let connection = output.connection(with: .video), connection.isActive else { throw .noVideoConnection }
         try applySettings(MovieOutputSettings.make(for: option, supportedKeys: output.supportedOutputSettingsKeys(for: connection)),
@@ -39,7 +42,7 @@ nonisolated final class MovieRecorder: NSObject, AVCaptureFileOutputRecordingDel
             connection.videoRotationAngle = angle
         }
         output.minFreeDiskSpaceLimit = minFreeBytes
-        pending.withLock { $0 = PendingRecording(url: url, option: option, recordedAt: Date()) }
+        pending.withLock { $0 = PendingRecording(url: url, option: option, recordedAt: Date(), onFinish: onFinish) }
         output.startRecording(to: url, recordingDelegate: self)
     }
 
@@ -82,6 +85,7 @@ nonisolated final class MovieRecorder: NSObject, AVCaptureFileOutputRecordingDel
             Self.logger.error("[MovieRecorder:didFinishRecording] No recording was pending — {path: \(outputFileURL.path(percentEncoded: false), privacy: .public)}")
             return
         }
+        recording.onFinish()
         let nsError = error.map { $0 as NSError }
         let outcome = RecordingOutcome(error: nsError)
         let message = nsError.map { "[MovieRecorder:didFinishRecording] Recording ended with an error — {domain: \($0.domain), code: \($0.code), playable: \(outcome.isPlayable)}" }

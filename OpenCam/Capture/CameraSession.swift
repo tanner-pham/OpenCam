@@ -1,4 +1,5 @@
 import AVFoundation
+import OSLog
 
 /// Owns `AVCaptureSession` and every device it touches, on its own serial queue.
 actor CameraSession: SessionConfigurator {
@@ -24,6 +25,9 @@ actor CameraSession: SessionConfigurator {
     private var isRestartingAfterReset = false
     /// Restored when a later configure fails.
     private var lastWorkingConfiguration: SessionConfiguration?
+    /// The white-balance mode a ProRes RAW recording replaced, restored when that recording finishes.
+    private var whiteBalanceRestore: (device: AVCaptureDevice, mode: AVCaptureDevice.WhiteBalanceMode)?
+    private static let logger = Logger(subsystem: "local.opencam.app", category: "CameraSession")
 
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
@@ -378,12 +382,23 @@ extension CameraSession {
     nonisolated var recordings: AsyncStream<RecordingResult> { recordingResults }
 
     /// Starts recording `option`, which the session must already be configured for, to `url`. Recording stops on its own
-    /// when free space falls to `minFreeBytes`. ProRes RAW records with white balance locked; other codecs with it automatic.
+    /// when free space falls to `minFreeBytes`. ProRes RAW records with white balance locked, and the earlier mode returns
+    /// when that clip finishes, however it ends; other codecs leave white balance alone.
     func startRecording(option: VideoOption, url: URL, minFreeBytes: Int64) throws(RecordingError) {
         guard session.isRunning else { throw .sessionNotRunning }
         guard let device = videoInput?.device, session.outputs.contains(recorder.output) else { throw .outputNotAttached }
-        try setWhiteBalance(lockedFor: option.codec.family == .raw, on: device)
-        try recorder.start(option: option, url: url, minFreeBytes: minFreeBytes, device: device)
+        if option.codec.family == .raw {
+            try lockWhiteBalance(on: device)
+        }
+        do throws(RecordingError) {
+            try recorder.start(option: option, url: url, minFreeBytes: minFreeBytes, device: device) { [weak self] in
+                guard let self else { return }
+                Task { await self.restoreWhiteBalance() }
+            }
+        } catch {
+            restoreWhiteBalance()
+            throw error
+        }
     }
 
     func stopRecording() {
@@ -396,15 +411,36 @@ extension CameraSession {
         return recorder.audioLevels()
     }
 
-    private func setWhiteBalance(lockedFor isRAW: Bool, on device: AVCaptureDevice) throws(RecordingError) {
-        let mode: AVCaptureDevice.WhiteBalanceMode = isRAW ? .locked : .continuousAutoWhiteBalance
-        guard device.whiteBalanceMode != mode, device.isWhiteBalanceModeSupported(mode) else { return }
+    /// Locks white balance at the current gains (AVCaptureDevice.h, AVCaptureWhiteBalanceModeLocked) and remembers the
+    /// mode it replaced. Nothing is remembered when it was already locked, so a lock the user chose is left in place.
+    private func lockWhiteBalance(on device: AVCaptureDevice) throws(RecordingError) {
+        let previous = device.whiteBalanceMode
+        guard previous != .locked, device.isWhiteBalanceModeSupported(.locked) else { return }
         do {
             try device.lockForConfiguration()
         } catch {
             throw .whiteBalanceNotSet(reason: String(describing: error))
         }
-        // Locked holds the current gains (AVCaptureDevice.h, AVCaptureWhiteBalanceModeLocked).
+        device.whiteBalanceMode = .locked
+        device.unlockForConfiguration()
+        whiteBalanceRestore = (device, previous)
+    }
+
+    /// Returns white balance to the mode a ProRes RAW clip replaced; a failure is logged and recording carries on.
+    private func restoreWhiteBalance() {
+        guard let restore = whiteBalanceRestore else { return }
+        whiteBalanceRestore = nil
+        let (device, mode) = restore
+        guard device.isWhiteBalanceModeSupported(mode) else {
+            Self.logger.error("[CameraSession:restoreWhiteBalance] Mode no longer supported — {mode: \(mode.rawValue)}")
+            return
+        }
+        do {
+            try device.lockForConfiguration()
+        } catch {
+            Self.logger.error("[CameraSession:restoreWhiteBalance] Cannot lock the camera for configuration — {mode: \(mode.rawValue), reason: \(String(describing: error), privacy: .public)}")
+            return
+        }
         device.whiteBalanceMode = mode
         device.unlockForConfiguration()
     }
