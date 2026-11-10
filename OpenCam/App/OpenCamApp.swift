@@ -1,58 +1,44 @@
+import OSLog
 import SwiftUI
 import UIKit
 
 @main
 struct OpenCamApp: App {
-    private static let lensID = "wide"
-    private static let freeBytes: Int64 = 141_000_000_000
+    private static let logger = Logger(subsystem: "local.opencam.app", category: "App")
 
-    private let config = LaunchConfig.parse(ProcessInfo.processInfo.arguments)
-    private let recordResolver: RecordSelectionResolver
-    private let photoResolver: PhotoSelectionResolver
-    private let loadError: String?
-    @State private var record: RecordSelection
-    @State private var photo: PhotoSelection
-    @State private var isRecordSheetShown: Bool
+    private let config: LaunchConfig
+    @State private var model: CameraModel?
 
     init() {
         let config = LaunchConfig.parse(ProcessInfo.processInfo.arguments)
-        let placeholderRecord = RecordSelection(family: .hevc, quality: "High", resolution: .named(width: 3840, height: 2160), frameRate: 30, colour: .rec709)
-        let placeholderPhoto = PhotoSelection(format: .heif, megapixels: 12)
+        self.config = config
         do {
             let capabilities = try CaptureCapabilities.bundledFixture()
-            let lens = capabilities.lenses.first { $0.id == Self.lensID }
-            let recordResolver = RecordSelectionResolver(options: capabilities.videoOptions, lens: lens)
-            let photoResolver = PhotoSelectionResolver(options: capabilities.photoOptions, lenses: capabilities.lenses, lensID: Self.lensID)
-            self.recordResolver = recordResolver
-            self.photoResolver = photoResolver
-            self.loadError = nil
-            _record = State(initialValue: recordResolver.defaultSelection() ?? placeholderRecord)
-            _photo = State(initialValue: photoResolver.defaultSelection() ?? placeholderPhoto)
+            #if targetEnvironment(simulator)
+            let isSimulator = true
+            #else
+            let isSimulator = false
+            #endif
+            _model = State(initialValue: CameraModel(config: config, capabilities: capabilities, isSimulator: isSimulator))
         } catch {
-            self.recordResolver = RecordSelectionResolver(options: [], lens: nil)
-            self.photoResolver = PhotoSelectionResolver(options: [], lenses: [], lensID: Self.lensID)
-            self.loadError = String(describing: error)
-            _record = State(initialValue: placeholderRecord)
-            _photo = State(initialValue: placeholderPhoto)
+            Self.logger.error("Fixture failed to load: \(String(describing: error), privacy: .public)")
+            _model = State(initialValue: nil)
         }
-        _isRecordSheetShown = State(initialValue: config.screen == .record)
     }
 
     var body: some Scene {
         WindowGroup {
-            Color.black
-                .ignoresSafeArea()
-                .overlay { if let loadError { Text(loadError).foregroundStyle(.white) } }
-                .preferredColorScheme(.dark)
-                .sheet(isPresented: $isRecordSheetShown) {
-                    RecordSettingsSheet(mode: config.mode,
-                                        recordResolver: recordResolver,
-                                        photoResolver: photoResolver,
-                                        record: $record,
-                                        photo: $photo,
-                                        freeBytes: Self.freeBytes)
+            Group {
+                if let model {
+                    CameraRootView(model: model)
+                } else {
+                    Color.black
+                        .ignoresSafeArea()
+                        .overlay { Text("Camera formats could not be loaded.").foregroundStyle(.white) }
                 }
-                .task { forceOrientation() }
+            }
+            .preferredColorScheme(.dark)
+            .task { forceOrientation() }
         }
     }
 

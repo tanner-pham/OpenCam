@@ -1,0 +1,19 @@
+import SwiftUI
+
+/// Folded and horizontal. A 16:9 picture fills the width; readouts live in the bars above and below it.
+struct FoldedHorizontalView: View {
+    let model: CameraModel
+    let size: CGSize
+
+    var body: some View {
+        VStack(spacing: 0) {
+            TopReadoutBar(model: model)
+                .frame(height: Theme.Size.topBar)
+            ViewfinderArea(phase: model.phase)
+                .frame(width: size.width, height: size.width * 9 / 16)
+                .clipped()
+            BottomBar(model: model)
+                .frame(maxHeight: .infinity)
+        }
+    }
+}
