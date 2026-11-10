@@ -27,6 +27,8 @@ struct FoldedVerticalView: View {
                     Color.clear.frame(maxWidth: .infinity)
                 }
                 .padding(.horizontal, Theme.Space.l)
+                NoticeLine(model: model)
+                    .frame(height: Theme.Size.noticeLine)
             }
             .padding(.top, Theme.Space.s)
             .frame(maxHeight: .infinity, alignment: .top)

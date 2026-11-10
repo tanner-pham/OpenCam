@@ -68,6 +68,7 @@ final class CameraModel {
     @ObservationIgnored private var noticeSource: NoticeSource?
 
     static let formatFailedNotice = "That format could not be used."
+    static let formatSetupFailed = "This format could not be set up."
     init(config: LaunchConfig, capabilities: CaptureCapabilities, isSimulator: Bool, defaults: UserDefaults = .standard,
          capabilitySource: CapabilitySource = .device) {
         self.capabilities = capabilities
@@ -100,6 +101,30 @@ final class CameraModel {
         self.photo = resolved.photo ?? Self.placeholderPhoto
         // A device launch starts with no capabilities, so the saved choices wait for real ones and must not be overwritten meanwhile.
         self.isAwaitingRestore = !config.isScripted && capabilities.lenses.isEmpty
+        if isSimulator { simulate(config.simulatedState) }
+    }
+
+    /// Puts the Simulator in a state the device would reach, for screenshots; `scanning` is set with the phase.
+    private func simulate(_ state: SimulatedState?) {
+        switch state {
+        case .cameraDenied:
+            phase = .cameraDenied
+            access.camera = .denied
+        case .micDenied:
+            access.microphone = .denied
+        case .lowStorage:
+            if let option = currentVideoOption {
+                let bytesPerMinute = DataRateEstimator.gigabytesPerMinute(for: option) * 1_000_000_000
+                freeBytes = DataRateEstimator.reserveBytes + Int64(4.5 * bytesPerMinute)
+            }
+        case .storageFull:
+            freeBytes = 1_500_000_000
+        case .pressure:
+            pressureLevel = .serious
+            isThermalPressure = true
+        case .scanning, nil:
+            break
+        }
     }
 
     var lenses: [Lens] { capabilities.lenses }
@@ -153,9 +178,28 @@ final class CameraModel {
     var exposureBiasText: String { ReadoutFormatter.bias(shownReadouts.exposureBias) }
     var focusText: String { ReadoutFormatter.focus(shownReadouts.lensPosition) }
 
-    var remainingText: String {
-        guard let option = shownVideoOption else { return "-- min" }
-        return "\(DataRateEstimator.minutesRemaining(freeBytes: freeBytes, option: option)) min"
+    private var minutesRemaining: Int {
+        currentVideoOption.map { DataRateEstimator.minutesRemaining(freeBytes: freeBytes, option: $0) } ?? 0
+    }
+
+    /// "-- min" until a video format is known, then the minutes left, or "Storage full" at 0.
+    var remaining: RemainingTime {
+        guard shownVideoOption != nil else { return RemainingTime(text: "-- min", isWarning: false) }
+        return StatusText.remaining(minutes: minutesRemaining)
+    }
+    var remainingText: String { remaining.text }
+
+    var pressureText: String? { StatusText.pressure(pressureLevel, isThermal: isThermalPressure) }
+
+    /// The one line under the controls; photo mode never mentions the microphone, which photos do not use.
+    var bottomNotice: String? {
+        let usedAccess = mode == .video ? access : CaptureAccess(camera: access.camera, microphone: .authorized)
+        return StatusText.bottomNotice(access: usedAccess, pressure: pressureText, notice: notice)
+    }
+
+    /// True when `bottomNotice` is the microphone line, which Settings can fix.
+    var bottomNoticeOpensSettings: Bool {
+        bottomNotice == StatusText.microphoneOff
     }
 
     /// Record settings opens only once the device's formats are known.
@@ -172,7 +216,7 @@ final class CameraModel {
     var showsVideoReadouts: Bool { mode == .video }
 
     var canCapture: Bool {
-        guard phase == .ready else { return false }
+        guard StatusText.canRecord(phase: phase, mode: mode, minutesRemaining: minutesRemaining) else { return false }
         switch mode {
         case .video: return currentVideoOption != nil
         case .photo: return currentPhotoOption != nil
@@ -223,6 +267,20 @@ final class CameraModel {
             guard canCapture else { return }
             startRecording()
         }
+    }
+
+    /// Offers the newest photo or clip already in the captures folder; a capture made since then stays.
+    func loadLastCapture() {
+        guard lastCapture == nil else { return }
+        if captureStore == nil {
+            do throws(CaptureStoreError) {
+                captureStore = try CaptureStore.appDefault()
+            } catch {
+                Self.logger.error("\(error.description, privacy: .public)")
+                return
+            }
+        }
+        lastCapture = captureStore?.latestCapture()
     }
 
     /// The captures folder, created on first use; nil, with `failureNotice` shown, when it cannot be.
@@ -411,7 +469,7 @@ final class CameraModel {
     private func configureFailed(_ error: CameraSessionError, generation: Int) {
         Self.logger.error("\(error.description, privacy: .public)")
         guard let lastWorking else {
-            phase = .failed("The camera could not start.")
+            phase = .failed(Self.formatSetupFailed)
             return
         }
         show(Self.formatFailedNotice, from: .configuration)
@@ -479,7 +537,7 @@ extension CameraModel {
             try await session.configure(configuration)
         } catch {
             Self.logger.error("\(error.description, privacy: .public)")
-            phase = .failed("The camera could not start.")
+            phase = .failed(Self.formatSetupFailed)
             return
         }
         attachSession(session, configuredWith: configuration, selection: selection)
@@ -639,6 +697,8 @@ extension CameraModel {
     /// in Documents for comparison with the probe report.
     private func adoptScan(_ capabilities: CaptureCapabilities, lenses: [Lens]) {
         replaceCapabilities(capabilities)
+        // This scan worked, so an earlier scan's notice is stale.
+        clearNotice(from: .scan)
         // Notices count cameras, and a skipped camera can carry two lenses (1x and 2x).
         let skipped = Set(lenses.filter { capabilities.skippedLensIDs.contains($0.id) }.map(\.deviceUniqueID))
         if let skippedNotice = Self.skippedCamerasNotice(count: skipped.count) {

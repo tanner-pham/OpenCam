@@ -5,6 +5,18 @@ struct BottomBar: View {
     let model: CameraModel
 
     var body: some View {
+        VStack(spacing: Theme.Space.xs) {
+            controls
+            // Always reserves its line, so the controls do not move when a notice comes and goes.
+            NoticeLine(model: model)
+                .frame(height: Theme.Size.noticeLine)
+        }
+        .padding(.leading, Theme.Space.l)
+        .padding(.trailing, Theme.Size.cornerInset)
+        .padding(.bottom, Theme.Space.s)
+    }
+
+    private var controls: some View {
         HStack(spacing: Theme.Space.l) {
             Color.clear.frame(width: Theme.Size.histogramWidth, height: Theme.Size.histogramHeight)
             Spacer(minLength: 0)
@@ -15,14 +27,13 @@ struct BottomBar: View {
                 AudioMetersView(levels: model.meterLevels)
                     .frame(minHeight: Theme.Size.minTarget)
                 Spacer(minLength: 0)
-                Text(model.remainingText)
+                Text(model.remaining.text)
                     .font(Theme.Text.value)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(model.remaining.isWarning ? Theme.recordRed : .secondary)
+                    .fixedSize()
                 Spacer(minLength: 0)
             }
             CaptureButton(model: model)
         }
-        .padding(.leading, Theme.Space.l)
-        .padding(.trailing, Theme.Size.cornerInset)
     }
 }

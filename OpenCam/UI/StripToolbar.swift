@@ -48,8 +48,7 @@ struct StripToolbar: ToolbarContent {
             Button("Record settings", systemImage: "slider.horizontal.3") { model.openRecordSettings() }
                 .disabled(model.isRecording || !model.canOpenRecordSettings)
         case .library:
-            Button("Library", systemImage: "photo.on.rectangle") {}
-                .disabled(true)
+            LibraryThumbnail(model: model)
         }
     }
 }

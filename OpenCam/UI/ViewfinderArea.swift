@@ -5,7 +5,7 @@ extension EnvironmentValues {
     @Entry var previewSource: PreviewSource?
 }
 
-/// The picture area: the live preview when ready, the stand-in in the Simulator, a status line while formats are read, black otherwise.
+/// The picture area: the live preview when ready, the stand-in in the Simulator, what is wrong in words when there is no camera picture.
 struct ViewfinderArea: View {
     let phase: CameraPhase
     var captionTopInset: CGFloat = 0
@@ -22,15 +22,13 @@ struct ViewfinderArea: View {
             } else {
                 Color.black
             }
-        case .scanning:
+        case .scanning, .cameraDenied, .cameraRestricted, .failed:
             Color.black
                 .overlay {
-                    Text("Reading camera formats…")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    if let status = StatusText.viewfinder(phase) {
+                        StatusOverlay(status: status)
+                    }
                 }
-        case .cameraDenied, .cameraRestricted, .failed:
-            Color.black
         }
     }
 }

@@ -19,6 +19,7 @@ nonisolated enum Theme {
         static let sectionHeaderInset: CGFloat = 20
         static let formatLabel: CGFloat = 28
         static let chipLabelHeight: CGFloat = 35
+        static let noticeLine: CGFloat = 18
     }
 
     enum Text {

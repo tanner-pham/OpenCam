@@ -15,6 +15,13 @@ struct FoldedVerticalVideoView: View {
                     .padding(.horizontal, Theme.Space.l)
                     .padding(.top, Theme.Space.l)
                 Spacer(minLength: 0)
+                if model.bottomNotice != nil {
+                    NoticeLine(model: model)
+                        .padding(.horizontal, Theme.Space.m)
+                        .padding(.vertical, Theme.Space.xs)
+                        .glassEffect(.regular, in: .capsule)
+                        .padding(.bottom, Theme.Space.s)
+                }
                 bottomControls
                     .padding(.horizontal, Theme.Space.l)
                     .padding(.bottom, Theme.Space.l)
@@ -29,9 +36,13 @@ struct FoldedVerticalVideoView: View {
             HStack(spacing: Theme.Space.s) {
                 FormatButton(parts: model.summaryParts) { model.openRecordSettings() }
                     .disabled(!model.canOpenRecordSettings)
-                HStack(spacing: Theme.Space.s) {
-                    AudioMetersView(levels: model.meterLevels, width: 56)
-                    Text(model.remainingText).font(Theme.Text.compactValue).fixedSize()
+                // "Storage full" is wider than the minutes, so the meters give way when the row would overflow.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: Theme.Space.s) {
+                        AudioMetersView(levels: model.meterLevels, width: 56)
+                        remainingText
+                    }
+                    remainingText
                 }
                 .padding(.horizontal, Theme.Space.m)
                 .frame(minHeight: Theme.Size.minTarget)
@@ -40,5 +51,12 @@ struct FoldedVerticalVideoView: View {
                 CaptureButton(model: model)
             }
         }
+    }
+
+    private var remainingText: some View {
+        Text(model.remaining.text)
+            .font(Theme.Text.compactValue)
+            .foregroundStyle(model.remaining.isWarning ? Theme.recordRed : .primary)
+            .fixedSize()
     }
 }

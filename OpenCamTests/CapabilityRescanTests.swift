@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import OpenCam
 
@@ -36,6 +37,22 @@ import Testing
         let cached = try #require(CapabilityCache(directory: directory).load(osBuild: stale.osBuild, modelIdentifier: stale.modelIdentifier))
         #expect(cached == model.capabilities)
         #expect(await fake.stopCount == 1); #expect(await fake.isRunning); #expect(await fake.applied.last?.lens.id == "W")
+    }
+
+    @Test func aWorkingRescanClearsTheEarlierScanNotice() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let discovered = Mutex([wide, front]), formats = [descriptor]
+        let changing = CapabilitySource(cacheDirectory: directory, documentsDirectory: nil, discoverLenses: { discovered.withLock { $0 } }, scan: { _ in formats })
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: false, defaults: try Fixture.freshDefaults(),
+                                capabilitySource: changing)
+        model.phase = .ready
+        model.attachSession(FakeSessionConfigurator(failingLensIDs: []), configuredWith: try #require(model.sessionConfiguration), selection: model.currentSelection)
+        await model.rescanCapabilities()
+        #expect(model.notice == "1 camera could not be read.")
+
+        discovered.withLock { $0 = [wide] }
+        await model.rescanCapabilities()
+        #expect(model.notice == nil)
     }
 
     @Test func lensChangeDuringARescanIsConfiguredOnceAfterTheScan() async throws {
