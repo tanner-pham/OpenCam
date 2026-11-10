@@ -49,6 +49,45 @@ import Testing
         #expect(abs(mean - 0.5) < 0.01); #expect(deviation > 0.02); #expect(deviation < 0.06)
         #expect((values.max() ?? 1) < 0.6); #expect((values.min() ?? 0) > 0.4)
     }
+    /// Grain is added to Display P3-encoded values, so a dark patch gets the same spread as mid grey, not several times more.
+    @Test func grainIsEvenInTheShadows() throws {
+        let mid = try grainStatistics(level: 0.5), dark = try grainStatistics(level: 0.1)
+        #expect(abs(dark.mean - 0.1) < 0.01)
+        #expect(dark.deviation > 0.02); #expect(dark.deviation / mid.deviation > 0.7); #expect(dark.deviation / mid.deviation < 1.4)
+    }
+    func grainStatistics(level: Float) throws -> (mean: Float, deviation: Float) {
+        let grain = renderer.render(try TestFiles.patch(SIMD3(repeating: level), size: 256), adjustments: Adjustments().setting(.grain, to: 100))
+        var values: [Float] = []
+        for x in stride(from: 0, to: 256, by: 7) {
+            for y in stride(from: 0, to: 256, by: 7) { values.append(try PixelReader.rgb(grain, x: x, y: y).x) }
+        }
+        let mean = values.reduce(0, +) / Float(values.count)
+        return (mean, (values.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Float(values.count)).squareRoot())
+    }
+    /// Without colour changes both paths skip the table, so a value above 1 survives in each and they still match.
+    @Test func viewfinderPathMatchesWithoutColourChanges() throws {
+        let space = try #require(CGColorSpace(name: CGColorSpace.extendedDisplayP3))
+        let colour = try #require(CIColor(red: 1.3, green: 0.5, blue: 0.2, colorSpace: space))
+        let bright = CIImage(color: colour).cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
+        let vignetteOnly = Adjustments().setting(.vignette, to: 30)
+        let full = try PixelReader.rgb(renderer.render(bright, adjustments: vignetteOnly), x: 32, y: 32)
+        let viewfinder = try PixelReader.rgb(renderer.renderColourAndVignette(bright, cube: LookCompiler.cube(for: vignetteOnly), vignette: 30), x: 32, y: 32)
+        #expect(full.x > 1.1)
+        #expect(diff(full, viewfinder) < 1e-3)
+    }
+    @Test func sameColourAdjustmentsBuildTheTableOnce() throws {
+        let builds = CallCounter()
+        let counted = LookRenderer(cubes: ColourCubeCache { builds.increment(); return LookCompiler.cube(for: $0) })
+        let image = try TestFiles.patch(SIMD3(0.6, 0.4, 0.3))
+        let colour = Adjustments().setting(.exposure, to: 0.5)
+        _ = counted.render(image, adjustments: colour)
+        _ = counted.render(image, adjustments: colour.setting(.sharpening, to: 40).setting(.vignette, to: -20))
+        #expect(builds.value == 1)
+        _ = counted.render(image, adjustments: colour.setting(.contrast, to: 10))
+        #expect(builds.value == 2)
+        _ = counted.render(image, adjustments: Adjustments().setting(.grain, to: 30))
+        #expect(builds.value == 2)   // no colour change: no table at all
+    }
     @Test func spatialStepsKeepTheExtentAndViewfinderPathMatches() throws {
         let image = try TestFiles.patch(SIMD3(0.6, 0.4, 0.3), size: 64)
         let all = Adjustments().setting(.sharpening, to: 50).setting(.noiseReduction, to: 50).setting(.grain, to: 50).setting(.vignette, to: -30)

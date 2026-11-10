@@ -1,26 +1,34 @@
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import Metal
+import OSLog
 
 /// The one renderer: the editor preview, look tiles, thumbnails, export and the viewfinder all pass through it.
 /// Owns the app's only `CIContext`. The colour table is applied in Display P3.
 nonisolated final class LookRenderer: Sendable {
     static let shared = LookRenderer()
 
+    private static let logger = Logger(subsystem: "local.opencam.app", category: "LookRenderer")
+
     /// Metal-backed when a device exists; the default working space (extended linear sRGB).
     let context: CIContext
     let displayP3: CGColorSpace
+    private let cubes: ColourCubeCache
 
     /// Long side at which spatial effects are tuned; larger images scale them so proxy and export look alike.
     private static let referenceLongSide: CGFloat = 2048
+    /// The table for no colour change. A table equal to it is skipped, so values outside 0...1 are not clipped.
+    private static let identityCube = LookCompiler.cube(for: Adjustments())
 
-    private init() {
+    /// `cubes` is replaceable for tests; the app uses `shared`.
+    init(cubes: ColourCubeCache = ColourCubeCache()) {
         if let device = MTLCreateSystemDefaultDevice() {
             context = CIContext(mtlDevice: device)
         } else {
             context = CIContext()
         }
         displayP3 = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
+        self.cubes = cubes
     }
 
     /// Creates the shared context off the main actor.
@@ -32,34 +40,34 @@ nonisolated final class LookRenderer: Sendable {
     func render(_ image: CIImage, adjustments: Adjustments) -> CIImage {
         let extent = image.extent
         let scale = max(1, max(extent.width, extent.height) / Self.referenceLongSide)
-        var out = adjustments.hasColourChanges ? applyCube(image, cube: LookCompiler.cube(for: adjustments)) : image
+        let cube = adjustments.hasColourChanges ? cubes.cube(for: adjustments) : Self.identityCube
         // Spatial filters sample past the edges, so they read the edge pixels repeated rather than transparency.
-        out = out.clampedToExtent()
+        var out = applyColourStage(image, cube: cube).clampedToExtent()
 
         if adjustments.sharpening != 0 {
             let filter = CIFilter.sharpenLuminance()
             filter.inputImage = out
             filter.sharpness = Float(0.8 * adjustments.sharpening / 100)
             filter.radius = Float(1.5 * scale)
-            out = filter.outputImage ?? out
+            out = output(of: filter, stage: "sharpening", function: "render") ?? out
         }
         if adjustments.noiseReduction != 0 {
             let filter = CIFilter.noiseReduction()
             filter.inputImage = out
             filter.noiseLevel = Float(0.04 * adjustments.noiseReduction / 100)
             filter.sharpness = 0.4
-            out = filter.outputImage ?? out
+            out = output(of: filter, stage: "noise reduction", function: "render") ?? out
         }
         if adjustments.grain != 0 {
             out = addGrain(to: out, amount: CGFloat(0.12 * adjustments.grain / 100), scale: scale, extent: extent)
         }
-        return applyVignette(out, vignette: adjustments.vignette, extent: extent).cropped(to: extent)
+        return applyVignette(out, vignette: adjustments.vignette, extent: extent, function: "render").cropped(to: extent)
     }
 
     /// The colour table and vignette only, for the viewfinder; matches `render` for the same values.
     func renderColourAndVignette(_ image: CIImage, cube: ColourCube, vignette: Double) -> CIImage {
         let extent = image.extent
-        return applyVignette(applyCube(image, cube: cube).clampedToExtent(), vignette: vignette, extent: extent).cropped(to: extent)
+        return applyVignette(applyColourStage(image, cube: cube).clampedToExtent(), vignette: vignette, extent: extent, function: "renderColourAndVignette").cropped(to: extent)
     }
 
     /// Core Image converts the image from the working space into Display P3 for the lookup and back afterwards.
@@ -70,7 +78,7 @@ nonisolated final class LookRenderer: Sendable {
         filter.cubeData = cube.cubeData
         filter.colorSpace = displayP3
         filter.extrapolate = false
-        return filter.outputImage ?? image
+        return output(of: filter, stage: "colour table", function: "applyCube") ?? image
     }
 
     /// Display P3, 8 bits per channel, over the image's extent.
@@ -82,7 +90,14 @@ nonisolated final class LookRenderer: Sendable {
         await cgImage(render(image, adjustments: adjustments))
     }
 
-    /// Monochrome noise centred on zero, enlarged by `scale` with nearest sampling, added to the image.
+    /// The one rule both entry points use: the no-change table is skipped, any other table is applied.
+    /// Comparing against the shared identity table is immediate when it is that same table.
+    private func applyColourStage(_ image: CIImage, cube: ColourCube) -> CIImage {
+        cube == Self.identityCube ? image : applyCube(image, cube: cube)
+    }
+
+    /// Monochrome noise centred on zero, enlarged by `scale` with nearest sampling, added to the Display P3-encoded values
+    /// so it reads evenly from shadows to highlights.
     private func addGrain(to image: CIImage, amount a: CGFloat, scale: CGFloat, extent: CGRect) -> CIImage {
         let matrix = CIFilter.colorMatrix()
         // The generator's alpha is random too; the matrix would divide the colour by it, so it is set to 1 first.
@@ -93,17 +108,26 @@ nonisolated final class LookRenderer: Sendable {
         matrix.aVector = CIVector(x: 0, y: 0, z: 0, w: 0)
         // Alpha comes from the bias: the filter premultiplies its result, so an alpha of 0 would zero the noise.
         matrix.biasVector = CIVector(x: -a / 2, y: -a / 2, z: -a / 2, w: 1)
-        guard let noise = matrix.outputImage else { return image }
+        guard let noise = output(of: matrix, stage: "grain noise", function: "render") else { return image }
         let grain = noise.samplingNearest().transformed(by: CGAffineTransform(scaleX: scale, y: scale)).cropped(to: extent)
+        guard let encoded = image.matchedFromWorkingSpace(to: displayP3) else {
+            logDropped(stage: "grain", reason: "conversion to Display P3 failed", function: "render")
+            return image
+        }
         let add = CIFilter.additionCompositing()
         add.inputImage = grain
-        add.backgroundImage = image
+        add.backgroundImage = encoded
+        guard let sum = output(of: add, stage: "grain", function: "render") else { return image }
         // The sum's alpha is 2; set it back to 1 without changing the colour.
-        return add.outputImage?.settingAlphaOne(in: extent) ?? image
+        guard let linear = sum.settingAlphaOne(in: extent).matchedToWorkingSpace(from: displayP3) else {
+            logDropped(stage: "grain", reason: "conversion from Display P3 failed", function: "render")
+            return image
+        }
+        return linear
     }
 
     /// `vignette` is the slider value: negative darkens the corners, positive lightens them.
-    private func applyVignette(_ image: CIImage, vignette: Double, extent: CGRect) -> CIImage {
+    private func applyVignette(_ image: CIImage, vignette: Double, extent: CGRect, function: String) -> CIImage {
         guard vignette != 0 else { return image }
         let filter = CIFilter.vignetteEffect()
         filter.inputImage = image
@@ -111,6 +135,19 @@ nonisolated final class LookRenderer: Sendable {
         filter.radius = Float(0.75 * hypot(extent.width, extent.height) / 2)
         filter.falloff = 0.5
         filter.intensity = Float(-vignette / 100)
-        return filter.outputImage ?? image
+        return output(of: filter, stage: "vignette", function: function) ?? image
+    }
+
+    /// The filter's output, or nil after logging that the stage was dropped.
+    private func output(of filter: CIFilter, stage: String, function: String) -> CIImage? {
+        guard let image = filter.outputImage else {
+            logDropped(stage: stage, reason: "\(filter.name) gave no image", function: function)
+            return nil
+        }
+        return image
+    }
+
+    private func logDropped(stage: String, reason: String, function: String) {
+        Self.logger.error("[LookRenderer:\(function, privacy: .public)] Stage was skipped — {stage: \(stage, privacy: .public), reason: \(reason, privacy: .public)}")
     }
 }
