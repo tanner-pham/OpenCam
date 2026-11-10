@@ -13,6 +13,7 @@ nonisolated enum RawCheck {
         var isRunning = false
         var activeFormat = ""
         var maxPhotoDimensions = ""
+        var rawPixelFormatsBeforeRunning: [String] = []
         var rawPixelFormats: [String] = []
         var bayerFormats: [String] = []
         var proRAWFormats: [String] = []
@@ -50,22 +51,30 @@ nonisolated enum RawCheck {
         let discovery = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .builtInUltraWideCamera],
                                                          mediaType: .video, position: .unspecified)
         var readings: [Reading] = []
-        for device in discovery.devices {
-            readings.append(read(device, bestFormat: false))
-            readings.append(read(device, bestFormat: true))
+        for device in discovery.devices where device.position == .back {
+            for setup in Setup.allCases { readings.append(read(device, setup: setup)) }
         }
         return Report(takenAt: .now, osVersion: ProcessInfo.processInfo.operatingSystemVersionString, readings: readings)
     }
 
-    /// One running session with only a photo output. `bestFormat` picks, by hand, the format with the largest photo size
-    /// among those that support the highest photo quality; otherwise the photo preset chooses.
-    private static func read(_ device: AVCaptureDevice, bestFormat: Bool) -> Reading {
+    nonisolated enum Setup: String, CaseIterable, Sendable {
+        case photoPreset = "photo preset"
+        case photoPresetWithDataOutput = "photo preset + video data output"
+        case inputPriorityFullRange = "input priority, best photo format, full range"
+        case inputPriorityVideoRange = "input priority, best photo format, video range"
+
+        var usesPreset: Bool { self == .photoPreset || self == .photoPresetWithDataOutput }
+    }
+
+    /// One session with a photo output, read once stopped and once running. The input-priority setups pick, by hand, the
+    /// format with the largest photo size among those that support the highest photo quality.
+    private static func read(_ device: AVCaptureDevice, setup: Setup) -> Reading {
         var reading = Reading(camera: device.localizedName, deviceType: device.deviceType.rawValue,
-                              position: positionName(device.position), setup: bestFormat ? "input priority, best photo format" : "photo preset")
+                              position: positionName(device.position), setup: setup.rawValue)
         let session = AVCaptureSession()
         let photo = AVCapturePhotoOutput()
         session.beginConfiguration()
-        session.sessionPreset = bestFormat ? .inputPriority : .photo
+        session.sessionPreset = setup.usesPreset ? .photo : .inputPriority
         do {
             let input = try AVCaptureDeviceInput(device: device)
             guard session.canAddInput(input), session.canAddOutput(photo) else {
@@ -75,7 +84,11 @@ nonisolated enum RawCheck {
             }
             session.addInput(input)
             session.addOutput(photo)
-            if bestFormat, let format = bestPhotoFormat(of: device) {
+            if setup == .photoPresetWithDataOutput {
+                let data = AVCaptureVideoDataOutput()
+                if session.canAddOutput(data) { session.addOutput(data) } else { reading.errors.append("[RawCheck:read] The data output could not be added") }
+            }
+            if !setup.usesPreset, let format = bestPhotoFormat(of: device, fullRange: setup == .inputPriorityFullRange) {
                 try device.lockForConfiguration()
                 device.activeFormat = format
                 device.unlockForConfiguration()
@@ -86,6 +99,7 @@ nonisolated enum RawCheck {
             return reading
         }
         session.commitConfiguration()
+        reading.rawPixelFormatsBeforeRunning = photo.availableRawPhotoPixelFormatTypes.map(fourCC)
         session.startRunning()
         // Long enough for a running session to publish what its output supports.
         Thread.sleep(forTimeInterval: 1.5)
@@ -114,11 +128,14 @@ nonisolated enum RawCheck {
         return reading
     }
 
-    private static func bestPhotoFormat(of device: AVCaptureDevice) -> AVCaptureDevice.Format? {
+    private static func bestPhotoFormat(of device: AVCaptureDevice, fullRange: Bool) -> AVCaptureDevice.Format? {
         func pixels(_ format: AVCaptureDevice.Format) -> Int {
             format.supportedMaxPhotoDimensions.map { Int($0.width) * Int($0.height) }.max() ?? 0
         }
-        return device.formats.filter(\.isHighestPhotoQualitySupported).max { pixels($0) < pixels($1) }
+        let wanted = fullRange ? kCVPixelFormatType_420YpCbCr8BiPlanarFullRange : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+        return device.formats
+            .filter { $0.isHighestPhotoQualitySupported && $0.formatDescription.mediaSubType.rawValue == wanted }
+            .max { pixels($0) < pixels($1) }
     }
 
     private static func positionName(_ position: AVCaptureDevice.Position) -> String {
