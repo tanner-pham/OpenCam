@@ -56,7 +56,7 @@ import OSLog
         self.renderPreview = renderPreview ?? { image, adjustments in await renderer.renderedCGImage(image, adjustments: adjustments) }
     }
 
-    var hasChanges: Bool { adjustments != savedEdit.adjustments || lookName != savedEdit.lookName }
+    var hasChanges: Bool { !adjustments.matches(savedEdit.adjustments) || lookName != savedEdit.lookName }
 
     /// Changes that leaving without Done would lose. A photo that cannot be edited (any failed phase) has none to lose.
     var hasUnsavedChanges: Bool {

@@ -85,7 +85,7 @@ struct EditorView: View {
     /// The picture's fitted height at the full width, held so the panel keeps `minPanelHeight`.
     private func pictureHeight(in size: CGSize) -> CGFloat {
         let aspect = model.proxySize.map { $0.width / max($0.height, 1) } ?? Self.defaultAspect
-        let fitted = size.width / aspect + 2 * Theme.Space.s
+        let fitted = size.width / aspect
         return max(0, min(fitted, size.height - Self.minPanelHeight))
     }
 }

@@ -69,6 +69,11 @@ nonisolated struct Adjustments: Codable, Sendable, Hashable {
 
     var isIdentity: Bool { AdjustmentKey.allCases.allSatisfy { self[$0] == 0 } }
 
+    /// Equal at every key once each value is on its step, so values that read the same compare the same.
+    func matches(_ other: Adjustments) -> Bool {
+        AdjustmentKey.allCases.allSatisfy { $0.snapped(self[$0]) == $0.snapped(other[$0]) }
+    }
+
     /// True when any of exposure through saturation is not zero.
     var hasColourChanges: Bool {
         AdjustmentKey.allCases.prefix { $0 != .sharpening }.contains { self[$0] != 0 }

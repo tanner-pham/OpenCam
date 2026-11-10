@@ -76,6 +76,18 @@ import Testing
         model.adjustments.contrast = 25; #expect(!model.hasUnsavedChanges)  // back to the opening value
         model.resetAll(); #expect(model.hasUnsavedChanges)                  // the opening edit was not empty
     }
+    @Test func exposureBackOnASavedValueIsNotAChange() async throws {
+        let dir = try TestFiles.directory()
+        _ = try TestFiles.writeJPEG(width: 400, height: 300, rgb: SIMD3(0.5, 0.5, 0.5), to: dir.appending(path: "OC_0001.JPG"))
+        try EditStore(directory: dir).save(PhotoEdit(adjustments: Adjustments().setting(.exposure, to: 0.3)), stem: "OC_0001")
+        let model = EditorModel(item: try #require(LibraryScanner.items(in: dir).first), edits: EditStore(directory: dir), looks: try LookStore(directory: TestFiles.directory()))
+        await model.load()
+        #expect(AdjustmentKey.exposure.snapped(0.1 + 0.2) == 0.3); #expect(AdjustmentKey.exposure.snapped(3 * 0.1) == 0.3)
+        model.adjustments.exposure = 0.7; model.adjustments.exposure = 0.1 + 0.2   // 0.30000000000000004, raw
+        #expect(!model.hasUnsavedChanges)
+        model.adjustments.exposure = AdjustmentKey.exposure.snapped(0.3 + 0.1)     // one step
+        #expect(model.hasUnsavedChanges)
+    }
     @Test func newerVersionEditHasNoUnsavedChanges() async throws {
         let dir = try TestFiles.directory()
         _ = try TestFiles.writeJPEG(width: 400, height: 300, rgb: SIMD3(0.5, 0.5, 0.5), to: dir.appending(path: "OC_0001.JPG"))

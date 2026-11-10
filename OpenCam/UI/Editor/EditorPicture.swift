@@ -7,7 +7,6 @@ struct EditorPicture: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.vertical, Theme.Space.s)
     }
 
     @ViewBuilder

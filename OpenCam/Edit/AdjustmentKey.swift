@@ -34,6 +34,14 @@ nonisolated enum AdjustmentKey: String, CaseIterable, Sendable {
 
     var step: Double { self == .exposure ? 0.1 : 1 }
 
+    /// `value` on the nearest step, clamped to the range. Divides a whole number of steps by the steps per unit, so 0.1 + 0.2
+    /// gives exactly the `Double` written 0.3 (multiplying by 0.1 would leave 0.30000000000000004).
+    func snapped(_ value: Double) -> Double {
+        let stepsPerUnit = (1 / step).rounded()
+        let snapped = (value * stepsPerUnit).rounded() / stepsPerUnit
+        return min(max(snapped, range.lowerBound), range.upperBound)
+    }
+
     var group: EditorGroup {
         switch self {
         case .exposure, .contrast, .highlights, .shadows, .whites, .blacks: .light
