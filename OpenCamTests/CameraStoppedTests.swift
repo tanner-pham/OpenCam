@@ -261,12 +261,32 @@ import Testing
         model.openLibrary()
         await model.libraryHandoff?.value
         model.apply(.runtimeError("[CameraSession:runtimeError] Session stopped — {code: -11819}"))
-        #expect(!model.isResettingMediaServices)
+        #expect(!model.isResettingMediaServices); #expect(model.phase == .released)
         model.isLibraryPresented = false
         await model.closeLibrary()
         #expect(await fake.calls == ["release", "configure", "start"])
-        #expect(await eventually { model.phase == .ready })
+        // Ready as the return ends, with no stopped state waiting for the confirmation.
+        #expect(model.phase == .ready)
         #expect(model.canOpenRecordSettings)
+    }
+
+    /// After a failed return from the Library, a reset leaves the could-not-start state as it was, and the next close of the
+    /// Library retries as before.
+    @Test func aResetAfterAFailedReturnFromTheLibraryLeavesThePhase() async throws {
+        let (model, fake, _) = try attachedModel()
+        model.openLibrary()
+        await model.libraryHandoff?.value
+        await fake.setFailingLensIDs([model.lensID])
+        model.isLibraryPresented = false
+        await model.closeLibrary()
+        #expect(model.phase == .failed("The camera could not start."))
+        model.apply(.runtimeError("[CameraSession:runtimeError] Session stopped — {code: -11819}"))
+        #expect(model.phase == .failed("The camera could not start.")); #expect(!model.isCameraStopped)
+        await fake.setFailingLensIDs([])
+        model.openLibrary()
+        model.isLibraryPresented = false
+        await model.closeLibrary()
+        #expect(model.phase == .ready); #expect(await fake.calls == ["release", "configure", "start"])
     }
 
     /// Going back to the confirmed selection uses the same once-only allowance: when that selection then stops again with no

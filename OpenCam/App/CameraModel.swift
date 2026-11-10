@@ -767,8 +767,10 @@ extension CameraModel {
             runtimeErrorCount += 1
             confirmation?.cancel()
             confirmation = nil
-            isResettingMediaServices = phase != .released && !isCameraReleasedForLibrary && !isScanningFormats
-                && !isSessionStoppedForRescan
+            // Released for the Library or held by a rescan, the session is stopped on purpose and that flow's own configure
+            // and start bring it back, so the phase stays as it is.
+            guard phase != .released, !isCameraReleasedForLibrary, !isScanningFormats, !isSessionStoppedForRescan else { break }
+            isResettingMediaServices = true
             phase = .failed(Self.cameraStopped)
         case .runtimeError(let message):
             cameraStopped(message)

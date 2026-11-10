@@ -35,7 +35,7 @@ extension CameraModel {
         isResettingMediaServices = false
         // Released for the Library: the session is stopped on purpose, and the Library's return configures and starts it
         // again; that return is the one recovery.
-        if phase == .released {
+        if phase == .released || isCameraReleasedForLibrary {
             isRecoveryUnconfirmed = true
             return
         }
