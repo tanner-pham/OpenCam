@@ -15,6 +15,13 @@ extension CameraModel {
         enqueueConfigure()
     }
 
+    /// Frames stop while the camera is interrupted or reset; when it runs again the watch starts over, so frames that never
+    /// resume fall back with the notice instead of leaving the last frame frozen over the hidden preview.
+    func rewatchFrames() {
+        guard let requestedConfiguration else { return }
+        watchFrames(for: requestedConfiguration)
+    }
+
     /// After a configure that needs frames reaches a running session, waits `FrameWatch.timeout` for the first one; with
     /// none, and the look still on for this configuration, falls back to the plain preview. A configuration without frames
     /// only cancels the last watch.

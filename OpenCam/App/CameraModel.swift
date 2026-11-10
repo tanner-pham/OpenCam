@@ -671,6 +671,7 @@ extension CameraModel {
         case .interruptionEnded:
             isInterrupted = false
             clearNotice(from: .interruption)
+            rewatchFrames()
         case .runtimeError(let message):
             // Sets no notice; the phase says the camera stopped.
             Self.logger.error("\(message, privacy: .public)")
@@ -688,6 +689,7 @@ extension CameraModel {
             isInterrupted = false
             clearNotice(from: .interruption)
             endRecordingWithoutResult(clip: nil, context: "restarted")
+            rewatchFrames()
         case .microphoneUnavailable(let message):
             // Reads the same as microphone denied: video still records, without sound.
             Self.logger.error("\(message, privacy: .public)")
