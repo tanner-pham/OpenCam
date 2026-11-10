@@ -4,7 +4,7 @@
 
 **Goal:** Choose a saved look in the camera (None or a look), see it in the viewfinder, and have it applied to what the camera saves: baked into HEIF, kept beside an untouched DNG for RAW, preview only for video.
 
-**Architecture:** One `LookStore` is made in `OpenCamApp` and shared by the camera, the Library and the editor. `CameraModel` holds the selected look as a copy (`CameraLook`), saved with the other selections and reconciled with the looks list whenever the Library closes. With None nothing new runs: the preview layer, the session's outputs and the capture path are today's. With a look, the Simulator draws its stand-in through `LookRenderer.renderColourAndVignette`; the device adds a video data output whose frames go through the same entry point to a Metal view; photo capture holds the processed HEIF in memory and a `@concurrent` step bakes it at full size before writing, or writes an edit file beside a RAW-only DNG. Every new failure falls back to today's behaviour with a plain notice.
+**Architecture:** One `LookStore` is made in `OpenCamApp` and shared by the camera, the Library and the editor. `CameraModel` holds the selected look as a copy (`CameraLook`), saved with the other selections and reconciled with the looks list whenever the Library closes. With None nothing new runs: the preview layer, the session's outputs and the capture path are today's. With a look, the Simulator draws its stand-in through `LookRenderer.renderColourAndVignette`; the device adds a video data output whose frames go through the same entry point to a Metal view; photo capture writes the photo exactly as today, then a `@concurrent` step bakes the look over the saved HEIF at full size with one atomic write, or writes an edit file beside a RAW-only DNG. Every new failure falls back to today's behaviour with a plain notice.
 
 **Tech Stack:** Swift 6, SwiftUI, AVFoundation (`AVCaptureVideoDataOutput`, `AVCaptureDevice.RotationCoordinator`), Core Image (`CIContext.heifRepresentation`, `render(_:to:commandBuffer:bounds:colorSpace:)`), MetalKit (`MTKView`), ImageIO, Swift Testing, Xcode 27.2, `xcodebuild`, `simctl`.
 
@@ -35,7 +35,7 @@ Added by this plan:
 - Launch flag: `-cameraLook <name>` selects the look of that name at launch (with `-seedLook on` in the Simulator) and makes the launch scripted, so it neither restores nor saves selections.
 - Screenshots: `SHOT_DIR=docs/screenshots/e2`, names prefixed `e2-`, display 1, through `scripts/shot.sh` (unchanged). The implementer reads every PNG.
 - Device SDK compile (needed wherever AVFoundation or MetalKit code changes): `xcodebuild -project OpenCam.xcodeproj -scheme OpenCam -sdk iphoneos -destination generic/platform=iOS -derivedDataPath .build CODE_SIGNING_ALLOWED=NO build`, expected `** BUILD SUCCEEDED **`.
-- Calls made in this plan (each small): (1) `LookStore` is a stateless value type with no change signal, so sharing one store does not by itself bring a new look into the camera; the camera reads the looks again when the Library closes (every look change happens under the Library cover) and at launch. (2) The processed HEIF is held in memory by the delegate when a look is on and baked in the model's capture task by a `@concurrent` step, so the photo output's callback queue and the session actor are never blocked by a 48 MP render. (3) The look name in the summary is cut in the model to 16 characters (15 and "…"), because `FormatButton` is `.fixedSize()` and a frame cannot truncate it there. (4) A viewfinder fallback detaches the data output until the next lens, mode, format or look change, which tries again. (5) In video mode the summary drops the look's name while the viewfinder cannot show it, since the look then applies nowhere. (6) The data output asks for preview-sized buffers (`automaticallyConfiguresOutputBufferDimensions = false`, `deliversPreviewSizedOutputBuffers = true`, AVCaptureVideoDataOutput.h:244-266); the pipeline always turns the image itself by the angle from the rotation coordinator, because setting the angle on a data output's connection physically rotates buffers and needs a lengthy pipeline reconfiguration (AVCaptureSession.h:1085); only mirroring is set on the connection, inside `CameraSession.apply`. (7) The Look row sits after the chip rows and before the data-rate footer; a `-screen record` launch with `-cameraLook` opens Record settings scrolled to it, so the landscape screenshot shows it.
+- Calls made in this plan (each small): (1) `LookStore` is a stateless value type with no change signal, so sharing one store does not by itself bring a new look into the camera; the camera reads the looks again when the Library closes (every look change happens under the Library cover) and at launch. (2) The camera writes the photo as it does today and the look is baked over the saved HEIF afterwards, in the model's capture task, by a `@concurrent` step and one atomic write. The photo is on disk before any rendering starts, so a failed bake, a crash or a kill cannot lose it, and the photo output's callback queue and the session actor are never blocked by a 48 MP render. (3) The look name in the summary is cut in the model to 16 characters (15 and "…"), because `FormatButton` is `.fixedSize()` and a frame cannot truncate it there. (4) A viewfinder fallback detaches the data output until the next lens, mode, format or look change, which tries again. (5) In video mode the summary drops the look's name while the viewfinder cannot show it, since the look then applies nowhere. (6) The data output asks for preview-sized buffers (`automaticallyConfiguresOutputBufferDimensions = false`, `deliversPreviewSizedOutputBuffers = true`, AVCaptureVideoDataOutput.h:244-266); the pipeline always turns the image itself by the angle from the rotation coordinator, because setting the angle on a data output's connection physically rotates buffers and needs a lengthy pipeline reconfiguration (AVCaptureSession.h:1085); only mirroring is set on the connection, inside `CameraSession.apply`. (7) The Look row sits after the chip rows and before the data-rate footer; a `-screen record` launch with `-cameraLook` opens Record settings scrolled to it, so the landscape screenshot shows it.
 
 ## Review Focus
 
@@ -402,11 +402,12 @@ git commit -m "feat: show the selected look on the simulator viewfinder"
 
 **Files:**
 - Create: `OpenCam/Render/LookBaker.swift`, `OpenCam/Render/LookBakeError.swift`, `OpenCam/Capture/LookCapture.swift`, `OpenCam/Capture/LookCaptureOutcome.swift`
-- Modify: `OpenCam/Capture/PhotoCaptureResult.swift` (`var heldPhoto: Data? = nil`), `OpenCam/Capture/PhotoCaptureDelegate.swift` (`init(dngURL:heicURL:holdsProcessed: Bool = false)`; when holding, the processed photo's `fileDataRepresentation()` is kept in `State` instead of written and returned as `heldPhoto`; `.noPhotoData` only when nothing was saved and nothing held), `OpenCam/Capture/PhotoCapturer.swift` and `OpenCam/Capture/CameraSession.swift` (`capture`/`capturePhoto` gain `holdsProcessed: Bool = false`, passed through), `OpenCam/App/CameraModel.swift` (`capturePhoto()` reads `let look = cameraLook` at the press; with a look it passes `holdsProcessed: option.format != .raw` and awaits `LookCapture.finish` inside the same `photoCaptures[sequence]` task, so a configure or rescan waits for the bake; `photoFinished(requested:result:lookNotice:)` shows the `PhotoSaveReport` notice when there is one, else `lookNotice`, else clears `.capture`. With None every call is today's), `OpenCam/Render/PhotoExporter.swift` (no change; `carriedMetadata(from:size:)` is reused). The model makes the `EditStore` for `finish` as `EditStore(directory: store.directory)` from its capture store, as `OpenCamApp.swift` does
+- Modify: `OpenCam/App/CameraModel.swift` (`capturePhoto()` reads `let look = cameraLook` at the press; with a look it awaits `LookCapture.finish` on the session's result inside the same `photoCaptures[sequence]` task, so a configure, a rescan or the Library's release waits for the bake; `photoFinished(requested:result:lookNotice:)` shows the `PhotoSaveReport` notice when there is one, else `lookNotice`, else clears `.capture`. With None every call is today's and `LookCapture` is never reached). The model makes the `EditStore` for `finish` as `EditStore(directory: store.directory)` from its capture store, as `OpenCamApp.swift` does. `OpenCam/Render/PhotoExporter.swift` is not changed; `carriedMetadata(from:size:)` is reused.
+- NOT modified: `PhotoCaptureDelegate`, `PhotoCapturer`, `CameraSession`, `PhotoCaptureResult`. The camera writes the photo exactly as it does today, look or no look.
 - Test: `OpenCamTests/LookBakerTests.swift`, `OpenCamTests/LookCaptureTests.swift`
 
 **Interfaces:**
-- Consumes: Task 1 `CameraLook`; E1 `LookRenderer.render(_:adjustments:)`, `LookRenderer.displayP3`, `PhotoExporter.carriedMetadata(from: [String: Any], size: CGSize)`, `EditStore`, `PhotoEdit`; camera core `PhotoCaptureResult`, `PhotoCaptureError.writeFailed(path:reason:)`, `PhotoFormat`, `PhotoSaveReport`.
+- Consumes: Task 1 `CameraLook`; E1 `LookRenderer.render(_:adjustments:)`, `LookRenderer.displayP3`, `PhotoExporter.carriedMetadata(from: [String: Any], size: CGSize)`, `EditStore`, `PhotoEdit`; camera core `PhotoCaptureResult`, `PhotoFormat`, `PhotoSaveReport`.
 - Produces:
 
 ```swift
@@ -427,7 +428,10 @@ nonisolated enum LookCapture {
 }
 ```
 
-`finish` rules, in order: (a) a held photo is baked and written to `heicURL` with `.withoutOverwriting`; if baking throws, the held bytes are written unchanged and the notice is `lookNotApplied`; a failed write of the baked bytes is not retried with the held bytes: the error becomes `.writeFailed`, the look notice is nil and the save report's notice wins; if the write of the held bytes fails, `heicURL` is not saved and the result's error becomes `.writeFailed(path: heicURL.lastPathComponent, reason:)` unless it already had one; a saved `heicURL` is appended to `saved`; `heldPhoto` is nil in the outcome. (b) Only for `.raw` with `dngURL` in `saved`: `edits.save(PhotoEdit(adjustments: look.adjustments, lookName: look.name), stem:)` with the stem `dngURL.deletingPathExtension().lastPathComponent`; a failure is logged and the notice is `lookNotSaved`. (c) `.rawPlusHEIF` and `.heif` never write an edit file. The DNG is never opened. The short `path:` (`heicURL.lastPathComponent`) follows `PhotoCaptureDelegate`'s existing `.writeFailed` and is the one exception to the full-path rule.
+`finish` rules. The `result` is returned unchanged in every case; only the notice differs.
+(a) When `heicURL` is in `result.saved` (formats `.heif` and `.rawPlusHEIF`): read the file's bytes, bake them, and replace the file with the baked bytes by one atomic write (`Data.write(to:options: .atomic)`). The photo the camera wrote is on disk the whole time, so a failed bake, a crash or a kill during the bake cannot lose it. If reading, baking or the replacing write fails, the file stays as the camera wrote it, the failure is logged and the notice is `lookNotApplied`.
+(b) Only for `.raw` with `dngURL` in `saved`: `edits.save(PhotoEdit(adjustments: look.adjustments, lookName: look.name), stem:)` with the stem `dngURL.deletingPathExtension().lastPathComponent`; a failure is logged and the notice is `lookNotSaved`.
+(c) `.rawPlusHEIF` and `.heif` never write an edit file, and a `.rawPlusHEIF` capture whose HEIF was not saved gets neither a bake nor an edit file (the save report already says what was saved). The DNG is never opened. A result without the file its format needs in `saved` comes back unchanged with no notice.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -468,66 +472,80 @@ nonisolated enum LookCapture {
     }
     func grey() throws -> Data { try TestFiles.heicData(width: 400, height: 300, rgb: SIMD3(0.5, 0.5, 0.5)) }
     func centre(_ url: URL) throws -> Float { try PixelReader.rgb(PictureDecoder.full(at: url), x: 200, y: 150).x }
+    func hasEditFile(_ dir: URL) -> Bool {
+        FileManager.default.fileExists(atPath: EditStore(directory: dir).url(forStem: "OC_0001").path(percentEncoded: false))
+    }
 
     @Test func heifWithALookIsBakedAndWritesNoEditFile() async throws {
         let (dir, dng, heic) = try urls()
-        let outcome = await LookCapture.finish(PhotoCaptureResult(saved: [], error: nil, heldPhoto: try grey()), look: look, format: .heif,
-                                               heicURL: heic, dngURL: dng, edits: EditStore(directory: dir))
-        #expect(outcome == LookCaptureOutcome(result: PhotoCaptureResult(saved: [heic], error: nil), notice: nil))
+        try grey().write(to: heic)                                   // the camera has already written the photo
+        #expect(abs(try centre(heic) - 0.5) < 0.02)
+        let saved = PhotoCaptureResult(saved: [heic], error: nil)
+        let outcome = await LookCapture.finish(saved, look: look, format: .heif, heicURL: heic, dngURL: dng, edits: EditStore(directory: dir))
+        #expect(outcome == LookCaptureOutcome(result: saved, notice: nil))
         #expect(abs(try centre(heic) - 0.686) < 0.02)
-        #expect(!FileManager.default.fileExists(atPath: EditStore(directory: dir).url(forStem: "OC_0001").path(percentEncoded: false)))
+        #expect(!hasEditFile(dir))
     }
     @Test func bakingFailureStillSavesThePhoto() async throws {   // Review Focus 2
         let (dir, dng, heic) = try urls()
-        let held = Data("not a photo".utf8)
-        let outcome = await LookCapture.finish(PhotoCaptureResult(saved: [], error: nil, heldPhoto: held), look: look, format: .heif,
-                                               heicURL: heic, dngURL: dng, edits: EditStore(directory: dir))
-        #expect(outcome.result.saved == [heic]); #expect(outcome.result.error == nil)
-        #expect(outcome.notice == "Look not applied. The photo was saved without it.")
-        #expect(try Data(contentsOf: heic) == held)
+        let written = Data("not a photo".utf8); try written.write(to: heic)
+        let saved = PhotoCaptureResult(saved: [heic], error: nil)
+        let outcome = await LookCapture.finish(saved, look: look, format: .heif, heicURL: heic, dngURL: dng, edits: EditStore(directory: dir))
+        #expect(outcome == LookCaptureOutcome(result: saved, notice: "Look not applied. The photo was saved without it."))
+        #expect(try Data(contentsOf: heic) == written)               // the file the camera wrote is untouched
     }
     @Test func rawWritesAnEditFileBesideTheUntouchedDNG() async throws {
         let (dir, dng, heic) = try urls()
         let raw = Data("dng bytes".utf8); try raw.write(to: dng)
-        let outcome = await LookCapture.finish(PhotoCaptureResult(saved: [dng], error: nil), look: look, format: .raw,
-                                               heicURL: heic, dngURL: dng, edits: EditStore(directory: dir))
-        #expect(outcome == LookCaptureOutcome(result: PhotoCaptureResult(saved: [dng], error: nil), notice: nil))
+        let saved = PhotoCaptureResult(saved: [dng], error: nil)
+        let outcome = await LookCapture.finish(saved, look: look, format: .raw, heicURL: heic, dngURL: dng, edits: EditStore(directory: dir))
+        #expect(outcome == LookCaptureOutcome(result: saved, notice: nil))
         #expect(try EditStore(directory: dir).load(stem: "OC_0001") == PhotoEdit(adjustments: look.adjustments, lookName: "Warm fade"))
         #expect(try Data(contentsOf: dng) == raw)
     }
     @Test func rawPlusHEIFBakesTheHEIFAndWritesNoEditFile() async throws {   // Review Focus 4
         let (dir, dng, heic) = try urls()
-        let raw = Data("dng bytes".utf8); try raw.write(to: dng)
-        let outcome = await LookCapture.finish(PhotoCaptureResult(saved: [dng], error: nil, heldPhoto: try grey()), look: look, format: .rawPlusHEIF,
-                                               heicURL: heic, dngURL: dng, edits: EditStore(directory: dir))
-        #expect(outcome.result.saved == [dng, heic]); #expect(outcome.notice == nil)
+        let raw = Data("dng bytes".utf8); try raw.write(to: dng); try grey().write(to: heic)
+        let saved = PhotoCaptureResult(saved: [dng, heic], error: nil)
+        let outcome = await LookCapture.finish(saved, look: look, format: .rawPlusHEIF, heicURL: heic, dngURL: dng, edits: EditStore(directory: dir))
+        #expect(outcome == LookCaptureOutcome(result: saved, notice: nil))
         #expect(abs(try centre(heic) - 0.686) < 0.02); #expect(try Data(contentsOf: dng) == raw)
-        #expect(!FileManager.default.fileExists(atPath: EditStore(directory: dir).url(forStem: "OC_0001").path(percentEncoded: false)))
+        #expect(!hasEditFile(dir))
+    }
+    @Test func rawPlusHEIFWithoutItsHEIFGetsNeitherABakeNorAnEditFile() async throws {
+        let (dir, dng, heic) = try urls()
+        let raw = Data("dng bytes".utf8); try raw.write(to: dng)
+        let partial = PhotoCaptureResult(saved: [dng], error: .noPhotoData)
+        let outcome = await LookCapture.finish(partial, look: look, format: .rawPlusHEIF, heicURL: heic, dngURL: dng, edits: EditStore(directory: dir))
+        #expect(outcome == LookCaptureOutcome(result: partial, notice: nil))
+        #expect(!hasEditFile(dir)); #expect(try Data(contentsOf: dng) == raw)
+        #expect(!FileManager.default.fileExists(atPath: heic.path(percentEncoded: false)))
     }
     @Test func editFileFailureKeepsTheDNG() async throws {
         let (dir, dng, heic) = try urls()
         try Data("dng bytes".utf8).write(to: dng)
-        let outcome = await LookCapture.finish(PhotoCaptureResult(saved: [dng], error: nil), look: look, format: .raw, heicURL: heic, dngURL: dng,
+        let saved = PhotoCaptureResult(saved: [dng], error: nil)
+        let outcome = await LookCapture.finish(saved, look: look, format: .raw, heicURL: heic, dngURL: dng,
                                                edits: EditStore(directory: dir.appending(path: "missing", directoryHint: .isDirectory)))
-        #expect(outcome.result.saved == [dng]); #expect(outcome.notice == "Look not saved with the photo.")
+        #expect(outcome == LookCaptureOutcome(result: saved, notice: "Look not saved with the photo."))
         #expect(FileManager.default.fileExists(atPath: dng.path(percentEncoded: false)))
     }
     @Test func failedCapturesAreLeftAsTheyAre() async throws {
         let (dir, dng, heic) = try urls()
         let failed = PhotoCaptureResult(saved: [], error: .noPhotoData)
-        #expect(await LookCapture.finish(failed, look: look, format: .raw, heicURL: heic, dngURL: dng, edits: EditStore(directory: dir))
-                == LookCaptureOutcome(result: failed, notice: nil))
-        try Data("x".utf8).write(to: heic)   // the number is taken: the held photo cannot be written
-        let blocked = await LookCapture.finish(PhotoCaptureResult(saved: [], error: nil, heldPhoto: try grey()), look: look, format: .heif,
-                                               heicURL: heic, dngURL: dng, edits: EditStore(directory: dir))
-        #expect(blocked.result.saved.isEmpty)
-        guard case .writeFailed(path: "OC_0001.HEIC", reason: _)? = blocked.result.error else { Issue.record("expected writeFailed"); return }
+        for format in [PhotoFormat.heif, .raw, .rawPlusHEIF] {
+            #expect(await LookCapture.finish(failed, look: look, format: format, heicURL: heic, dngURL: dng, edits: EditStore(directory: dir))
+                    == LookCaptureOutcome(result: failed, notice: nil))
+        }
+        #expect(!hasEditFile(dir))
     }
 }
 ```
 
+If `PhotoCaptureError` has no `.noPhotoData` case or `PhotoCaptureResult` is not `Equatable` as written, use the existing case and comparison the camera core's `PhotoCaptureTests` use; never weaken what is compared.
+
 - [ ] **Step 2: Run to see them fail** — `scripts/test.sh LookBakerTests`. Expected: `cannot find 'LookBaker' in scope`.
-- [ ] **Step 3: Implement `LookBaker`, `LookCapture` and the capture path edits to the Interfaces.** The camera core's `PhotoCaptureTests` and `PhotoSaveReportTests` must pass untouched; `PhotoCaptureResult(saved:error:)` still compiles everywhere.
+- [ ] **Step 3: Implement `LookBaker`, `LookCapture` and the model's edits to the Interfaces.** Add one model test to `LookCaptureTests` or the camera core's capture tests, using the tests' existing fake configurator: with a look selected a HEIF capture's notice is the save report's when there is one, else the look's, else none; with None `photoFinished` behaves as today. The camera core's `PhotoCaptureTests` and `PhotoSaveReportTests` must pass untouched.
 - [ ] **Step 4: Run to see them pass** — `scripts/test.sh LookBakerTests && scripts/test.sh LookCaptureTests && scripts/test.sh PhotoCaptureTests && scripts/test.sh PhotoSaveReportTests`, then the device SDK compile from Global Constraints. Expected: `** TEST SUCCEEDED **` four times, then `** BUILD SUCCEEDED **`.
 - [ ] **Step 5: Commit**
 
