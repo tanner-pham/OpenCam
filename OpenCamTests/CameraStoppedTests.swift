@@ -108,8 +108,8 @@ import Testing
         // Well past the confirmation delay, nothing has brought the camera back or configured it again.
         try await Task.sleep(for: .milliseconds(200))
         #expect(model.phase == .failed("The camera stopped."))
-        #expect(await fake.applied.count == 2)
-        #expect(model.currentSelection == first)
+        #expect(await fake.applied.count == 2); #expect(await starts(fake) == 1)
+        #expect(model.currentSelection == first); #expect(model.notice == "That format could not be used.")
     }
 
     @Test func theStoppedStateKeepsRecordSettingsAndRetryUsable() async throws {
@@ -150,6 +150,7 @@ import Testing
         #expect(await fake.calls.isEmpty)
         try await Task.sleep(for: .milliseconds(200))
         #expect(model.phase == .failed("The camera stopped.")); #expect(model.currentSelection == selection)
+        #expect(model.notice == nil); #expect(await starts(fake) == 0)
     }
 
     /// A configuration that runs past the confirmation and then stops again is restarted automatically only once; Try again
