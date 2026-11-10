@@ -57,4 +57,32 @@ import Testing
         #expect(model.phase == .failed("This photo was edited by a newer version of OpenCam."))
         #expect(!model.save()); #expect(try Data(contentsOf: editURL) == newer)
     }
+    @Test func firstRenderThatFailsSaysCannotOpen() async throws {
+        let dir = try TestFiles.directory()
+        _ = try TestFiles.writeJPEG(width: 400, height: 300, rgb: SIMD3(0.5, 0.5, 0.5), to: dir.appending(path: "OC_0001.JPG"))
+        let model = EditorModel(item: try #require(LibraryScanner.items(in: dir).first), edits: EditStore(directory: dir),
+                                looks: try LookStore(directory: TestFiles.directory()), renderPreview: { _, _ in nil })
+        await model.load()
+        #expect(model.phase == .failed("This photo could not be opened.")); #expect(model.preview == nil)
+    }
+    @Test func unsavedChangesFollowTheOpeningValues() async throws {
+        let dir = try TestFiles.directory()
+        _ = try TestFiles.writeJPEG(width: 400, height: 300, rgb: SIMD3(0.5, 0.5, 0.5), to: dir.appending(path: "OC_0001.JPG"))
+        try EditStore(directory: dir).save(PhotoEdit(adjustments: Adjustments().setting(.contrast, to: 25)), stem: "OC_0001")
+        let model = EditorModel(item: try #require(LibraryScanner.items(in: dir).first), edits: EditStore(directory: dir), looks: try LookStore(directory: TestFiles.directory()))
+        await model.load()
+        #expect(!model.hasUnsavedChanges)                                   // unchanged
+        model.adjustments.contrast = 40; #expect(model.hasUnsavedChanges)   // changed
+        model.adjustments.contrast = 25; #expect(!model.hasUnsavedChanges)  // back to the opening value
+        model.resetAll(); #expect(model.hasUnsavedChanges)                  // the opening edit was not empty
+    }
+    @Test func newerVersionEditHasNoUnsavedChanges() async throws {
+        let dir = try TestFiles.directory()
+        _ = try TestFiles.writeJPEG(width: 400, height: 300, rgb: SIMD3(0.5, 0.5, 0.5), to: dir.appending(path: "OC_0001.JPG"))
+        try Data(#"{"version": 99, "adjustments": {"exposure": 1}}"#.utf8).write(to: dir.appending(path: "OC_0001.edit.json"))
+        let model = EditorModel(item: try #require(LibraryScanner.items(in: dir).first), edits: EditStore(directory: dir), looks: try LookStore(directory: TestFiles.directory()))
+        await model.load()
+        #expect(!model.hasUnsavedChanges)
+        model.adjustments.exposure = 2; #expect(!model.hasUnsavedChanges)   // read-only: nothing can be saved, so nothing is lost
+    }
 }

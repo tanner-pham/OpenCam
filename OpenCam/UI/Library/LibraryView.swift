@@ -16,8 +16,8 @@ struct LibraryView: View {
     @State private var isConfirmingDelete = false
     @State private var alertTitle: String?
     @State private var pickedItems: [PhotosPickerItem] = []
-    /// The editor of the photo on the navigation path, made when it is pushed so redrawing this view keeps it.
-    @State private var editor: EditorModel?
+    /// The group the next editor opens on: `-editorGroup` for the launch push, Light for a tap.
+    @State private var editorGroup: EditorGroup = .light
 
     private static let columns = [GridItem(.adaptive(minimum: 110), spacing: 2)]
 
@@ -34,9 +34,7 @@ struct LibraryView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbar }
                 .navigationDestination(for: LibraryItem.self) { item in
-                    if let editor, editor.item == item {
-                        EditorView(model: editor) { path.removeAll() }
-                    }
+                    EditorScreen(item: item, library: library, group: editorGroup) { path.removeAll() }
                 }
         }
         .tint(Theme.accent)
@@ -46,7 +44,6 @@ struct LibraryView: View {
         }
         .onChange(of: path) { old, new in
             // Back from the editor: its saved edit changes the thumbnail key, so the cell renders again.
-            // The editor model stays until the next push, so the pop animation still has its view.
             guard new.count < old.count else { return }
             library.reload()
         }
@@ -130,7 +127,7 @@ struct LibraryView: View {
     /// Only photos reach the editor.
     private func openEditor(_ item: LibraryItem, group: EditorGroup) {
         guard item.isEditable else { return }
-        editor = EditorModel(item: item, edits: library.edits, looks: library.lookStore, group: group)
+        editorGroup = group
         path = [item]
     }
 

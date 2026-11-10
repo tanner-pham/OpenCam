@@ -18,7 +18,8 @@ struct EditorPanel: View {
             .labelsHidden()
             .padding(.horizontal, Theme.Space.l)
             ScrollView {
-                VStack(spacing: Theme.Space.xs) {
+                // The rows' 44 pt name areas already space them evenly.
+                VStack(spacing: 0) {
                     ForEach(model.group.keys, id: \.self) { key in
                         AdjustmentSlider(key: key, value: $model.adjustments[key]) { model.reset(key) }
                     }

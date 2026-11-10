@@ -7,6 +7,7 @@ struct EditorView: View {
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @State private var isConfirmingDiscard = false
 
     /// Stacked, the picture never takes so much height that less than this is left for the panel.
     private static let minPanelHeight: CGFloat = 240
@@ -21,8 +22,14 @@ struct EditorView: View {
         layout
             .navigationTitle(model.item.stem)
             .navigationBarTitleDisplayMode(.inline)
+            // SwiftUI cannot ask before the system back control or swipe pops, so both are replaced by a system cancel
+            // button that asks first when changes would be lost. Hiding the back control also turns off the back swipe.
             .navigationBarBackButtonHidden()
             .toolbar { toolbar }
+            .confirmationDialog("Discard changes?", isPresented: $isConfirmingDiscard, titleVisibility: .visible) {
+                Button("Discard changes", role: .destructive, action: onDone)
+                Button("Keep editing", role: .cancel) {}
+            }
             .task {
                 guard model.phase == .loading else { return }
                 await model.load()
@@ -53,6 +60,9 @@ struct EditorView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .cancellationAction) {
+            Button(role: .cancel, action: leave)
+        }
         ToolbarItem(placement: .topBarTrailing) {
             Button("Reset all", action: model.resetAll)
                 .disabled(isFailed || (model.adjustments.isIdentity && model.lookName == nil))
@@ -65,6 +75,11 @@ struct EditorView: View {
     /// A failed photo closes without saving, so it never traps the person; otherwise the edit is saved first.
     private func done() {
         if isFailed || model.save() { onDone() }
+    }
+
+    /// Leaves without saving, asking first when changes would be lost.
+    private func leave() {
+        if model.hasUnsavedChanges { isConfirmingDiscard = true } else { onDone() }
     }
 
     /// The picture's fitted height at the full width, held so the panel keeps `minPanelHeight`.

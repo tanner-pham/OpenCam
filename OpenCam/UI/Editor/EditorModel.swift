@@ -17,6 +17,8 @@ import OSLog
     /// Used by the Looks group (Task 8).
     private let lookStore: LookStore
     private let renderer: LookRenderer
+    /// The preview render; `renderer.renderedCGImage` unless a test replaces it.
+    private let renderPreview: @Sendable (CIImage, Adjustments) async -> CGImage?
 
     var adjustments = Adjustments() {
         didSet { if adjustments != oldValue { requestRender() } }
@@ -43,15 +45,24 @@ import OSLog
     private var renderTask: Task<Void, Never>?
     private var shownGeneration = 0
 
-    init(item: LibraryItem, edits: EditStore, looks: LookStore, group: EditorGroup = .light, renderer: LookRenderer = .shared) {
+    /// `renderPreview` is a test seam for a render that fails; the app never passes it.
+    init(item: LibraryItem, edits: EditStore, looks: LookStore, group: EditorGroup = .light, renderer: LookRenderer = .shared,
+         renderPreview: (@Sendable (CIImage, Adjustments) async -> CGImage?)? = nil) {
         self.item = item
         self.edits = edits
         self.lookStore = looks
         self.group = group
         self.renderer = renderer
+        self.renderPreview = renderPreview ?? { image, adjustments in await renderer.renderedCGImage(image, adjustments: adjustments) }
     }
 
     var hasChanges: Bool { adjustments != savedEdit.adjustments || lookName != savedEdit.lookName }
+
+    /// Changes that leaving without Done would lose. A photo that cannot be edited (any failed phase) has none to lose.
+    var hasUnsavedChanges: Bool {
+        if case .failed = phase { return false }
+        return hasChanges
+    }
 
     /// Reads the edit (an unreadable one counts as none), decodes the proxy off the main actor and renders the first preview.
     /// An edit from a newer version leaves the photo read-only and decodes nothing.
@@ -89,6 +100,11 @@ import OSLog
         original = unedited
         requestRender()
         await waitForPreview()
+        guard preview != nil else {
+            // The render already logged why; without a first picture the photo cannot be edited.
+            phase = .failed(LibraryCopy.cannotOpen)
+            return
+        }
         phase = .ready
     }
 
@@ -142,7 +158,7 @@ import OSLog
     private func runRenders(from first: (generation: Int, value: Adjustments)) async {
         var job: (generation: Int, value: Adjustments)? = first
         while let current = job {
-            if let proxy, let image = await renderer.renderedCGImage(proxy, adjustments: current.value) {
+            if let proxy, let image = await renderPreview(proxy, current.value) {
                 show(image, adjustments: current.value, generation: current.generation)
             } else {
                 Self.logger.error("[EditorModel:runRenders] The preview could not be rendered — {stem: \(self.item.stem, privacy: .public)}")
