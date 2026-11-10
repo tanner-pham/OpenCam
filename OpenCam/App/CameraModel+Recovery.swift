@@ -1,4 +1,3 @@
-import AVFoundation
 import Foundation
 
 /// A session that stops with a runtime error goes back to a selection that works, or says the camera stopped while Mode,
@@ -19,11 +18,10 @@ extension CameraModel {
         isCameraReleasedForLibrary || isScanningFormats || isSessionStoppedForRescan || isSweeping
     }
 
-    /// AVError.h: AVErrorMediaServicesWereReset (-11819). The session restarts itself after a reset
-    /// (`CameraSession.restartAfterMediaServicesReset`, then `.restarted`), so a reset never reaches `cameraStopped`. The event
-    /// carries text only; the session writes the top-level error's code there as `code: <n>`.
+    /// The session restarts itself after a media-services reset (`CameraSession.restartAfterMediaServicesReset`, then
+    /// `.restarted`), so a reset never reaches `cameraStopped`. The event carries text only, in `RuntimeErrorText`'s format.
     static func isMediaServicesReset(_ message: String) -> Bool {
-        message.contains("code: \(AVError.Code.mediaServicesWereReset.rawValue)")
+        RuntimeErrorText.isMediaServicesReset(message)
     }
 
     /// Called for every runtime error that is not a media-services reset.

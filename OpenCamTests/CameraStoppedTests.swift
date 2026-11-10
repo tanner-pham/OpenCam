@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Testing
 @testable import OpenCam
@@ -214,6 +215,23 @@ import Testing
         #expect(model.phase == .failed("The camera stopped.")); #expect(model.confirmed == nil); #expect(await fake.calls.isEmpty)
         model.apply(.restarted)
         #expect(model.phase == .ready)
+    }
+
+    /// What `CameraSession` writes for a reset is recognised as one; a -11800, a -11819 from another domain, or a -11819
+    /// only as the underlying error is not.
+    @Test func theSessionsResetMessageIsRecognisedAndNoOtherIs() {
+        let applied = "lens: wide, mode: video"
+        let reset = RuntimeErrorText.message(for: NSError(domain: AVFoundationErrorDomain, code: -11819), applied: applied)
+        #expect(CameraModel.isMediaServicesReset(reset))
+        let stopped = RuntimeErrorText.message(for: NSError(domain: AVFoundationErrorDomain, code: -11800), applied: applied)
+        #expect(!CameraModel.isMediaServicesReset(stopped))
+        let otherDomain = RuntimeErrorText.message(for: NSError(domain: NSOSStatusErrorDomain, code: -11819), applied: applied)
+        #expect(!CameraModel.isMediaServicesReset(otherDomain))
+        let underlying = NSError(domain: AVFoundationErrorDomain, code: -11800,
+                                 userInfo: [NSUnderlyingErrorKey: NSError(domain: AVFoundationErrorDomain, code: -11819)])
+        let wrapped = RuntimeErrorText.message(for: underlying, applied: applied)
+        #expect(wrapped.contains("underlying: AVFoundationErrorDomain -11819")); #expect(wrapped.hasSuffix("lens: wide, mode: video}"))
+        #expect(!CameraModel.isMediaServicesReset(wrapped))
     }
 
     /// The clip ends as it always has; only then does the camera restart.
