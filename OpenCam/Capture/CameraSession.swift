@@ -12,6 +12,8 @@ actor CameraSession: SessionConfigurator {
     private var notificationTokens: [any NSObjectProtocol] = []
     private var videoInput: AVCaptureDeviceInput?
     private var audioInput: AVCaptureDeviceInput?
+    /// Its output is attached in photo mode only.
+    private let photoCapturer = PhotoCapturer()
     private var pressureObservation: NSKeyValueObservation?
     /// True from a media-services-reset restart until it succeeds, so a reset during that restart is not retried.
     private var isRestartingAfterReset = false
@@ -85,7 +87,11 @@ actor CameraSession: SessionConfigurator {
         }
         try attachVideo(device, lensID: lens.id)
         attachAudio(configuration.includesAudio)
+        try attachPhotoOutput(configuration.mode == .photo)
         try applyFormat(configuration, to: device)
+        if configuration.mode == .photo {
+            try applyPhotoDimensions(configuration.photo, format: device.activeFormat)
+        }
         pressureObservation = Self.observePressure(of: device, continuation: continuation)
     }
 
@@ -152,6 +158,32 @@ actor CameraSession: SessionConfigurator {
         }
         session.addInput(input)
         audioInput = input
+    }
+
+    // MARK: Outputs
+
+    /// Photo capture is unsupported in Apple Log, which video mode may select, so the output is detached there.
+    private func attachPhotoOutput(_ isAttached: Bool) throws(CameraSessionError) {
+        let output = photoCapturer.output
+        guard session.outputs.contains(output) != isAttached else { return }
+        guard isAttached else {
+            session.removeOutput(output)
+            return
+        }
+        guard session.canAddOutput(output) else { throw .cannotAddOutput(name: "photo") }
+        session.addOutput(output)
+    }
+
+    /// The largest photo follows the selected size; it must be one the active format lists (AVCapturePhotoOutput.h,
+    /// `maxPhotoDimensions`), and is set before the session starts on the first configure.
+    private func applyPhotoDimensions(_ option: PhotoOption?, format: AVCaptureDevice.Format) throws(CameraSessionError) {
+        guard let option else { return }
+        guard let dimensions = format.supportedMaxPhotoDimensions.first(where: { Int($0.width) == option.width && Int($0.height) == option.height }) else {
+            throw .noMatchingFormat(option: "\(option.format.rawValue) \(option.width) x \(option.height)")
+        }
+        let current = photoCapturer.output.maxPhotoDimensions
+        guard current.width != dimensions.width || current.height != dimensions.height else { return }
+        photoCapturer.output.maxPhotoDimensions = dimensions
     }
 
     // MARK: Format
@@ -297,5 +329,20 @@ actor CameraSession: SessionConfigurator {
         case .shutdown: .shutdown
         default: .nominal
         }
+    }
+}
+
+extension CameraSession {
+    /// Captures one photo in `format`; RAW goes to `dngURL` and HEIF to `heicURL`. Returns the files written.
+    func capturePhoto(format: PhotoFormat, dngURL: URL, heicURL: URL) async throws(PhotoCaptureError) -> [URL] {
+        guard let device = videoInput?.device, session.outputs.contains(photoCapturer.output) else {
+            throw .captureFailed(reason: "photo output not attached")
+        }
+        // Each request asks for the output's maximum, which must be a size the active format lists.
+        let maximum = photoCapturer.output.maxPhotoDimensions
+        guard device.activeFormat.supportedMaxPhotoDimensions.contains(where: { $0.width == maximum.width && $0.height == maximum.height }) else {
+            throw .captureFailed(reason: "photo size \(maximum.width) x \(maximum.height) not offered by the active format")
+        }
+        return try await photoCapturer.capture(format: format, deviceZoom: Double(device.videoZoomFactor), dngURL: dngURL, heicURL: heicURL)
     }
 }

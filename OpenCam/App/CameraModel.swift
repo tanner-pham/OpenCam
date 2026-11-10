@@ -47,8 +47,16 @@ final class CameraModel {
     @ObservationIgnored private var isApplyingSelection = false
     /// True from a launch without capabilities until real ones arrive; nothing is saved meanwhile.
     @ObservationIgnored private var isAwaitingRestore: Bool
+    /// The running session, for capture; set by `start(session:)`.
+    @ObservationIgnored private var cameraSession: CameraSession?
+    /// Created on the first capture.
+    @ObservationIgnored private var captureStore: CaptureStore?
+    /// Photo captures still running, by file number. A configure queued after a press waits for them,
+    /// because Bayer RAW needs the zoom unchanged until the capture ends (AVCapturePhotoOutput.h).
+    @ObservationIgnored private var photoCaptures: [Int: Task<Void, Never>] = [:]
 
     static let formatFailedNotice = "That format could not be used."
+    static let photoNotSavedNotice = "Photo not saved."
 
     init(config: LaunchConfig, capabilities: CaptureCapabilities, isSimulator: Bool, defaults: UserDefaults = .standard,
          capabilitySource: CapabilitySource = .device) {
@@ -174,7 +182,57 @@ final class CameraModel {
         selectionChanged()
     }
 
-    func capturePressed() {}
+    func capturePressed() {
+        guard canCapture else { return }
+        switch mode {
+        case .photo: capturePhoto()
+        case .video: break   // Recording arrives with the movie output.
+        }
+    }
+
+    /// Reserves a file number now, so quick presses never share one, then captures behind any queued configure.
+    /// RAW and HEIF of one press share the number; `lastCapture` becomes the HEIC if written, else the DNG.
+    private func capturePhoto() {
+        guard let cameraSession, let option = currentPhotoOption else { return }
+        let store: CaptureStore
+        if let captureStore {
+            store = captureStore
+        } else {
+            do throws(CaptureStoreError) {
+                store = try CaptureStore.appDefault()
+            } catch {
+                photoFailed(error.description)
+                return
+            }
+            captureStore = store
+        }
+        let sequence = store.reserveSequence()
+        let dngURL = store.url(sequence: sequence, kind: .dng)
+        let heicURL = store.url(sequence: sequence, kind: .heic)
+        let pendingConfigure = configureTask
+        photoCaptures[sequence] = Task {
+            defer { photoCaptures[sequence] = nil }
+            _ = await pendingConfigure?.value
+            do throws(PhotoCaptureError) {
+                let urls = try await cameraSession.capturePhoto(format: option.format, dngURL: dngURL, heicURL: heicURL)
+                lastCapture = urls.contains(heicURL) ? heicURL : urls.first
+            } catch {
+                photoFailed(error.description)
+            }
+        }
+    }
+
+    private func photoFailed(_ message: String) {
+        Self.logger.error("\(message, privacy: .public)")
+        notice = Self.photoNotSavedNotice
+    }
+
+    /// Waits for every photo capture already running.
+    private func waitForPhotoCaptures() async {
+        for capture in Array(photoCaptures.values) {
+            await capture.value
+        }
+    }
 
     private func settleSelections() {
         record = Self.settle(record, with: recordResolver) ?? record
@@ -228,8 +286,12 @@ final class CameraModel {
         let generation = configureGeneration
         let selection = currentSelection
         let previous = configureTask
+        let captures = Array(photoCaptures.values)
         let task = Task { () -> CameraSessionError? in
             _ = await previous?.value
+            for capture in captures {
+                await capture.value
+            }
             guard generation == configureGeneration else { return nil }
             do throws(CameraSessionError) {
                 try await configurator.configure(configuration)
@@ -321,6 +383,7 @@ extension CameraModel {
             return
         }
         attachSession(session, configuredWith: configuration, selection: selection)
+        cameraSession = session
         await session.start()
         phase = .ready
         for await event in session.events {
@@ -362,6 +425,7 @@ extension CameraModel {
         // No configure may queue from here, and none already queued may still be running when the scanner touches the cameras.
         isScanningFormats = true
         await waitForQueuedConfigures()
+        await waitForPhotoCaptures()
         await configurator?.stop()
         let lenses = capabilitySource.discoverLenses()
         let capabilities = await scanCapabilities(lenses: lenses)
