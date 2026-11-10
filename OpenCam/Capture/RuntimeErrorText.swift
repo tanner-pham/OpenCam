@@ -15,6 +15,14 @@ nonisolated enum RuntimeErrorText {
         return "[CameraSession:runtimeError] Session stopped — {\(parts.joined(separator: ", "))}"
     }
 
+    /// Said by the session when its own restart after a media-services reset left it stopped. Its domain is not
+    /// AVFoundation's, so it is never taken for a reset.
+    static func restartFailedMessage(applied: String?) -> String {
+        let error = NSError(domain: "OpenCam.CameraSession", code: 1,
+                            userInfo: [NSLocalizedDescriptionKey: "The session did not start again after a media-services reset"])
+        return message(for: error, applied: applied)
+    }
+
     /// AVError.h: AVErrorMediaServicesWereReset (-11819) in AVFoundationErrorDomain. A message that names a domain must name
     /// that one with the code; one without a domain (written before the domain was included) is matched on the code alone.
     static func isMediaServicesReset(_ message: String) -> Bool {

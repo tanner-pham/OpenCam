@@ -30,7 +30,8 @@ extension CameraModel {
         runtimeErrorCount += 1
         confirmation?.cancel()
         confirmation = nil
-        // A reset whose restart never came is over; this error is handled as any other.
+        // A reset whose restart failed is over: its restart was the one recovery, so the camera is stopped (below).
+        let wasResetting = isResettingMediaServices
         isResettingMediaServices = false
         // Released for the Library: the session is stopped on purpose, and the Library's return configures and starts it
         // again; that return is the one recovery.
@@ -39,6 +40,7 @@ extension CameraModel {
             return
         }
         phase = .failed(Self.cameraStopped)
+        guard !wasResetting else { return }
         // An automatic recovery already ran and is not confirmed: the stopped state.
         guard !isRecoveryUnconfirmed, configurator != nil else { return }
         // A rescan's own configure and start follow; they are the one recovery.

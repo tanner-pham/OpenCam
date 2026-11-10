@@ -290,6 +290,21 @@ import Testing
         #expect(await fake.calls == ["configure", "configure", "start"]); #expect(await fake.applied.last == firstConfiguration)
     }
 
+    /// A reset whose own restart fails leaves the stopped state, with Try again.
+    @Test func aResetWhoseRestartFailsLeavesTryAgain() async throws {
+        let (model, fake, _) = try attachedModel()
+        #expect(await confirmed(model))
+        model.apply(.runtimeError(RuntimeErrorText.message(for: NSError(domain: AVFoundationErrorDomain, code: -11819), applied: nil)))
+        #expect(!model.isCameraStopped)
+        model.apply(.runtimeError(RuntimeErrorText.restartFailedMessage(applied: "lens: wide, mode: video")))
+        await model.waitForQueuedConfigures()
+        #expect(model.isCameraStopped); #expect(model.canOpenRecordSettings); #expect(await fake.calls.isEmpty)
+        model.retryCamera()
+        await model.waitForQueuedConfigures()
+        #expect(await fake.calls == ["configure", "start"])
+        #expect(await eventually { model.phase == .ready })
+    }
+
     /// The clip ends as it always has; only then does the camera restart.
     @Test func aStopWhileRecordingRecoversOnceTheClipHasEnded() async throws {
         let (model, fake, _) = try attachedModel()

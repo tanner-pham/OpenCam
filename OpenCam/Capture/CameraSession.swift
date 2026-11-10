@@ -203,6 +203,8 @@ actor CameraSession: SessionConfigurator {
         session.startRunning()
         guard session.isRunning else {
             Self.logger.error("[CameraSession:restartAfterMediaServicesReset] The session did not start again — {isRunning: false}")
+            // A plain runtime error, not a reset, so the model leaves the reset and offers Try again.
+            continuation.yield(.runtimeError(RuntimeErrorText.restartFailedMessage(applied: appliedConfiguration.withLock { $0 })))
             return
         }
         continuation.yield(.restarted)
