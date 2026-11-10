@@ -18,6 +18,8 @@ nonisolated struct SweepRow: Codable, Sendable, Equatable {
     let error: String?
     /// The raw error description, kept in the report file only, never on screen.
     let detail: String?
+    /// True for a step that passed its deadline; reports written before this field read as false.
+    var isTimedOut = false
     /// False when the camera was interrupted or stopped while the row ran; such a row says nothing about the option.
     /// Reports written before this field read as true.
     var wasCameraUsable = true
@@ -37,7 +39,7 @@ nonisolated struct SweepRow: Codable, Sendable, Equatable {
 
     /// False for a row that passed its deadline, or that ran while the camera was unusable: it says nothing about
     /// whether the option works.
-    var hasAnswer: Bool { error != Self.didNotFinish && wasCameraUsable }
+    var hasAnswer: Bool { !isTimedOut && wasCameraUsable }
 
     /// This row, marked as recorded while the camera was unusable.
     func recordedWithoutCamera() -> SweepRow {
@@ -48,7 +50,7 @@ nonisolated struct SweepRow: Codable, Sendable, Equatable {
 
     /// A step that passed its deadline; `detail` names the step.
     static func timedOut(requested: VideoOption, detail: String) -> SweepRow {
-        SweepRow(requested: requested, actual: nil, status: .fail, error: didNotFinish, detail: detail)
+        SweepRow(requested: requested, actual: nil, status: .fail, error: didNotFinish, detail: detail, isTimedOut: true)
     }
 
     private static func mismatch(requested: VideoOption, facts: ClipFacts) -> String? {
@@ -80,7 +82,7 @@ nonisolated struct SweepRow: Codable, Sendable, Equatable {
 }
 
 nonisolated extension SweepRow {
-    /// Decodes reports written before `wasCameraUsable` existed.
+    /// Decodes reports written before `isTimedOut` and `wasCameraUsable` existed.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         requested = try container.decode(VideoOption.self, forKey: .requested)
@@ -88,6 +90,7 @@ nonisolated extension SweepRow {
         status = try container.decode(SweepStatus.self, forKey: .status)
         error = try container.decodeIfPresent(String.self, forKey: .error)
         detail = try container.decodeIfPresent(String.self, forKey: .detail)
+        isTimedOut = try container.decodeIfPresent(Bool.self, forKey: .isTimedOut) ?? false
         wasCameraUsable = try container.decodeIfPresent(Bool.self, forKey: .wasCameraUsable) ?? true
     }
 }

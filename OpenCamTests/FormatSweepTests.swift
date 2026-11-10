@@ -19,6 +19,25 @@ import Testing
         #expect(errored.status == .fail); #expect(errored.error == "Recording failed.")
         #expect(errored.detail == "[MovieRecorder:start] Cannot record — {codec: apch}")
     }
+    @Test func anAnswerFollowsTheTimeoutFlagNotTheText() throws {
+        let timedOut = SweepRow.timedOut(requested: ask, detail: "[FormatSweep:run] No answer before the deadline — {step: finish, codec: apch}")
+        #expect(timedOut.isTimedOut); #expect(!timedOut.hasAnswer)
+        // Text alone never decides it.
+        let sameText = SweepRow(requested: ask, actual: nil, status: .fail, error: SweepRow.didNotFinish, detail: nil)
+        #expect(!sameText.isTimedOut); #expect(sameText.hasAnswer)
+        #expect(!timedOut.recordedWithoutCamera().hasAnswer); #expect(!sameText.recordedWithoutCamera().hasAnswer)
+        // Round trip, and a report written before either flag existed.
+        let decoder = JSONDecoder()
+        #expect(try decoder.decode(SweepRow.self, from: JSONEncoder().encode(timedOut)) == timedOut)
+        let sorted = JSONEncoder()
+        sorted.outputFormatting = .sortedKeys
+        let olderJSON = try #require(String(data: sorted.encode(SweepRow.evaluate(requested: ask, facts: facts(), error: nil)), encoding: .utf8))
+            .replacingOccurrences(of: "\"isTimedOut\":false,", with: "").replacingOccurrences(of: ",\"wasCameraUsable\":true", with: "")
+        #expect(!olderJSON.contains("isTimedOut")); #expect(!olderJSON.contains("wasCameraUsable"))
+        let decoded = try decoder.decode(SweepRow.self, from: Data(olderJSON.utf8))
+        #expect(!decoded.isTimedOut); #expect(decoded.wasCameraUsable); #expect(decoded.hasAnswer)
+    }
+
     @Test func reportFileName() throws {
         let date = try #require(ISO8601DateFormatter().date(from: "2026-11-09T14:30:05Z"))
         #expect(SweepReport.fileName(for: date, timeZone: try #require(TimeZone(identifier: "UTC"))) == "sweep-2026-11-09-143005.json")
