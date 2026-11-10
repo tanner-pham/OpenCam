@@ -28,7 +28,7 @@ extension CameraModel {
     func watchFrames(for configuration: SessionConfiguration) {
         frameWatch?.cancel()
         frameWatch = nil
-        guard configuration.needsFrames, let cameraSession else { return }
+        guard configuration.needsFrames, !isSessionStoppedForRescan, let cameraSession else { return }
         let frames = cameraSession.previewSource.frames
         let start = frames.deliveredCount
         let clock = ContinuousClock()

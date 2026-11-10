@@ -107,6 +107,8 @@ final class CameraModel {
     @ObservationIgnored var isCameraReleasedForLibrary = false
     /// Waits for the look's first frames after a configure; a stall falls back to the plain preview.
     @ObservationIgnored var frameWatch: Task<Void, Never>?
+    /// True while a rescan holds the session stopped, until it runs again; no frame watch starts meanwhile.
+    @ObservationIgnored var isSessionStoppedForRescan = false
 
     static let formatFailedNotice = "That format could not be used."
     static let formatSetupFailed = "This format could not be set up."
