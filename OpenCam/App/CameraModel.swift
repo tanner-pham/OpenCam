@@ -38,8 +38,11 @@ final class CameraModel {
     @ObservationIgnored private var requestedConfiguration: SessionConfiguration?
     /// What the session last applied, and the selection that produced it; a failed configure returns to them.
     @ObservationIgnored private var lastWorking: (configuration: SessionConfiguration, selection: SavedSelections)?
-    /// True while a failed configure puts the last working selection back, so those changes do not reconfigure.
-    @ObservationIgnored private var isRestoringSelection = false
+    /// True while several selection properties are set as one change (a restore or a capabilities load);
+    /// the caller persists and reconfigures once at the end.
+    @ObservationIgnored private var isApplyingSelection = false
+    /// True from a launch without capabilities until real ones arrive; nothing is saved meanwhile.
+    @ObservationIgnored private var isAwaitingRestore: Bool
 
     static let formatFailedNotice = "That format could not be used."
 
@@ -64,16 +67,13 @@ final class CameraModel {
         }
 
         let saved = config.isScripted ? nil : SavedSelections.load(from: defaults)
-        let defaultID = Self.defaultLens(in: capabilities)?.id ?? ""
-        let lensID = saved.map { saved in capabilities.lenses.contains { $0.id == saved.lensID } ? saved.lensID : defaultID } ?? defaultID
-        self.lensID = lensID
+        let resolved = Self.resolve(lensID: saved?.lensID, record: saved?.record, photo: saved?.photo, in: capabilities)
+        self.lensID = resolved.lensID
         self.mode = saved?.mode ?? config.mode
-
-        let lens = capabilities.lenses.first { $0.id == lensID }
-        let recordResolver = RecordSelectionResolver(options: capabilities.videoOptions, lens: lens)
-        let photoResolver = PhotoSelectionResolver(options: capabilities.photoOptions, lenses: capabilities.lenses, lensID: lensID)
-        self.record = Self.settle(saved?.record, with: recordResolver) ?? Self.placeholderRecord
-        self.photo = Self.settle(saved?.photo, with: photoResolver) ?? Self.placeholderPhoto
+        self.record = resolved.record ?? Self.placeholderRecord
+        self.photo = resolved.photo ?? Self.placeholderPhoto
+        // A device launch starts with no capabilities, so the saved choices wait for real ones and must not be overwritten meanwhile.
+        self.isAwaitingRestore = !config.isScripted && capabilities.lenses.isEmpty
     }
 
     var lenses: [Lens] { capabilities.lenses }
@@ -148,12 +148,21 @@ final class CameraModel {
         settleSelections()
     }
 
+    /// On a launch that is not scripted, the saved mode, lens and selections are applied again and settled against
+    /// the new capabilities: a missing lens becomes the default lens, and selections move to the nearest valid one.
     func replaceCapabilities(_ capabilities: CaptureCapabilities) {
+        let saved = isScripted ? nil : SavedSelections.load(from: defaults)
+        let candidate = saved ?? currentSelection
+        let resolved = Self.resolve(lensID: candidate.lensID, record: candidate.record, photo: candidate.photo, in: capabilities)
         self.capabilities = capabilities
-        if !capabilities.lenses.contains(where: { $0.id == lensID }) {
-            lensID = Self.defaultLens(in: capabilities)?.id ?? ""
-        }
-        settleSelections()
+        isApplyingSelection = true
+        lensID = resolved.lensID
+        if let saved { mode = saved.mode }
+        record = resolved.record ?? record
+        photo = resolved.photo ?? photo
+        isApplyingSelection = false
+        isAwaitingRestore = false
+        selectionChanged()
     }
 
     func capturePressed() {}
@@ -168,13 +177,13 @@ final class CameraModel {
     }
 
     private func selectionChanged() {
+        guard !isApplyingSelection else { return }
         persist()
-        guard !isRestoringSelection else { return }
         enqueueConfigure()
     }
 
     private func persist() {
-        guard !isScripted else { return }
+        guard !isScripted, !isAwaitingRestore else { return }
         currentSelection.save(to: defaults)
     }
 
@@ -229,18 +238,30 @@ final class CameraModel {
         }
         notice = Self.formatFailedNotice
         guard generation == configureGeneration else { return }
-        isRestoringSelection = true
+        isApplyingSelection = true
         lensID = lastWorking.selection.lensID
         mode = lastWorking.selection.mode
         record = lastWorking.selection.record
         photo = lastWorking.selection.photo
-        isRestoringSelection = false
+        isApplyingSelection = false
         requestedConfiguration = lastWorking.configuration
         configureTask = nil
+        persist()
     }
 
     private static func defaultLens(in capabilities: CaptureCapabilities) -> Lens? {
         capabilities.lenses.first { $0.kind == .wide && $0.zoomFactor == 1 } ?? capabilities.lenses.first
+    }
+
+    /// The lens if it exists, else the default lens; each selection settled to the nearest valid one, else that lens's default.
+    /// A nil selection means none exists for the lens.
+    private static func resolve(lensID: String?, record: RecordSelection?, photo: PhotoSelection?, in capabilities: CaptureCapabilities)
+        -> (lensID: String, record: RecordSelection?, photo: PhotoSelection?) {
+        let lensID = lensID.flatMap { id in capabilities.lenses.contains { $0.id == id } ? id : nil } ?? defaultLens(in: capabilities)?.id ?? ""
+        let lens = capabilities.lenses.first { $0.id == lensID }
+        let recordResolver = RecordSelectionResolver(options: capabilities.videoOptions, lens: lens)
+        let photoResolver = PhotoSelectionResolver(options: capabilities.photoOptions, lenses: capabilities.lenses, lensID: lensID)
+        return (lensID, settle(record, with: recordResolver), settle(photo, with: photoResolver))
     }
 
     private static func settle(_ selection: RecordSelection?, with resolver: RecordSelectionResolver) -> RecordSelection? {
