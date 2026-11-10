@@ -42,8 +42,8 @@ import OSLog
     }
 
     /// Imports the pictures into the shared Captures folder, then reloads so they show.
-    func importPhotos(_ candidates: [ImportCandidate]) -> ImportResult {
-        let result = PhotoImporter.importCandidates(candidates, into: captures)
+    func importPhotos(_ candidates: [ImportCandidate]) async -> ImportResult {
+        let result = await PhotoImporter.importCandidates(candidates, into: captures)
         reload()
         return result
     }

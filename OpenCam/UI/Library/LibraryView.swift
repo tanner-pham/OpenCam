@@ -99,7 +99,7 @@ struct LibraryView: View {
             for item in items {
                 if let candidate = await PhotoImporter.candidate(from: item) { candidates.append(candidate) } else { unloaded += 1 }
             }
-            let result = library.importPhotos(candidates)
+            let result = await library.importPhotos(candidates)
             alertTitle = ImportResult(imported: result.imported, failed: result.failed + unloaded).message
         }
     }
