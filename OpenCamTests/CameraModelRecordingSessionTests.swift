@@ -76,4 +76,17 @@ import Testing
         model.apply(.restarted)
         #expect(!model.isRecording); #expect(model.recordingStart == nil)
     }
+
+    @Test func aClipThatEndsAsItStartsLeavesNoStartTime() async throws {
+        let sink = ResultSink()
+        let fake = FakeSessionConfigurator(failingLensIDs: [], onStartRecording: { url, option in await sink.finishAtOnce(url: url, option: option) })
+        let model = try deviceModel(fake)
+        sink.model = model
+        model.capturePressed()
+        #expect(await eventually { !model.isRecording })
+        // Let the start resume after its await.
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(model.recordingStart == nil); #expect(!model.isRecording)
+        await removeClips(of: fake)
+    }
 }

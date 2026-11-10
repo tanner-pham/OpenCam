@@ -386,6 +386,8 @@ final class CameraModel {
             }
             do throws(RecordingError) {
                 try await configurator.startRecording(option: option, url: url, minFreeBytes: minFreeBytes)
+                // A clip that ended as it started has already reported; the idle timecode must not keep a start time.
+                guard isRecording, recordingClip?.url == url else { return }
                 recordingStart = Date()
             } catch {
                 recordingDidFinish(RecordingResult(url: url, option: option, outcome: .failed(error.description), sidecar: nil))
