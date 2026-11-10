@@ -115,6 +115,10 @@ extension CameraModel {
         isRecoveryUnconfirmed = true
         let running = lastWorking
         if let confirmed, running?.configuration != confirmed.configuration {
+            // The same allowance as rule 5: once per configuration until a user action, so a confirmed configuration that
+            // keeps coming back (a look's frame fallback, say) cannot loop. Without it the stopped state stands.
+            guard confirmed.configuration != autoRestarted else { return }
+            autoRestarted = confirmed.configuration
             show(Self.formatFailedNotice, from: .configuration)
             restore(confirmed)
             restart(confirmed.configuration)

@@ -269,6 +269,27 @@ import Testing
         #expect(model.canOpenRecordSettings)
     }
 
+    /// Going back to the confirmed selection uses the same once-only allowance: when that selection then stops again with no
+    /// user action, the camera is stopped, after exactly one automatic configure and start.
+    @Test func aConfirmedSelectionRestoredOnceIsNotRestoredOrRestartedAgain() async throws {
+        let (model, fake, _) = try attachedModel()
+        let first = model.currentSelection
+        let firstConfiguration = try #require(model.sessionConfiguration)
+        #expect(await confirmed(model))
+        model.record = Self.other
+        await model.waitForQueuedConfigures()
+        model.apply(.runtimeError(Self.stop))
+        await model.waitForQueuedConfigures()
+        #expect(await eventually { model.phase == .ready })
+        #expect(model.currentSelection == first)
+        model.apply(.runtimeError(Self.stop))
+        await model.waitForQueuedConfigures()
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(model.isCameraStopped)
+        // The user's change configured once; the recovery configured and started once.
+        #expect(await fake.calls == ["configure", "configure", "start"]); #expect(await fake.applied.last == firstConfiguration)
+    }
+
     /// The clip ends as it always has; only then does the camera restart.
     @Test func aStopWhileRecordingRecoversOnceTheClipHasEnded() async throws {
         let (model, fake, _) = try attachedModel()
