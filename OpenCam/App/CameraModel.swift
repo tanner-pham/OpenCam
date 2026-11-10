@@ -41,7 +41,8 @@ final class CameraModel {
     var sweep: FormatSweep?
     /// The saved looks, read at launch and whenever the Library closes.
     var looks: [Look] = []
-    /// The look the camera applies; nil is None. Set only by `CameraModel+Look`.
+    /// The look the camera applies; nil is None. Set by `CameraModel+Look`, and by `select(_:)` when a recovery returns to
+    /// the default selection.
     var cameraLook: CameraLook?
     /// True when the look's frames could not be drawn with the current format; the viewfinder shows the plain preview until
     /// the next lens, mode, format or look change tries again. The look stays selected.
