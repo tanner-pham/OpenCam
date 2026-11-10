@@ -86,8 +86,8 @@ extension CameraModel: SweepDriver {
 
     // MARK: SweepDriver
 
-    /// The session runs and no interruption notice is shown.
-    var isCameraUsable: Bool { phase == .ready && noticeSource != .interruption }
+    /// The session runs and is not interrupted (any reason, backgrounding included).
+    var isCameraUsable: Bool { phase == .ready && !isInterrupted }
 
     /// A recording still running (one that passed its deadline) would hold the configure back, so the option fails at once.
     func applySweepOption(_ option: VideoOption) async throws(CameraSessionError) {

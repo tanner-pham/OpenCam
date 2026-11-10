@@ -30,6 +30,19 @@ import Testing
         model.apply(.runtimeError("[CameraSession:runtimeError] Session stopped — {code: -11800}")); #expect(!model.isCameraUsable)
     }
 
+    @Test func interruptionIsStateThatEndsOrRestarts() throws {
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: false, defaults: try Fixture.freshDefaults())
+        model.phase = .ready
+        model.apply(.interrupted(.background))
+        #expect(model.isInterrupted); #expect(!model.isCameraUsable); #expect(model.notice == nil)
+        model.apply(.interruptionEnded)
+        #expect(!model.isInterrupted); #expect(model.isCameraUsable)
+        model.apply(.interrupted(.cameraInUse))
+        #expect(model.isInterrupted)
+        model.apply(.restarted)
+        #expect(!model.isInterrupted); #expect(model.isCameraUsable)
+    }
+
     @Test func runtimeErrorThatDoesNotRecoverStaysFailed() throws {
         let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: false, defaults: try Fixture.freshDefaults())
         model.apply(.runtimeError("[CameraSession:runtimeError] Session stopped — {code: -11800}"))

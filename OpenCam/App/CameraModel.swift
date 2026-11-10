@@ -27,6 +27,9 @@ final class CameraModel {
     private(set) var access: CaptureAccess
     private(set) var pressureLevel: PressureLevel = .nominal
     private(set) var isThermalPressure = false
+    /// True from any interruption, backgrounding included, until it ends or the session restarts. Kept apart from the
+    /// notice, which an interruption does not always set.
+    private(set) var isInterrupted = false
     /// True while the scanner sets formats on the cameras (first scan or rescan). Lens and mode cannot change then,
     /// and no configure is queued; the selection in force when the scan ends is configured afterwards.
     var isScanningFormats = false
@@ -594,11 +597,13 @@ extension CameraModel {
     func apply(_ event: SessionEvent) {
         switch event {
         case .interrupted(let reason):
+            isInterrupted = true
             // An interruption without a notice (backgrounding) changes nothing; one with a notice never covers a capture notice.
             if let interruptionNotice = reason.notice, noticeSource != .capture {
                 show(interruptionNotice, from: .interruption)
             }
         case .interruptionEnded:
+            isInterrupted = false
             clearNotice(from: .interruption)
         case .runtimeError(let message):
             // Sets no notice; the phase says the camera stopped.
@@ -608,6 +613,7 @@ extension CameraModel {
             // The session runs again, so a pause notice is stale; any other notice stays. A clip recording before the
             // reset is gone, and the movie output may never report it.
             phase = .ready
+            isInterrupted = false
             clearNotice(from: .interruption)
             endRecordingWithoutResult(clip: nil, context: "restarted")
         case .microphoneUnavailable(let message):

@@ -77,6 +77,44 @@ import Testing
         #expect(!model.isRecording); #expect(model.recordingStart == nil)
     }
 
+    /// The model drives a real sweep; the first clip is interrupted as it starts, while a capture notice is on screen.
+    func sweepInterruptedAtTheFirstClip(by reason: InterruptionReason) async throws {
+        let sink = ResultSink()
+        let fake = FakeSessionConfigurator(failingLensIDs: [], onStartRecording: { _, _ in await sink.send(.interrupted(reason)) })
+        let model = try deviceModel(fake)
+        sink.model = model
+        let option = try #require(model.currentVideoOption)
+        let facts = ClipFacts(codecFourCC: "hvc1", width: 3840, height: 2160, nominalFrameRate: 30, durationSeconds: 3, frameCount: 85,
+                              droppedFrames: 5, colour: .rec709, megabitsPerSecond: 27, hasAudio: true)
+        model.recordingDidFinish(RecordingResult(url: URL(filePath: "/tmp/OC_0001.MOV"), option: option, outcome: .completed,
+                                                 sidecar: ClipSidecar(requested: option, actual: facts, outcome: "completed", recordedAt: Date(), error: nil)))
+        #expect(model.notice == "OC_0001 dropped 5 frames."); #expect(model.isCameraUsable)
+
+        let options = Array(model.sweepOptions.prefix(3))
+        try #require(options.count == 3)
+        let store = try CaptureStore(directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
+        let lens = try #require(model.currentLens)
+        let sweep = FormatSweep(driver: model, store: store, lens: lens, options: options, keepsClips: false, clipDuration: .milliseconds(10),
+                                deadlines: SweepDeadlines(start: .seconds(2), finish: .seconds(2), cancelGrace: .milliseconds(10)))
+        await model.runSweep(sweep, lensID: lens.id)
+
+        #expect(model.isInterrupted); #expect(!model.isCameraUsable)
+        #expect(sweep.rows.count == 1); #expect(sweep.rows.allSatisfy { !$0.hasAnswer })
+        let name = try #require(sweep.reportURL?.lastPathComponent)
+        #expect(sweep.resultText == "Stopped after 1 of 3. The camera stopped responding. Saved \(name).")
+        #expect(model.failedCombinations.failedByLens[lens.id] == nil)
+        #expect(!model.isSweeping); #expect(!model.isRecording)
+        await removeClips(of: fake)
+    }
+
+    @Test func aPhoneCallDuringASweepEndsItWhileACaptureNoticeShows() async throws {
+        try await sweepInterruptedAtTheFirstClip(by: .cameraInUse)
+    }
+
+    @Test func backgroundingDuringASweepEndsIt() async throws {
+        try await sweepInterruptedAtTheFirstClip(by: .background)
+    }
+
     @Test func aClipThatEndsAsItStartsLeavesNoStartTime() async throws {
         let sink = ResultSink()
         let fake = FakeSessionConfigurator(failingLensIDs: [], onStartRecording: { url, option in await sink.finishAtOnce(url: url, option: option) })
