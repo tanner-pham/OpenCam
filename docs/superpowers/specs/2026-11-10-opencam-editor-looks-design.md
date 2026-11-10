@@ -112,6 +112,12 @@ All of it uses the system components, system glass and Theme already in the app.
 - "Remove look" clears the photo's whole edit.
 - The photo also sits beside the panel when the screen is short (the folded phone held horizontally), not only on the open phone.
 - An edit file written by a newer version of OpenCam is read-only to an older one: it shows, but cannot be changed, so nothing the newer version stored is lost.
+- Leaving the editor without saving is an X in the strip, with a "Discard changes?" confirmation when there are unsaved changes. There is no back swipe, because the system offers no way to confirm before one.
+- A slider at its default shows no fill; a changed one fills from the centre.
+- "Remove look" on selected photos asks first, because it clears whole edits. "Apply look" asks first only when it would replace edits that already exist.
+- "Save as look" marks the photo's edit as coming from that look, so "Remove look" later clears it; the values live on in the saved look.
+- Long look names are cut to one line with an ellipsis on their tile.
+- Imported photos keep their original bytes and take their file extension from their contents, not from what the picker says.
 - The exact slider formulas (in plan E1). They are simple and pinned by tests; they are not a match for any other editor's sliders.
 
 Plan for E1: `docs/superpowers/plans/2026-11-10-opencam-editor-looks-e1.md`.
