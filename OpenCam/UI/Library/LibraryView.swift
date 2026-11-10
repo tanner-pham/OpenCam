@@ -1,3 +1,4 @@
+import PhotosUI
 import QuickLook
 import SwiftUI
 
@@ -14,6 +15,7 @@ struct LibraryView: View {
     @State private var previewURL: URL?
     @State private var isConfirmingDelete = false
     @State private var alertTitle: String?
+    @State private var pickedItems: [PhotosPickerItem] = []
 
     private static let columns = [GridItem(.adaptive(minimum: 110), spacing: 2)]
 
@@ -35,6 +37,7 @@ struct LibraryView: View {
             library.reload()
             applyLaunchSelection()
         }
+        .onChange(of: pickedItems) { _, items in importPicked(items) }
         .quickLookPreview($previewURL)
         .confirmationDialog(LibraryCopy.deleteTitle(count: selectedIDs.count), isPresented: $isConfirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive, action: deleteSelected)
@@ -69,7 +72,12 @@ struct LibraryView: View {
         ToolbarItem(placement: .topBarLeading) {
             Button(role: .close) { dismiss() }
         }
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            if !isSelecting {
+                PhotosPicker(selection: $pickedItems, maxSelectionCount: nil, selectionBehavior: .ordered, matching: .images, preferredItemEncoding: .current) {
+                    Label("Import", systemImage: "square.and.arrow.down")
+                }
+            }
             Button(isSelecting ? "Done" : "Select") { setSelecting(!isSelecting) }
                 .disabled(library.items.isEmpty && !isSelecting)
         }
@@ -78,6 +86,21 @@ struct LibraryView: View {
                 LibrarySelectionBar(count: selectedIDs.count) { isConfirmingDelete = true }
             }
             .axisBehavior(.verticalPreferred)
+        }
+    }
+
+    /// Loads what the picker returned, imports it, empties the selection and tells the person what happened.
+    private func importPicked(_ items: [PhotosPickerItem]) {
+        guard !items.isEmpty else { return }
+        pickedItems = []
+        Task {
+            var candidates: [ImportCandidate] = []
+            var unloaded = 0
+            for item in items {
+                if let candidate = await PhotoImporter.candidate(from: item) { candidates.append(candidate) } else { unloaded += 1 }
+            }
+            let result = library.importPhotos(candidates)
+            alertTitle = ImportResult(imported: result.imported, failed: result.failed + unloaded).message
         }
     }
 

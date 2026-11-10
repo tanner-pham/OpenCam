@@ -9,6 +9,18 @@ nonisolated enum LibraryCopy {
     static let newerEdit = "This photo was edited by a newer version of OpenCam."
     static let deleteMessage = "The files and their edits are removed from OpenCam. This cannot be undone."
 
+    /// The sentence after an import; nil when nothing was chosen.
+    static func importResult(imported: Int, failed: Int) -> String? {
+        let done = imported == 1 ? "Imported 1 photo." : "Imported \(imported) photos."
+        switch (imported, failed) {
+        case (0, 0): return nil
+        case (0, 1): return "The photo could not be imported."
+        case (0, _): return "\(failed) photos could not be imported."
+        case (_, 0): return done
+        default: return done + " \(failed) could not be imported."
+        }
+    }
+
     static func selectionTitle(count: Int) -> String {
         count == 0 ? "Select items" : "\(count) selected"
     }

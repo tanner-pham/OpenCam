@@ -38,6 +38,10 @@ enum TestFiles {
         try encode(.png, width: width, height: height, rgb: rgb)
     }
 
+    static func heicData(width: Int, height: Int, rgb: SIMD3<Float>) throws -> Data {
+        try encode(.heic, width: width, height: height, rgb: rgb)
+    }
+
     static func tiffData(width: Int, height: Int, rgb: SIMD3<Float>) throws -> Data {
         try encode(.tiff, width: width, height: height, rgb: rgb)
     }

@@ -41,6 +41,13 @@ import OSLog
         looks = lookStore.all()
     }
 
+    /// Imports the pictures into the shared Captures folder, then reloads so they show.
+    func importPhotos(_ candidates: [ImportCandidate]) -> ImportResult {
+        let result = PhotoImporter.importCandidates(candidates, into: captures)
+        reload()
+        return result
+    }
+
     func edit(for item: LibraryItem) -> PhotoEdit {
         item.isEditable ? editsByStem[item.stem] ?? PhotoEdit() : PhotoEdit()
     }
