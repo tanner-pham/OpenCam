@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- "iPhone Duo only, iOS 27.1 or later, Xcode 27.2, Swift 6, SwiftUI." Deployment target `27.1`, `SWIFT_VERSION = 6.0`, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` (as the prototype). Every type in `OpenCam/Capability/` is `nonisolated`, `Sendable`, and imports Foundation only.
+- "iPhone Duo only, iOS 27.1 or later, Xcode 27.2, Swift 6, SwiftUI." Deployment target `27.1`, `SWIFT_VERSION = 6.0`, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` (as the prototype). Every type in `OpenCam/Capability/` is `nonisolated`, `Sendable`, and imports Foundation only. Isolation everywhere else: plain data types, enums, and anything used inside the `CameraSession` actor or off the main actor (delegates, `MovieRecorder`, `CapabilityScanner`, `ClipInspector`, the sidecar and sweep JSON types) are declared `nonisolated`; only UI-facing `@Observable` classes (`CameraModel`, `FormatSweep`), `CaptureStore` and views are main-actor. Both targets build with `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`.
 - Targets: app `OpenCam` (bundle id `local.opencam.app`) and unit tests `OpenCamTests` (`local.opencam.app.tests`, Swift Testing). `OpenCam.xcodeproj` at the repo root with file-system-synchronized groups. `TARGETED_DEVICE_FAMILY = 1`. Source folders `OpenCam/App`, `Capability`, `Capture`, `UI`, `Support`. All paths are relative to the repo root.
 - "No third-party dependencies." "SwiftUI with system components and system glass throughout; dark appearance only." All four interface orientations.
 - "The Simulator has no camera. Every capture path is verified on the physical Duo. UI is verified in the Duo simulator with a stand-in image." The stand-in reads `No camera in Simulator`.
@@ -23,7 +23,7 @@
 - Code: no force unwraps, force casts or `try!` (tests included); no `Any`-typed values in our APIs (AVFoundation dictionaries are built at the call site from typed structs); one type per file; errors are specific enums conforming to `Error, CustomStringConvertible` with messages `[Module:Function] Description — {context}`, e.g. `[CameraSession:configure] Cannot add input — {lens: wide}`. The one unchecked crossing is `PreviewSource` (`@unchecked Sendable`), because `AVCaptureSession` is not Sendable in the SDK; no `@preconcurrency import`, no `nonisolated(unsafe)`.
 - Copy: plain, factual, sentence case, no em dashes in UI strings, no marketing or AI words, no "Analyzing" or "Thinking" states, never name a format or tool the device cannot use at that moment (a dimmed chip with its reason is allowed, per the spec's Record settings section).
 - Git: conventional commits, no attribution lines, never force-push.
-- Deliberate spec deviations: (1) No Dolby Vision chip; colours are exactly what `supportedColorSpaces` reports, and Dolby Vision metadata on HLG is checked on the device first. (2) No running dropped-frame count while recording: the movie output has no per-frame callback. Dropped frames are computed after each clip, kept in its sidecar and shown as a notice; a later plan closes the gap. (3) The strip has four items (Mode, Lens, Record settings, Library); Monitor tools is left out until its plan lands. (4) The bottom bar's histogram slot is empty until the monitoring plan. (5) Readouts are live and read-only. (6) "RAW" video means ProRes RAW through the movie output, listed only when the device reports `aprn` or `aprh`. (7) The photo panel has Format and Resolution rows; the lens is chosen on the strip. (8) Combinations that failed the last format sweep stay selectable so every format can be tried, but Record settings then reads "This combination did not record in the last format sweep." and the format summary takes the warning style.
+- Deliberate spec deviations: (1) No Dolby Vision chip; colours are exactly what `supportedColorSpaces` reports, and Dolby Vision metadata on HLG is checked on the device first. (2) No running dropped-frame count while recording: the movie output has no per-frame callback. Dropped frames are computed after each clip, kept in its sidecar and shown as a notice; a later plan closes the gap. (3) The strip has four items (Mode, Lens, Record settings, Library); Monitor tools is left out until its plan lands. (4) The bottom bar's histogram slot is empty until the monitoring plan. (5) Readouts are live and read-only. (6) "RAW" video means ProRes RAW through the movie output, listed only when the device reports `aprn` or `aprh`. (7) The photo panel has Format and Resolution rows; the lens is chosen on the strip. (8) Combinations that failed the last format sweep stay selectable so every format can be tried, but Record settings then reads "This combination did not record in the last format sweep." and the format summary takes the warning style. (9) Microphone denied is shown in the bottom bar ("No microphone access", tap opens Settings), not in the viewfinder area, because video still records; camera denied stays in the viewfinder area. (10) The HEVC Quality row lists bitrate tiers only, not bit depth; bit depth follows the colour chip (HLG and Log are 10-bit). (11) The stand-in label reads `No camera in Simulator` with no trailing period, because it is a label, not a sentence.
 
 ## Review Focus
 
@@ -336,7 +336,7 @@ Figures: ProRes Mbit/s at 1920 x 1080, 29.97 fps: Proxy 45, LT 102, 422 147, 422
 - Test: `OpenCamTests/LaunchConfigTests.swift`
 
 **Interfaces:**
-- Consumes: Tasks 1 to 3.
+- Consumes: Tasks 1 to 3. Photo rows use the photo chip ids Task 2 provides (format `PhotoFormat.rawValue`, resolution `String(megapixels)`) and take their caption from `PhotoSelectionResolver.reasonLine(_:for:)`, as video rows take theirs from `RecordSelectionResolver.reasonLine(_:for:)`.
 - Produces:
 
 ```swift
@@ -347,12 +347,12 @@ struct LaunchConfig: Equatable, Sendable { var orientation: LaunchOrientation?; 
 enum LaunchOrientation: String { case landscape, portrait }
 enum LaunchScreen: String { case main, record, sweep }
 enum SimulatedState: String { case scanning, cameraDenied, micDenied, lowStorage, storageFull, pressure }   // honoured only in the Simulator
-struct RecordSettingsSheet: View { let mode: CaptureMode; let capabilities: CaptureCapabilities; let lens: Lens?
-    @Binding var record: RecordSelection; @Binding var photo: PhotoSelection; let freeBytes: Int64 }
+struct RecordSettingsSheet: View { let mode: CaptureMode; let recordResolver: RecordSelectionResolver; let photoResolver: PhotoSelectionResolver
+    @Binding var record: RecordSelection; @Binding var photo: PhotoSelection; let freeBytes: Int64 }   // never builds its own resolvers
 struct ChipRow: View { let title: String; let chips: [Chip]; let selectedID: String; let reason: String?; let columns: Int; let onSelect: (String) -> Void }
 ```
 
-Flags: `-orientation landscape|portrait`, `-mode video|photo`, `-screen main|record|sweep`, `-recording on|off`, `-state <SimulatedState>`, `-freeSpaceMarginMB <Int>`, `-keepSweepClips on`; unknown values fall back to defaults. The sheet renders the five `RecordRow`s in video mode (chips from `chips`, caption from `reasonLine`, a tap calls `select` and writes the binding) with `DataRateEstimator.footer` below, or the two `PhotoRow`s in photo mode; titles "Record settings" / "Photo settings"; close is `Button(role: .close)`; chips keep the prototype styling (selected `.glassProminent` tinted `Theme.accent`, others `.glass`, unavailable at 0.35 opacity and disabled). For this task `OpenCamApp` loads the fixture, holds `@State` selections from `defaultSelection()` on lens `wide` with `freeBytes` 141_000_000_000, presents the sheet over black when `-screen record`, and applies `-orientation` with `requestGeometryUpdate` as the prototype app does.
+Flags: `-orientation landscape|portrait`, `-mode video|photo`, `-screen main|record|sweep`, `-recording on|off`, `-state <SimulatedState>`, `-freeSpaceMarginMB <Int>`, `-keepSweepClips on`; unknown values fall back to defaults. The sheet renders the five `RecordRow`s in video mode (chips from `chips`, caption from `reasonLine`, a tap calls `select` and writes the binding) with `DataRateEstimator.footer` below, or the two `PhotoRow`s in photo mode; titles "Record settings" / "Photo settings"; close is `Button(role: .close)`; chips keep the prototype styling (selected `.glassProminent` tinted `Theme.accent`, others `.glass`, unavailable at 0.35 opacity and disabled). For this task `OpenCamApp` loads the fixture, builds the two resolvers for lens `wide` and passes them in, holds `@State` selections from `defaultSelection()` with `freeBytes` 141_000_000_000, presents the sheet over black when `-screen record`, and applies `-orientation` with `requestGeometryUpdate` as the prototype app does.
 
 `scripts/shot.sh <name> [launch args...]`:
 
@@ -431,15 +431,15 @@ nonisolated struct SavedSelections: Codable, Sendable, Equatable {   // UserDefa
     var recordResolver: RecordSelectionResolver { get }; var photoResolver: PhotoSelectionResolver { get }
     var currentVideoOption: VideoOption? { get }; var currentPhotoOption: PhotoOption? { get }
     var summaryParts: [String] { get }   // video [family title, resolution label, colour shortName]; photo [format, "48 MP"]
-    var remainingText: String { get }    // "21 min"
-    var canCapture: Bool { get }         // phase == .ready
+    var remainingText: String { get }    // "677 min" from DataRateEstimator.minutesRemaining; Task 11 routes it through StatusText.remaining
+    var canCapture: Bool { get }         // phase == .ready and the current mode's option (currentVideoOption / currentPhotoOption) is non-nil; Task 11 adds the storage rule
     func selectLens(_ id: String)        // settles record and photo; an unknown id is ignored
-    func replaceCapabilities(_ capabilities: CaptureCapabilities)   // keeps the lens if present, else the first; settles both
+    func replaceCapabilities(_ capabilities: CaptureCapabilities)   // keeps the lens if present, else the default lens; settles both
     func capturePressed()                // filled by Tasks 8 and 9
 }
 ```
 
-Port the prototype layout: `CameraRootView` shows `FoldedHorizontalView` when `verticalSizeClass == .compact`, else `FoldedVerticalVideoView` or `FoldedVerticalView` by mode, in a `NavigationStack` with `.toolbar { StripToolbar(model:isLandscape:) }`, `.persistentSystemOverlays(.hidden)`, black background, and the record sheet. `ViewfinderArea` shows `ViewfinderStandIn` (prototype view minus `isFlat`) in phase `.simulator`. `StripToolbar` items, vertical order (reversed when horizontal, as the prototype): Mode (Menu Photo/Video), Lens (Menu over `lenses`, label `currentLens.label`), Record settings (`slider.horizontal.3`), Library (Task 11; here a disabled `photo.on.rectangle` labelled "Library"). `TopReadoutBar` shows FPS (selection), SHUTTER, TIMECODE, ISO, WB, TINT as `ReadoutView`s (caption over monospaced value, not a button), live values `--` until Task 10. Default lens `wide` when present, else the first. Restore: unless `config.isScripted`, `init` reads `SavedSelections.load(from: defaults)`; a saved lens id that no longer exists falls back to the default lens; saved selections are never trusted as is but passed through `recordResolver.settled` and `photoResolver.settled` (falling back to `defaultSelection()` on nil). Unless scripted, every change to mode, lens, record or photo saves a new `SavedSelections`. The capture button is disabled when `!canCapture`; `-recording on` starts the model in the recording state for screenshots.
+Port the prototype layout: `CameraRootView` shows `FoldedHorizontalView` when `verticalSizeClass == .compact`, else `FoldedVerticalVideoView` or `FoldedVerticalView` by mode, in a `NavigationStack` with `.toolbar { StripToolbar(model:isLandscape:) }`, `.persistentSystemOverlays(.hidden)`, black background, and the record sheet. `ViewfinderArea` shows `ViewfinderStandIn` (prototype view minus `isFlat`) in phase `.simulator`. `StripToolbar` items, vertical order (reversed when horizontal, as the prototype): Mode (Menu Photo/Video), Lens (Menu over `lenses`, label `currentLens.label`), Record settings (`slider.horizontal.3`), Library (Task 11; here a disabled `photo.on.rectangle` labelled "Library"). `TopReadoutBar` shows FPS (selection), SHUTTER, TIMECODE, ISO, WB, TINT as `ReadoutView`s (caption over monospaced value, not a button), live values `--` until Task 10. The record sheet is `RecordSettingsSheet(mode:recordResolver:photoResolver:record:photo:freeBytes:)` fed with `model.recordResolver` and `model.photoResolver`. Default lens: the first lens with kind `.wide` and `zoomFactor == 1`, else the first lens (on the device lens ids are unique IDs, so never match on the fixture id `wide`). Settling: when `settled` returns nil and `defaultSelection()` is also nil (a lens with no video or no photo options), keep the previous `record` / `photo` unchanged; `currentVideoOption` / `currentPhotoOption` are then nil and `canCapture` is false. Launch screen: `init` sets `sheet` from `config.screen` (`.record` -> `.record`, `.sweep` -> `.sweep`, `.main` -> nil). `freeBytes` starts at 141_000_000_000 in the Simulator (as Task 4); on the device Task 9 sets it from `FreeSpace.availableBytes()`. Restore: unless `config.isScripted`, `init` reads `SavedSelections.load(from: defaults)`; a saved lens id that no longer exists falls back to the default lens; saved selections are never trusted as is but passed through `recordResolver.settled` and `photoResolver.settled` (falling back to `defaultSelection()` on nil). Unless scripted, every change to mode, lens, record or photo saves a new `SavedSelections`. The capture button is disabled when `!canCapture`; `-recording on` starts the model in the recording state for screenshots.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -456,6 +456,27 @@ Port the prototype layout: `CameraRootView` shows `FoldedHorizontalView` when `v
         let model = CameraModel(config: .parse(["app", "-mode", "photo", "-recording", "on"]), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
         #expect(model.phase == .simulator); #expect(!model.canCapture)
         #expect(model.summaryParts == ["RAW + HEIF", "48 MP"]); #expect(model.isRecording && model.recordingStart != nil)
+        #expect(model.freeBytes == 141_000_000_000); #expect(model.sheet == nil)
+    }
+    @Test func launchScreenOpensItsSheet() throws {
+        let caps = try Fixture.load()
+        #expect(CameraModel(config: .parse(["app", "-screen", "record"]), capabilities: caps, isSimulator: true, defaults: try Fixture.freshDefaults()).sheet == .record)
+        #expect(CameraModel(config: .parse(["app", "-screen", "sweep"]), capabilities: caps, isSimulator: true, defaults: try Fixture.freshDefaults()).sheet == .sweep)
+    }
+    @Test func defaultLensIsTheUnitZoomWideLens() throws {
+        var caps = try Fixture.load()
+        caps.lenses = caps.lenses.map { Lens(id: "dev-\($0.id)", kind: $0.kind, deviceUniqueID: $0.deviceUniqueID, zoomFactor: $0.zoomFactor, label: $0.label) }
+        let model = CameraModel(config: LaunchConfig(), capabilities: caps, isSimulator: true, defaults: try Fixture.freshDefaults())
+        #expect(model.currentLens?.kind == .wide); #expect(model.currentLens?.zoomFactor == 1)
+    }
+    @Test func lensWithNoOptionsKeepsTheSelectionAndBlocksCapture() throws {
+        var caps = try Fixture.load()
+        caps.lenses.append(Lens(id: "bare", kind: .innerUltraWide, deviceUniqueID: "bare", zoomFactor: 1, label: "Bare"))
+        let model = CameraModel(config: LaunchConfig(), capabilities: caps, isSimulator: true, defaults: try Fixture.freshDefaults())
+        let before = model.record
+        model.selectLens("bare")
+        #expect(model.lensID == "bare"); #expect(model.record == before)
+        #expect(model.currentVideoOption == nil); #expect(!model.canCapture)
     }
 }
 
@@ -514,27 +535,27 @@ Pass when: horizontal shots have the strip on the left with four glass items gro
 - Create in `OpenCam/Capture/`: `CameraSession.swift`, `CameraSessionError.swift`, `PreviewSource.swift`, `SessionConfiguration.swift`, `SessionEvent.swift`, `InterruptionReason.swift`, `PressureLevel.swift`, `CaptureAccess.swift`, `AccessState.swift`, `LensDiscovery.swift`, `DeviceIdentity.swift`
 - Create in `OpenCam/UI/`: `CameraPreviewView.swift`, `PreviewUIView.swift`
 - Modify: `OpenCam/App/CameraModel.swift`, `OpenCam/App/OpenCamApp.swift`, `OpenCam/UI/ViewfinderArea.swift`
-- Test: `OpenCamTests/CaptureHelpersTests.swift`
+- Test: `OpenCamTests/CaptureHelpersTests.swift`, `OpenCamTests/CameraModelEventTests.swift`
 
 **Interfaces:**
-- Consumes: Task 5 `CameraModel`; Task 1 `Lens`, `VideoOption`, `PhotoOption`, `ColourMode(captureColorSpace:)`.
-- Produces:
+- Consumes: Task 5 `CameraModel`, `replaceCapabilities`; Task 1 `Lens`, `VideoOption`, `PhotoOption`, `ColourMode(captureColorSpace:)`, `CaptureCapabilities`.
+- Produces (every type below except the actor, `CameraModel` and the two preview views is `nonisolated`, per Global Constraints):
 
 ```swift
-enum StandardFrameRates { static let all = [24, 25, 30, 48, 50, 60, 100, 120]
-    static func collapse(_ ranges: [ClosedRange<Double>]) -> [Int] }   // r kept when some range has lower - 0.01 <= r <= upper + 0.01
-enum LensLabel { static func text(kind: LensKind, zoomFactor: Double, localizedName: String) -> String }
-enum AccessState: Sendable, Equatable { case notDetermined, authorized, denied, restricted }
-struct CaptureAccess: Sendable, Equatable { var camera: AccessState; var microphone: AccessState; var canUseCamera: Bool { get }; var recordsSound: Bool { get } }
-enum InterruptionReason: Sendable, Equatable { case background, cameraInUse, multipleForegroundApps, systemPressure, microphoneInUse, other
+nonisolated enum StandardFrameRates { static let all = [24, 25, 30, 48, 50, 60, 100, 120]
+    static func collapse(_ ranges: [ClosedRange<Double>]) -> [Int] }   // r kept when some range has lower - 0.05 <= r <= upper + 0.05
+nonisolated enum LensLabel { static func text(kind: LensKind, zoomFactor: Double, localizedName: String) -> String }
+nonisolated enum AccessState: Sendable, Equatable { case notDetermined, authorized, denied, restricted }
+nonisolated struct CaptureAccess: Sendable, Equatable { var camera: AccessState; var microphone: AccessState; var canUseCamera: Bool { get }; var recordsSound: Bool { get } }
+nonisolated enum InterruptionReason: Sendable, Equatable { case background, cameraInUse, multipleForegroundApps, systemPressure, microphoneInUse, other
     init(avReason rawValue: Int); var notice: String? { get } }
-enum PressureLevel: String, Sendable { case nominal, fair, serious, critical, shutdown }
-enum SessionEvent: Sendable, Equatable { case interrupted(InterruptionReason), interruptionEnded, runtimeError(String), pressure(PressureLevel, isThermal: Bool) }
-struct SessionConfiguration: Sendable, Equatable { var lens: Lens; var mode: CaptureMode; var video: VideoOption?; var photo: PhotoOption?; var includesAudio: Bool }
-struct PreviewSource: @unchecked Sendable { let session: AVCaptureSession }
-enum LensDiscovery { static func lenses() -> [Lens] }      // adds "<wide uniqueID>@2" at zoom 2
-enum DeviceIdentity { static func osBuild() -> String; static func modelIdentifier() -> String }   // sysctl kern.osversion; utsname machine as probe Inventory.device()
-enum CameraSessionError: Error, CustomStringConvertible { case deviceMissing(lensID: String), cannotAddInput(lensID: String), cannotAddOutput(name: String), noMatchingFormat(option: String), lockFailed(reason: String) }
+nonisolated enum PressureLevel: String, Sendable { case nominal, fair, serious, critical, shutdown }
+nonisolated enum SessionEvent: Sendable, Equatable { case interrupted(InterruptionReason), interruptionEnded, runtimeError(String), pressure(PressureLevel, isThermal: Bool) }
+nonisolated struct SessionConfiguration: Sendable, Equatable { var lens: Lens; var mode: CaptureMode; var video: VideoOption?; var photo: PhotoOption?; var includesAudio: Bool }
+nonisolated struct PreviewSource: @unchecked Sendable { let session: AVCaptureSession }
+nonisolated enum LensDiscovery { static func lenses() -> [Lens] }      // adds "<wide uniqueID>@2" at zoom 2
+nonisolated enum DeviceIdentity { static func osBuild() -> String; static func modelIdentifier() -> String }   // sysctl kern.osversion; utsname machine as probe Inventory.device()
+nonisolated enum CameraSessionError: Error, CustomStringConvertible { case deviceMissing(lensID: String), cannotAddInput(lensID: String), cannotAddOutput(name: String), noMatchingFormat(option: String), lockFailed(reason: String) }
 actor CameraSession {
     nonisolated let previewSource: PreviewSource; nonisolated let events: AsyncStream<SessionEvent>
     init()                                                  // executor: DispatchSerialQueue "opencam.session" via unownedExecutor
@@ -542,7 +563,11 @@ actor CameraSession {
     func configure(_ configuration: SessionConfiguration) throws(CameraSessionError)
     func start(); func stop()
 }
-extension CameraModel { func start(session: CameraSession) async }
+// CameraModel (CameraModel.swift) gains stored state:
+//   private(set) var access: CaptureAccess          // Simulator: camera and microphone .authorized
+//   private(set) var pressureLevel: PressureLevel   // .nominal at launch
+//   private(set) var isThermalPressure: Bool        // false at launch
+extension CameraModel { func start(session: CameraSession) async; func apply(_ event: SessionEvent) }
 ```
 
 Decisions the signatures leave open:
@@ -551,7 +576,8 @@ Decisions the signatures leave open:
 - Events: `AVCaptureSession.wasInterruptedNotification` (`AVCaptureSessionInterruptionReasonKey`), `interruptionEndedNotification`, `runtimeErrorNotification`, KVO on `systemPressureState` (thermal when factors contain `.systemTemperature` or `.cameraTemperature`).
 - Notices: cameraInUse "Camera paused. Another app is using it."; multipleForegroundApps "Camera paused while another app is on screen."; systemPressure "Camera paused to protect the phone."; microphoneInUse "Microphone in use by another app."; other "Camera paused."; background `nil`.
 - `PreviewUIView` uses `AVCaptureVideoPreviewLayer` as `layerClass`, `.resizeAspect`, and on the main actor builds `AVCaptureDevice.RotationCoordinator(device:previewLayer:)` from the layer's input device (`as?`, never `as!`), applying `videoRotationAngleForHorizonLevelPreview`.
-- `CameraModel.start(session:)`: request access (phase `.cameraDenied` / `.cameraRestricted` on refusal), discover lenses, configure the current lens with `video: nil`, start, fold `events` into `notice` and `phase`. `OpenCamApp` calls it from `.task` outside the Simulator; `ViewfinderArea` shows `CameraPreviewView` in `.ready`.
+- `CameraModel.start(session:)`: request access and store it in `access` (phase `.cameraDenied` / `.cameraRestricted` on refusal), discover lenses, then call `replaceCapabilities(CaptureCapabilities(lenses: discovered, videoOptions: [], photoOptions: [], osBuild: DeviceIdentity.osBuild(), modelIdentifier: DeviceIdentity.modelIdentifier()))` so `model.lenses` holds the device lenses (fixture lens ids never reach the device; Task 7 fills the options), configure the current lens with `video: nil` and `includesAudio: access.recordsSound`, start, and pass each `events` element to `apply(_:)`.
+- `apply(_:)`: `.interrupted(r)` sets `notice = r.notice`; `.interruptionEnded` clears it; `.runtimeError(m)` sets phase `.failed("The camera stopped.")` and only logs `m` (no error description ever reaches the screen); `.pressure(level, isThermal:)` sets `pressureLevel` and `isThermalPressure` and never touches `notice`. `OpenCamApp` calls it from `.task` outside the Simulator; `ViewfinderArea` shows `CameraPreviewView` in `.ready`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -575,14 +601,28 @@ Decisions the signatures leave open:
 }
 ```
 
-- [ ] **Step 2: Run to see them fail** — `scripts/test.sh CaptureHelpersTests`.
+```swift
+// OpenCamTests/CameraModelEventTests.swift
+@MainActor @Suite struct CameraModelEventTests {
+    @Test func pressureIsKeptApartFromTheNotice() throws {
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
+        model.apply(.interrupted(.cameraInUse))
+        model.apply(.pressure(.serious, isThermal: true))
+        #expect(model.notice == "Camera paused. Another app is using it.")
+        #expect(model.pressureLevel == .serious); #expect(model.isThermalPressure)
+        model.apply(.interruptionEnded); #expect(model.notice == nil); #expect(model.pressureLevel == .serious)
+    }
+}
+```
+
+- [ ] **Step 2: Run to see them fail** — `scripts/test.sh CaptureHelpersTests && scripts/test.sh CameraModelEventTests`.
 - [ ] **Step 3: Implement the files to the decisions above.**
 - [ ] **Step 4: Run all tests, then `scripts/shot.sh t6-video-h -orientation landscape`** — Expected: `** TEST SUCCEEDED **`; the shot matches `t5-video-h`.
 - [ ] **Step 5: Commit** — `git add OpenCam OpenCamTests docs/screenshots/p1a && git commit -m "feat: add camera session, preview and interruption events"`
 
 **On the device** (owner runs from Xcode on the Duo):
 - [ ] First launch asks for camera, then microphone. With both allowed the live picture shows upright and aspect-fit in all four orientations, nothing over it.
-- [ ] The lens menu lists 0.5x, 1x, 2x and two front lenses by `localizedName`. Write down which name is the outer front camera; a later plan needs it.
+- [ ] The lens menu lists 0.5x, 1x, 2x and two front lenses by `localizedName`, and 1x is selected on first launch. Write down which name is the outer front camera; a later plan needs it.
 - [ ] Background and return: the preview resumes. Fold and unfold: note any notice and whether the preview resumes.
 - [ ] Top of the horizontal strip: is the camera hole or clock there, and does any strip item sit under it?
 
@@ -593,8 +633,8 @@ Decisions the signatures leave open:
 **Files:**
 - Create in `OpenCam/Capability/`: `FormatDescriptor.swift`, `PhotoSize.swift`, `CapabilityMapper.swift`, `CapabilityCache.swift`
 - Create: `OpenCam/Capture/CapabilityScanner.swift`
-- Modify: `OpenCam/App/CameraModel.swift`, `OpenCam/UI/ViewfinderArea.swift`
-- Test: `OpenCamTests/CapabilityMapperTests.swift`, `OpenCamTests/CapabilityCacheTests.swift`
+- Modify: `OpenCam/App/CameraModel.swift`, `OpenCam/UI/ViewfinderArea.swift`, `OpenCam/UI/StripToolbar.swift` (items disabled while recording)
+- Test: `OpenCamTests/CapabilityMapperTests.swift`, `OpenCamTests/CapabilityCacheTests.swift`, `OpenCamTests/SessionConfigurationTests.swift`
 
 **Interfaces:**
 - Consumes: Task 6 `LensDiscovery`, `DeviceIdentity`, `StandardFrameRates`, `CameraModel.start`; Task 5 `replaceCapabilities`.
@@ -616,9 +656,14 @@ enum CapabilityMapper {
 struct CapabilityCache: Sendable { init(directory: URL)                               // file "capabilities.json"
     func load(osBuild: String, modelIdentifier: String) -> CaptureCapabilities?        // nil when missing, unreadable or the key differs
     func save(_ capabilities: CaptureCapabilities) throws(CapabilityError) }
-enum CapabilityScanner { static func scan(lenses: [Lens]) async throws(CameraSessionError) -> [FormatDescriptor] }
+nonisolated enum CapabilityScanner { static func scan(lenses: [Lens]) async throws(CameraSessionError) -> [FormatDescriptor] }   // runs off the main actor
 extension CameraModel { func loadCapabilities(lenses: [Lens]) async }   // cache hit, else scan and save; phase .scanning meanwhile
+// CameraModel (CameraModel.swift) gains:
+//   var sessionConfiguration: SessionConfiguration? { get }   // nil without currentLens; else lens, mode, currentVideoOption, currentPhotoOption, includesAudio: access.recordsSound
+//   private var session: CameraSession?                       // kept by start(session:)
 ```
+
+Reconfiguring: after `start(session:)` has run, every change to lens, mode, `record` or `photo` (the same points that save `SavedSelections`) calls `session.configure(sessionConfiguration)` in a single serial `Task` chain so two changes never configure out of order; a newer change supersedes a pending one. While `isRecording` the Mode and Lens menus and the Record settings item are disabled, so no change reaches the session mid-clip. A configure error sets `phase` to `.failed` (copy per Task 11) and logs the description.
 
 Mapping: `aprn` RAW "ProRes RAW", `aprh` RAW "ProRes RAW HQ", `ap4x` "4444 XQ", `ap4h` "4444", `apch` "422 HQ", `apcn` "422", `apcs` "422 LT", `apco` "422 Proxy"; `hvc1` and `avc1` give the four tiers when `allowsCompressionProperties`, else one quality "Standard"; all other FourCCs (`jpeg`, `jxlc`, `muxa`, unknown) are dropped. Rates via `StandardFrameRates.collapse`. A zoom-2 lens reuses its device's descriptors. Photo: one option per format per size; RAW formats only when `hasBayerRAW` and zoom factor 1.
 
@@ -669,7 +714,22 @@ The scanner is a thin adapter modelled on `probe/DuoCamProbe/Inventory.swift` `s
 }
 ```
 
-- [ ] **Step 2: Run to see them fail** — `scripts/test.sh CapabilityMapperTests`.
+```swift
+// OpenCamTests/SessionConfigurationTests.swift
+@MainActor @Suite struct SessionConfigurationTests {
+    @Test func configurationFollowsTheSelection() throws {
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
+        model.selectLens("ultraWide"); model.mode = .video
+        let config = try #require(model.sessionConfiguration)
+        #expect(config.lens.id == "ultraWide"); #expect(config.mode == .video)
+        #expect(config.video == model.currentVideoOption); #expect(config.photo == model.currentPhotoOption)
+    }
+}
+```
+
+`CapabilityCache.save` creates its directory when missing (`olderOSBuildTriggersRescan` uses a directory that does not exist yet).
+
+- [ ] **Step 2: Run to see them fail** — `scripts/test.sh CapabilityMapperTests && scripts/test.sh SessionConfigurationTests`.
 - [ ] **Step 3: Implement mapper, cache, scanner and `loadCapabilities`; `start(session:)` now loads capabilities before `configure` and passes `currentVideoOption` / `currentPhotoOption`.**
 - [ ] **Step 4: Run all tests, then `scripts/shot.sh t7-scanning -orientation landscape -state scanning`** — Expected: pass; the viewfinder area shows only "Reading camera formats…".
 - [ ] **Step 5: Commit** — `git add OpenCam OpenCamTests docs/screenshots/p1a && git commit -m "feat: scan camera formats once per OS build and cache the capabilities"`
@@ -697,10 +757,10 @@ Pass when each lens's FourCCs equal its camera's minus `jpeg`, `jxlc`, `muxa`, a
 
 **Interfaces:**
 - Consumes: Task 6 `CameraSession`; Task 2 `PhotoSelection`; Task 1 `PhotoFormat`.
-- Produces:
+- Produces (`CaptureStore` is main-actor; every other type here, including `PhotoCapturer` and `PhotoCaptureDelegate`, is `nonisolated`):
 
 ```swift
-enum CaptureFileKind: String, Sendable { case dng = "DNG", heic = "HEIC", mov = "MOV", sidecar = "json" }
+nonisolated enum CaptureFileKind: String, Sendable { case dng = "DNG", heic = "HEIC", mov = "MOV", sidecar = "json" }
 @MainActor final class CaptureStore {
     static func appDefault() throws(CaptureStoreError) -> CaptureStore   // Documents/Captures, created if missing
     init(directory: URL) throws(CaptureStoreError); let directory: URL
@@ -709,9 +769,9 @@ enum CaptureFileKind: String, Sendable { case dng = "DNG", heic = "HEIC", mov = 
     static func fileName(sequence: Int, kind: CaptureFileKind) -> String // "OC_0001.DNG"
     static func nextSequence(existingNames: [String]) -> Int
 }
-struct PhotoSettingsPlan: Equatable, Sendable { let rawPixelFormat: OSType?; let wantsProcessedHEIF: Bool; let prioritizesSpeed: Bool
+nonisolated struct PhotoSettingsPlan: Equatable, Sendable { let rawPixelFormat: OSType?; let wantsProcessedHEIF: Bool; let prioritizesSpeed: Bool
     static func make(format: PhotoFormat, availableRawFormats: [OSType], isBayer: (OSType) -> Bool, zoomFactor: Double) throws(PhotoCaptureError) -> PhotoSettingsPlan }
-enum PhotoCaptureError: Error, CustomStringConvertible, Equatable { case rawNeedsUnitZoom(zoom: Double), rawUnavailable, noPhotoData, writeFailed(path: String, reason: String), captureFailed(reason: String) }
+nonisolated enum PhotoCaptureError: Error, CustomStringConvertible, Equatable { case rawNeedsUnitZoom(zoom: Double), rawUnavailable, noPhotoData, writeFailed(path: String, reason: String), captureFailed(reason: String) }
 extension CameraSession { func capturePhoto(format: PhotoFormat, dngURL: URL, heicURL: URL) async throws(PhotoCaptureError) -> [URL] }
 ```
 
@@ -720,7 +780,7 @@ RAW takes the first Bayer format in `availableRawPhotoPixelFormatTypes` (product
 - [ ] **Step 1: Write the failing tests**
 
 ```swift
-@Suite struct PhotoCaptureTests {
+@MainActor @Suite struct PhotoCaptureTests {   // CaptureStore is main-actor
     let bayer = kCVPixelFormatType_14Bayer_BGGR
     @Test func namesAndSequence() {
         #expect(CaptureStore.fileName(sequence: 1, kind: .dng) == "OC_0001.DNG"); #expect(CaptureStore.fileName(sequence: 12345, kind: .mov) == "OC_12345.MOV")
@@ -756,30 +816,33 @@ RAW takes the first Bayer format in `availableRawPhotoPixelFormatTypes` (product
 
 **Files:**
 - Create in `OpenCam/Capture/`: `MovieRecorder.swift`, `MovieOutputSettings.swift`, `RecordingOutcome.swift`, `StopReason.swift`, `RecordingResult.swift`, `RecordingError.swift`, `ClipInspector.swift`, `ClipFacts.swift`, `ClipSidecar.swift`, `AudioMeter.swift`, `FreeSpace.swift`
-- Modify: `OpenCam/Capture/CameraSession.swift`, `OpenCam/Capture/CaptureAccess.swift`, `OpenCam/App/CameraModel.swift`
-- Test: `OpenCamTests/RecordingTests.swift` (suites below)
+- Modify: `OpenCam/Capture/CameraSession.swift`, `OpenCam/Capture/SessionConfiguration.swift` (adds `make`), `OpenCam/App/CameraModel.swift`
+- Test, one file per suite: `OpenCamTests/MovieOutputSettingsTests.swift`, `RecordingOutcomeTests.swift`, `ClipInspectorTests.swift`, `CaptureAccessTests.swift`, `CameraModelRecordingTests.swift`, `AudioMeterTests.swift` (all in `OpenCamTests/`)
 
 **Interfaces:**
-- Consumes: Task 3 `DataRateEstimator`; Task 6 `CameraSession`, `CaptureAccess`; Task 8 `CaptureStore`.
-- Produces:
+- Consumes: Task 3 `DataRateEstimator`; Task 6 `CameraSession`, `CaptureAccess`, `SessionConfiguration`; Task 7 `CameraModel.sessionConfiguration`; Task 8 `CaptureStore`.
+- Produces (all `nonisolated` except the `CameraSession` and `CameraModel` extensions; `MovieRecorder` is a `nonisolated` NSObject delegate):
 
 ```swift
-struct MovieOutputSettings: Equatable, Sendable { let codecType: String; let averageBitRate: Int?
+nonisolated struct MovieOutputSettings: Equatable, Sendable { let codecType: String; let averageBitRate: Int?
     static func make(for option: VideoOption, supportedKeys: [String]) -> MovieOutputSettings }
     // bitrate = Int(DataRateEstimator.megabitsPerSecond * 1e6), only for tiers and only when supportedKeys contains AVVideoCompressionPropertiesKey
-enum StopReason: Sendable, Equatable { case storageFull, interrupted, maximumFileSize, maximumDuration, other(code: Int) }
-enum RecordingOutcome: Sendable, Equatable { case completed, stopped(StopReason, isPlayable: Bool), failed(String)
-    init(error: NSError?); var notice: String? { get } }      // AVErrorRecordingSuccessfullyFinishedKey decides isPlayable
-struct RecordingResult: Sendable { let url: URL; let option: VideoOption; let outcome: RecordingOutcome; let sidecar: ClipSidecar? }
-struct ClipFacts: Codable, Sendable, Equatable { let codecFourCC: String; let width: Int; let height: Int; let nominalFrameRate: Double; let durationSeconds: Double
+nonisolated enum StopReason: Sendable, Equatable { case storageFull, interrupted, maximumFileSize, maximumDuration, other(code: Int) }
+nonisolated enum RecordingOutcome: Sendable, Equatable { case completed, stopped(StopReason, isPlayable: Bool), failed(String)
+    init(error: NSError?); var notice: String? { get }      // AVErrorRecordingSuccessfullyFinishedKey decides isPlayable
+    static func droppedFramesNotice(clipName: String, droppedFrames: Int) -> String? }   // nil at 0; "OC_0002 dropped 1 frame."; "OC_0002 dropped 5 frames."
+extension SessionConfiguration {
+    static func make(lens: Lens, mode: CaptureMode, video: VideoOption?, photo: PhotoOption?, access: CaptureAccess) -> SessionConfiguration }   // includesAudio = access.recordsSound; CameraModel.sessionConfiguration calls this
+nonisolated struct RecordingResult: Sendable { let url: URL; let option: VideoOption; let outcome: RecordingOutcome; let sidecar: ClipSidecar? }
+nonisolated struct ClipFacts: Codable, Sendable, Equatable { let codecFourCC: String; let width: Int; let height: Int; let nominalFrameRate: Double; let durationSeconds: Double
     let frameCount: Int; let droppedFrames: Int; let colour: ColourMode?; let megabitsPerSecond: Double; let hasAudio: Bool }
-struct ClipSidecar: Codable, Sendable { let requested: VideoOption; let actual: ClipFacts?; let outcome: String; let recordedAt: Date; let error: String? }
-enum ClipInspector {
+nonisolated struct ClipSidecar: Codable, Sendable { let requested: VideoOption; let actual: ClipFacts?; let outcome: String; let recordedAt: Date; let error: String? }
+nonisolated enum ClipInspector {
     static func inspect(url: URL, requestedFrameRate: Int) async throws(RecordingError) -> ClipFacts   // frames by stepping makeSampleCursorAtFirstSampleInDecodeOrder()
     static func droppedFrames(durationSeconds: Double, frameRate: Int, frameCount: Int) -> Int          // max(0, round(duration * rate) - count)
     static func colour(primaries: String?, transfer: String?, log: String?) -> ColourMode? }
-enum AudioMeter { static func level(decibels: Float) -> Double }   // -60 dB -> 0, 0 dB -> 1, linear, clamped
-enum FreeSpace { static func availableBytes() -> Int64 }            // volumeAvailableCapacityForImportantUsage of Documents
+nonisolated enum AudioMeter { static func level(decibels: Float) -> Double }   // -60 dB -> 0, 0 dB -> 1, linear, clamped
+nonisolated enum FreeSpace { static func availableBytes() -> Int64 }            // volumeAvailableCapacityForImportantUsage of Documents
 extension CameraSession {
     nonisolated var recordings: AsyncStream<RecordingResult> { get }   // backed by a nonisolated let declared in the actor body
     func startRecording(option: VideoOption, url: URL, minFreeBytes: Int64) throws(RecordingError)
@@ -792,8 +855,9 @@ Notes:
 - The SDK comments `AVVideoAverageBitRateKey` as "H.264 only"; the measured `megabitsPerSecond` in the sidecar is how HEVC tiers are checked.
 - A default-microphone input is added only when `CaptureAccess.recordsSound`. Meters poll `audioLevels()` 10 times a second; with no audio input they stay empty.
 - Colour: log `kCMFormatDescriptionLogTransferFunction_AppleLog2` / `_AppleLog` -> appleLog2 / appleLog; transfer `ITU_R_2100_HLG` -> hlg; primaries `P3_D65` -> p3; primaries and transfer `ITU_R_709_2` -> rec709; otherwise nil.
-- Notices: completed nil; storageFull "Recording stopped. Storage is full. Clip saved."; interrupted "Recording stopped. The camera was interrupted. Clip saved."; any not-playable stop or failure "Recording failed. The clip could not be saved."; when `droppedFrames > 0` and no other notice, "OC_0002 dropped 5 frames.".
+- Notices: completed nil; storageFull "Recording stopped. Storage is full. Clip saved."; interrupted "Recording stopped. The camera was interrupted. Clip saved."; any not-playable stop or failure "Recording failed. The clip could not be saved."; when no other notice applies, `RecordingOutcome.droppedFramesNotice(clipName:droppedFrames:)` with the clip's base name ("OC_0002 dropped 1 frame." / "OC_0002 dropped 5 frames.").
 - `capturePressed` in video mode reserves a number and starts, or stops.
+- `freeBytes`: on the device the model sets it from `FreeSpace.availableBytes()` at `start(session:)`, after each recording and after each photo; the Simulator keeps the Task 5 value.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -821,6 +885,11 @@ Notes:
         #expect(RecordingOutcome(error: error(.sessionWasInterrupted, finished: false)).notice == "Recording failed. The clip could not be saved.")
         #expect(RecordingOutcome(error: nil) == .completed)
     }
+    @Test func droppedFramesNoticeCountsCorrectly() {
+        #expect(RecordingOutcome.droppedFramesNotice(clipName: "OC_0002", droppedFrames: 0) == nil)
+        #expect(RecordingOutcome.droppedFramesNotice(clipName: "OC_0002", droppedFrames: 1) == "OC_0002 dropped 1 frame.")
+        #expect(RecordingOutcome.droppedFramesNotice(clipName: "OC_0002", droppedFrames: 5) == "OC_0002 dropped 5 frames.")
+    }
 }
 @Suite struct ClipInspectorTests {
     @Test func droppedFramesNeverNegative() {
@@ -835,9 +904,14 @@ Notes:
     }
 }
 @Suite struct CaptureAccessTests {
-    @Test func microphoneDeniedStillRecordsVideoWithoutSound() {
+    @Test func microphoneDeniedStillRecordsVideoWithoutSound() throws {
         let access = CaptureAccess(camera: .authorized, microphone: .denied)
         #expect(access.canUseCamera); #expect(!access.recordsSound)
+        let caps = try Fixture.load(), lens = try #require(caps.lenses.first { $0.id == "wide" })
+        let resolver = RecordSelectionResolver(options: caps.videoOptions, lens: lens)
+        let video = try #require(resolver.defaultSelection().flatMap(resolver.option(for:)))
+        let config = SessionConfiguration.make(lens: lens, mode: .video, video: video, photo: nil, access: access)
+        #expect(!config.includesAudio); #expect(config.video == video)
     }
 }
 @MainActor @Suite struct CameraModelRecordingTests {
@@ -857,7 +931,9 @@ Notes:
 }
 ```
 
-- [ ] **Step 2: Run to see them fail** — `scripts/test.sh RecordingOutcomeTests` (the file does not compile yet).
+Each suite above goes in its own file named after it (see Files); they are shown together only for reading.
+
+- [ ] **Step 2: Run to see them fail** — `scripts/test.sh RecordingOutcomeTests` (the test target does not compile yet).
 - [ ] **Step 3: Implement the files to the notes above.**
 - [ ] **Step 4: Run all tests** — `scripts/test.sh`. Expected: `** TEST SUCCEEDED **`.
 - [ ] **Step 5: Commit** — `git add OpenCam OpenCamTests && git commit -m "feat: record video through the movie output with sidecar, audio and meters"`
@@ -881,22 +957,23 @@ Notes:
 
 **Interfaces:**
 - Consumes: Task 6 `CameraSession`; `CameraModel.capturePressed` from Tasks 8 and 9.
-- Produces:
+- Produces (all `nonisolated` except the two extensions; `CameraControlsDelegate` is a `nonisolated` NSObject):
 
 ```swift
-enum CaptureAction: Equatable, Sendable { case takePhoto, startRecording, stopRecording
+nonisolated enum CaptureAction: Equatable, Sendable { case takePhoto, startRecording, stopRecording
     static func forEvent(phase: AVCaptureEventPhase, mode: CaptureMode, isRecording: Bool) -> CaptureAction? }   // only .ended acts
-enum SystemControlKind: Sendable, Equatable { case zoom, exposureBias }
-enum CameraControlPlan { static func kinds(supportsControls: Bool, mode: CaptureMode, photoFormat: PhotoFormat) -> [SystemControlKind] }
-struct LiveReadouts: Sendable, Equatable { var iso: Float?; var shutterSeconds: Double?; var kelvin: Float?; var tint: Float?; var exposureBias: Float? }
-enum ReadoutFormatter { static func shutter(_ s: Double?) -> String; static func iso(_ v: Float?) -> String; static func kelvin(_ v: Float?) -> String
-    static func tint(_ v: Float?) -> String; static func bias(_ v: Float?) -> String }   // nil -> "--"
-enum Timecode { static func string(elapsed: TimeInterval, frameRate: Int) -> String }   // HH:MM:SS:FF
-extension CameraSession { func installSystemControls(_ kinds: [SystemControlKind]); func currentReadouts() -> LiveReadouts }
+nonisolated enum SystemControlKind: Sendable, Equatable { case zoom, exposureBias }
+nonisolated enum CameraControlPlan { static func kinds(supportsControls: Bool, mode: CaptureMode, photoFormat: PhotoFormat) -> [SystemControlKind] }
+nonisolated struct LiveReadouts: Sendable, Equatable { var iso: Float?; var shutterSeconds: Double?; var kelvin: Float?; var tint: Float?; var exposureBias: Float?; var lensPosition: Float? }
+nonisolated enum ReadoutFormatter { static func shutter(_ s: Double?) -> String; static func iso(_ v: Float?) -> String; static func kelvin(_ v: Float?) -> String
+    static func tint(_ v: Float?) -> String; static func bias(_ v: Float?) -> String; static func focus(_ v: Float?) -> String }   // nil -> "--"; focus: lensPosition 0...1 with two decimals, "0.42"
+nonisolated enum Timecode { static func string(elapsed: TimeInterval, frameRate: Int) -> String }   // HH:MM:SS:FF
+extension CameraSession { func currentReadouts() -> LiveReadouts
+    private func installSystemControls(_ kinds: [SystemControlKind]) }   // called only by configure, inside the actor
 extension CameraModel { func handleCaptureEvent(phase: AVCaptureEventPhase) }
 ```
 
-`CameraRootView` adds `.onCameraCaptureEvent(isEnabled: model.canCapture) { model.handleCaptureEvent(phase: $0.phase) }`. `installSystemControls` runs after every `configure`: remove existing controls; for each kind create `AVCaptureSystemZoomSlider(device:)` or `AVCaptureSystemExposureBiasSlider(device:)`; add it when `supportsControls` and `canAddControl`; set `setControlsDelegate(_:queue:)` with a `CameraControlsDelegate` on the session queue ("A controls delegate must be specified for controls to become active"). RAW photo formats get no zoom slider because Bayer RAW needs zoom 1.0. Readouts read `iso`, `exposureDuration`, `exposureTargetBias` and `temperatureAndTintValues(for: deviceWhiteBalanceGains)`, polled 4 times a second while ready; FPS shows the selection's rate. Photo layout shows SHUTTER, ISO, EV, WB.
+`CameraRootView` adds `.onCameraCaptureEvent(isEnabled: model.canCapture) { model.handleCaptureEvent(phase: $0.phase) }`. `configure` ends, inside the actor, with `installSystemControls(CameraControlPlan.kinds(supportsControls: session.supportsControls, mode: configuration.mode, photoFormat: configuration.photo?.format ?? .heif))`; the model never computes kinds, because `supportsControls` is only readable inside the actor. `installSystemControls`: remove existing controls; for each kind create `AVCaptureSystemZoomSlider(device:)` or `AVCaptureSystemExposureBiasSlider(device:)`; add it when `canAddControl`; set `setControlsDelegate(_:queue:)` with a `CameraControlsDelegate` on the session queue ("A controls delegate must be specified for controls to become active"). RAW photo formats get no zoom slider because Bayer RAW needs zoom 1.0. Readouts read `iso`, `exposureDuration`, `exposureTargetBias`, `temperatureAndTintValues(for: deviceWhiteBalanceGains)` and `lensPosition`, polled 4 times a second while ready; FPS shows the selection's rate. Photo layout shows SHUTTER, ISO, EV, WB, FOCUS (captions exactly these; FOCUS is read-only like the rest and shows `ReadoutFormatter.focus`).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -921,6 +998,7 @@ extension CameraModel { func handleCaptureEvent(phase: AVCaptureEventPhase) }
         #expect(ReadoutFormatter.kelvin(5612) == "5600K"); #expect(ReadoutFormatter.kelvin(5630) == "5650K")
         #expect(ReadoutFormatter.tint(3.6) == "+4"); #expect(ReadoutFormatter.tint(-2.2) == "-2"); #expect(ReadoutFormatter.tint(0.3) == "0")
         #expect(ReadoutFormatter.bias(0) == "0.0"); #expect(ReadoutFormatter.bias(0.333) == "+0.3")
+        #expect(ReadoutFormatter.focus(0.4213) == "0.42"); #expect(ReadoutFormatter.focus(1) == "1.00"); #expect(ReadoutFormatter.focus(nil) == "--")
         #expect(Timecode.string(elapsed: 42.5, frameRate: 30) == "00:00:42:15"); #expect(Timecode.string(elapsed: 3661, frameRate: 24) == "01:01:01:00")
     }
 }
@@ -928,13 +1006,13 @@ extension CameraModel { func handleCaptureEvent(phase: AVCaptureEventPhase) }
 
 - [ ] **Step 2: Run to see them fail** — `scripts/test.sh ControlsAndReadoutsTests`.
 - [ ] **Step 3: Implement the files listed.**
-- [ ] **Step 4: Run all tests, then `scripts/shot.sh t10-video-h -orientation landscape`** — FPS reads "30", live values `--`.
+- [ ] **Step 4: Run all tests, then `scripts/shot.sh t10-video-h -orientation landscape` and `scripts/shot.sh t10-photo-v -orientation portrait -mode photo`** — FPS reads "30", live values `--`; the photo shot shows SHUTTER, ISO, EV, WB, FOCUS, all `--`.
 - [ ] **Step 5: Commit** — `git add OpenCam OpenCamTests docs/screenshots/p1a && git commit -m "feat: add Camera Control capture, system controls and live readouts"`
 
 **On the device:**
 - [ ] Note whether the Duo has a Camera Control button (spec open risk 3). If so, a full press takes a photo, or starts and stops recording; the on-screen button still works.
 - [ ] Light press shows the system zoom and exposure sliders; with a RAW format only exposure.
-- [ ] ISO, shutter, WB and tint change between a bright window and a dark corner.
+- [ ] ISO, shutter, WB and tint change between a bright window and a dark corner; in photo mode FOCUS changes between a near and a far subject.
 
 ---
 
@@ -946,31 +1024,45 @@ extension CameraModel { func handleCaptureEvent(phase: AVCaptureEventPhase) }
 - Test: `OpenCamTests/StatusTextTests.swift`
 
 **Interfaces:**
-- Consumes: `CameraPhase`, `CaptureAccess`, `PressureLevel`, `DataRateEstimator`, `CaptureStore`, the notices from Tasks 6 and 9.
-- Produces:
+- Consumes: `CameraPhase`, `CaptureAccess`, `PressureLevel`, `DataRateEstimator.isLowStorage` / `minutesRemaining`, `CaptureStore`, `CameraModel.access` / `pressureLevel` / `isThermalPressure` (Task 6), the notices from Tasks 6 and 9.
+- Produces (`RemainingTime`, `ViewfinderStatus` and `StatusText` are `nonisolated`):
 
 ```swift
-struct RemainingTime: Equatable, Sendable { let text: String; let isWarning: Bool }
-struct ViewfinderStatus: Equatable, Sendable { let message: String; let offersSettings: Bool }
-enum StatusText {
+nonisolated struct RemainingTime: Equatable, Sendable { let text: String; let isWarning: Bool }
+nonisolated struct ViewfinderStatus: Equatable, Sendable { let message: String; let offersSettings: Bool }
+nonisolated enum StatusText {
     static func viewfinder(_ phase: CameraPhase) -> ViewfinderStatus?
     static func pressure(_ level: PressureLevel, isThermal: Bool) -> String?
-    static func bottomNotice(access: CaptureAccess, minutesRemaining: Int, pressure: String?, notice: String?) -> String?
-    static func remaining(minutes: Int) -> RemainingTime
+    static func bottomNotice(access: CaptureAccess, pressure: String?, notice: String?) -> String?   // storage is shown only by the remaining slot
+    static func remaining(minutes: Int) -> RemainingTime                                              // isWarning = DataRateEstimator.isLowStorage(minutes:)
+    static func canRecord(phase: CameraPhase, mode: CaptureMode, minutesRemaining: Int) -> Bool       // phase == .ready, and in video mode minutesRemaining > 0
 }
 extension CaptureStore { static func latestCaptureName(_ names: [String]) -> String?; func latestCapture() -> URL? }
+// CameraModel changes: remainingText returns StatusText.remaining(minutes:).text (no second threshold anywhere);
+//   canCapture = StatusText.canRecord(phase:mode:minutesRemaining:) and the current mode's option is non-nil;
+//   var pressureText: String? { StatusText.pressure(pressureLevel, isThermal: isThermalPressure) }
 ```
 
-Copy: `.scanning` "Reading camera formats…"; `.cameraDenied` "Camera access is off." with an "Open Settings" button (`UIApplication.openSettingsURLString`); `.cameraRestricted` "Camera access is restricted on this iPhone."; `.failed(m)` m; `.ready` and `.simulator` nil. Pressure, P = "The phone is hot." when thermal else "The phone is under heavy load.": serious "P Frame rate may drop.", critical "P Recording may stop.", shutdown "Camera stopped to protect the phone.", nominal and fair nil. Bottom notice precedence: "Storage full" (0 minutes), then pressure, then "No microphone access" (tap opens Settings), then the transient notice. Remaining: "21 min", warning below 5 minutes, "Storage full" at 0, and the record button is disabled at 0. Latest capture: highest sequence; within it HEIC over DNG, MOV over json; other names ignored. `LibraryThumbnail` shows a `QLThumbnailGenerator` thumbnail of the latest capture, or the disabled `photo.on.rectangle` symbol when none; a tap opens `.quickLookPreview`. In the Simulator each `-state` value drives the matching state.
+Copy: `.scanning` "Reading camera formats…" (replaces the literal Task 7 put in `ViewfinderArea`; `ViewfinderArea` now shows only `StatusText.viewfinder`); `.cameraDenied` "Camera access is off." with an "Open Settings" button (`UIApplication.openSettingsURLString`); `.cameraRestricted` "Camera access is restricted on this iPhone."; `.failed(m)` m; `.ready` and `.simulator` nil. `.failed` always carries plain copy, never an error description: a runtime error sets `.failed("The camera stopped.")`, a configure failure `.failed("This format could not be set up.")`; the `[Module:Function]` description is only logged. Pressure, P = "The phone is hot." when thermal else "The phone is under heavy load.": serious "P Frame rate may drop.", critical "P Recording may stop.", shutdown "Camera stopped to protect the phone.", nominal and fair nil. Bottom notice precedence: pressure, then "No microphone access" (tap opens Settings), then the transient notice. Remaining: "677 min", warning below 5 minutes (via `DataRateEstimator.isLowStorage`), "Storage full" at 0 in the remaining slot only, and the record button is disabled at 0 through `canRecord`. Latest capture: only DNG, HEIC and MOV files count (sidecars and sweep reports are ignored, so a sweep's orphan `OC_` sidecar is never shown); highest sequence; within it HEIC over DNG. `LibraryThumbnail` shows a `QLThumbnailGenerator` thumbnail of the latest capture, or the disabled `photo.on.rectangle` symbol when none; a tap opens `.quickLookPreview`.
+
+Simulated states (Simulator only): `scanning` phase `.scanning`; `cameraDenied` phase `.cameraDenied`; `micDenied` `access.microphone = .denied` (bottom bar "No microphone access"); `lowStorage` `freeBytes = DataRateEstimator.reserveBytes + 4.5 x the current option's bytes per minute` (remaining "4 min", warning); `storageFull` `freeBytes = 1_500_000_000` (remaining "Storage full"); `pressure` `pressureLevel = .serious`, `isThermalPressure = true` (bottom bar "The phone is hot. Frame rate may drop.").
 
 - [ ] **Step 1: Write the failing tests**
 
 ```swift
-@Suite struct StatusTextTests {
+@MainActor @Suite struct StatusTextTests {   // CaptureStore is main-actor
     @Test func viewfinderStates() {
         #expect(StatusText.viewfinder(.scanning) == ViewfinderStatus(message: "Reading camera formats…", offersSettings: false))
         #expect(StatusText.viewfinder(.cameraDenied) == ViewfinderStatus(message: "Camera access is off.", offersSettings: true))
         #expect(StatusText.viewfinder(.ready) == nil)
+        #expect(StatusText.viewfinder(.failed("The camera stopped.")) == ViewfinderStatus(message: "The camera stopped.", offersSettings: false))
+    }
+    @Test func recordingNeedsReadyAndStorage() {
+        #expect(StatusText.canRecord(phase: .ready, mode: .video, minutesRemaining: 20))
+        #expect(!StatusText.canRecord(phase: .ready, mode: .video, minutesRemaining: 0))
+        #expect(StatusText.canRecord(phase: .ready, mode: .photo, minutesRemaining: 0))
+        #expect(!StatusText.canRecord(phase: .cameraDenied, mode: .video, minutesRemaining: 20))
+        #expect(!StatusText.canRecord(phase: .simulator, mode: .photo, minutesRemaining: 20))
     }
     @Test func pressureCopy() {
         #expect(StatusText.pressure(.serious, isThermal: true) == "The phone is hot. Frame rate may drop.")
@@ -979,14 +1071,16 @@ Copy: `.scanning` "Reading camera formats…"; `.cameraDenied` "Camera access is
     }
     @Test func bottomNoticePrecedence() {
         let micOff = CaptureAccess(camera: .authorized, microphone: .denied), micOn = CaptureAccess(camera: .authorized, microphone: .authorized)
-        #expect(StatusText.bottomNotice(access: micOff, minutesRemaining: 0, pressure: "P", notice: "N") == "Storage full")
-        #expect(StatusText.bottomNotice(access: micOff, minutesRemaining: 20, pressure: "P", notice: "N") == "P")
-        #expect(StatusText.bottomNotice(access: micOff, minutesRemaining: 20, pressure: nil, notice: "N") == "No microphone access")
-        #expect(StatusText.bottomNotice(access: micOn, minutesRemaining: 20, pressure: nil, notice: "N") == "N")
+        #expect(StatusText.bottomNotice(access: micOff, pressure: "P", notice: "N") == "P")
+        #expect(StatusText.bottomNotice(access: micOff, pressure: nil, notice: "N") == "No microphone access")
+        #expect(StatusText.bottomNotice(access: micOn, pressure: nil, notice: "N") == "N")
+        #expect(StatusText.bottomNotice(access: micOn, pressure: nil, notice: nil) == nil)
     }
     @Test func remainingAndLatest() {
         #expect(StatusText.remaining(minutes: 4) == RemainingTime(text: "4 min", isWarning: true))
         #expect(StatusText.remaining(minutes: 0) == RemainingTime(text: "Storage full", isWarning: true))
+        #expect(StatusText.remaining(minutes: 5) == RemainingTime(text: "5 min", isWarning: false))
+        #expect(CaptureStore.latestCaptureName(["OC_0003.MOV", "OC_0004.json", "sweep-x.json"]) == "OC_0003.MOV")
         #expect(CaptureStore.latestCaptureName(["OC_0001.DNG", "OC_0001.HEIC", "OC_0002.MOV", "OC_0002.json", "sweep-x.json"]) == "OC_0002.MOV")
         #expect(CaptureStore.latestCaptureName(["OC_0003.DNG", "OC_0003.HEIC"]) == "OC_0003.HEIC"); #expect(CaptureStore.latestCaptureName([]) == nil)
     }
@@ -1002,7 +1096,7 @@ for s in scanning cameraDenied micDenied lowStorage storageFull pressure; do scr
 scripts/shot.sh t11-cameraDenied-v -orientation portrait -mode photo -state cameraDenied
 ```
 
-Pass when each shot shows exactly its copy: in the viewfinder area for scanning and camera denied (with "Open Settings"), in the bottom bar for the rest; nothing covers the picture when horizontal; the record button is disabled for storage full and camera denied.
+Pass when each shot shows exactly its copy: in the viewfinder area for scanning and camera denied (with "Open Settings"), in the bottom bar for the rest (micDenied "No microphone access", lowStorage remaining "4 min" in the warning style, storageFull remaining "Storage full" shown once, pressure "The phone is hot. Frame rate may drop."); nothing covers the picture when horizontal. The disabled record button is not judged from the shots (every Simulator phase disables it); `recordingNeedsReadyAndStorage` is the evidence.
 
 - [ ] **Step 5: Commit** — `git add OpenCam OpenCamTests docs/screenshots/p1a && git commit -m "feat: add honest capture states and the last-capture thumbnail"`
 
@@ -1017,18 +1111,20 @@ Pass when each shot shows exactly its copy: in the viewfinder area for scanning 
 
 **Files:**
 - Create in `OpenCam/Capture/`: `FormatSweep.swift`, `SweepRow.swift`, `SweepStatus.swift`, `SweepReport.swift`; Create `OpenCam/Capability/FailedCombinations.swift`, `OpenCam/UI/SweepView.swift`
-- Modify: `OpenCam/App/CameraModel.swift` (owns `sweep: FormatSweep?` and `failedCombinations`, forwards each `RecordingResult` while the sweep runs), `OpenCam/UI/FormatButton.swift` (long press opens `.sweep` in video mode; `isWarning` style), `OpenCam/UI/RecordSettingsSheet.swift` (`sweepCaption: String?` shown under the footer), `OpenCam/UI/CameraRootView.swift`
+- Modify: `OpenCam/App/CameraModel.swift` (owns `sweep: FormatSweep?` and `failedCombinations`, forwards each `RecordingResult` while the sweep runs), `OpenCam/UI/FormatButton.swift` (long press opens `.sweep` in video mode; `isWarning` style), `OpenCam/UI/RecordSettingsSheet.swift` (`var sweepCaption: String? = nil` shown under the footer), `OpenCam/UI/CameraRootView.swift` (presents `SweepView` when `model.sheet == .sweep`, which Task 5's `init` already sets for `-screen sweep`)
 - Test: `OpenCamTests/FormatSweepTests.swift`, `OpenCamTests/FailedCombinationsTests.swift`
 
 **Interfaces:**
 - Consumes: Task 9 `startRecording`, `stopRecording`, `RecordingResult`, `ClipFacts`; Task 6 `configure`, `DeviceIdentity`; Task 8 `CaptureStore`.
-- Produces:
+- Produces (all `nonisolated` except `FormatSweep`, which is main-actor):
 
 ```swift
-enum SweepStatus: String, Codable, Sendable { case pass, fail }
-struct SweepRow: Codable, Sendable, Equatable { let requested: VideoOption; let actual: ClipFacts?; let status: SweepStatus; let error: String?
+nonisolated enum SweepStatus: String, Codable, Sendable { case pass, fail }
+nonisolated struct SweepRow: Codable, Sendable, Equatable { let requested: VideoOption; let actual: ClipFacts?; let status: SweepStatus
+    let error: String?    // plain failure text, the only text SweepView shows
+    let detail: String?   // the raw error description, kept in the report file only, never on screen
     static func evaluate(requested: VideoOption, facts: ClipFacts?, error: String?) -> SweepRow }
-struct SweepReport: Codable, Sendable { let startedAt: Date; let finishedAt: Date; let lensID: String; let osBuild: String; let modelIdentifier: String
+nonisolated struct SweepReport: Codable, Sendable { let startedAt: Date; let finishedAt: Date; let lensID: String; let osBuild: String; let modelIdentifier: String
     let cancelled: Bool; let rows: [SweepRow]
     static func fileName(for date: Date, timeZone: TimeZone) -> String   // "sweep-2026-11-09-143005.json"
     var summary: String { get } }                                         // "80 passed, 4 failed."
@@ -1050,7 +1146,7 @@ nonisolated struct FailedCombinations: Codable, Sendable, Equatable {   // Appli
 
 Wiring: `CameraModel.start(session:)` loads `FailedCombinations` with `DeviceIdentity.osBuild()` (the Simulator keeps it empty). When a sweep finishes or is cancelled, the model replaces the swept lens's list with the failed rows' `requested` options and saves. `failedCombinations.caption(for: currentVideoOption)` feeds `RecordSettingsSheet.sweepCaption` and `FormatButton.isWarning`, which uses the warning style of `RemainingTime.isWarning` (Task 11). Chips stay selectable.
 
-Pass rule: no error; FourCC equals the request; dimensions equal in either orientation; nominal frame rate within 0.5; colour equal when the file reports one; duration at least 2.5 s. Failure text, first match: "Asked for apch, file has hvc1.", "Asked for 3840 x 2160, file has 1920 x 1080.", "Asked for 60 fps, file has 30.0 fps.", "Asked for Apple Log 2, file has Rec. 709.", "Clip is 1.2 s, expected 3 s.", or the error text. Dropped frames are reported per row, not a failure. The sweep configures each option, records 3 s, stops, awaits the result, deletes the clip unless `-keepSweepClips on` (keeping the sidecar), writes `Documents/Captures/sweep-<date>.json`, and restores the user's selection. Cancel finishes the current clip and writes the report with `cancelled: true`. Copy: title "Format sweep"; body "Records 3 seconds in each video format this lens reports, then saves a report in the Captures folder."; buttons "Start", "Cancel"; result "Done. 80 passed, 4 failed. Saved sweep-2026-11-09-143005.json." or "Cancelled after 12 of 84. Saved sweep-….json."; in the Simulator Start is disabled and the body reads "The sweep needs the camera.". Start is also disabled while recording.
+Pass rule: no error; FourCC equals the request; dimensions equal in either orientation; nominal frame rate within 0.5; colour equal when the file reports one; duration at least 2.5 s. Failure text, first match: "Asked for apch, file has hvc1.", "Asked for 3840 x 2160, file has 1920 x 1080.", "Asked for 60 fps, file has 30.0 fps.", "Asked for Apple Log 2, file has Rec. 709.", "Clip is 1.2 s, expected 3 s.", or, when the recording itself returned an error, "Recording failed." with the error description in `detail`. Dropped frames are reported per row, not a failure. The sweep configures each option, records 3 s, stops, awaits the result, deletes the clip unless `-keepSweepClips on` (keeping the sidecar), writes `Documents/Captures/sweep-<date>.json`, and restores the user's selection. Cancel finishes the current clip and writes the report with `cancelled: true`. Copy: title "Format sweep"; body "Records 3 seconds in each video format this lens reports, then saves a report in the Captures folder."; buttons "Start", "Cancel"; result "Done. 80 passed, 4 failed. Saved sweep-2026-11-09-143005.json." or "Cancelled after 12 of 84. Saved sweep-….json."; in the Simulator Start is disabled and the body reads "The sweep needs the camera.". Start is also disabled while recording.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1068,7 +1164,9 @@ Pass rule: no error; FourCC equals the request; dimensions equal in either orien
         #expect(SweepRow.evaluate(requested: ask, facts: facts(codec: "hvc1"), error: nil).error == "Asked for apch, file has hvc1.")
         #expect(SweepRow.evaluate(requested: ask, facts: facts(colour: .rec709), error: nil).error == "Asked for Apple Log 2, file has Rec. 709.")
         #expect(SweepRow.evaluate(requested: ask, facts: facts(duration: 1.2), error: nil).error == "Clip is 1.2 s, expected 3 s.")
-        #expect(SweepRow.evaluate(requested: ask, facts: nil, error: "[MovieRecorder:start] Cannot record — {codec: apch}").status == .fail)
+        let errored = SweepRow.evaluate(requested: ask, facts: nil, error: "[MovieRecorder:start] Cannot record — {codec: apch}")
+        #expect(errored.status == .fail); #expect(errored.error == "Recording failed.")
+        #expect(errored.detail == "[MovieRecorder:start] Cannot record — {codec: apch}")
     }
     @Test func reportFileName() throws {
         let date = try #require(ISO8601DateFormatter().date(from: "2026-11-09T14:30:05Z"))
