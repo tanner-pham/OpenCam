@@ -48,6 +48,18 @@ import Testing
         #expect(model.sessionConfiguration?.needsFrames == false)
     }
 
+    /// The fallback's notice never replaces a capture notice; the fallback itself still happens.
+    @Test func theFallbackNoticeLeavesACaptureNoticeInPlace() throws {
+        let (model, look) = try make()
+        model.selectLook(look.id)
+        model.show("Look not saved with the photo.", from: .capture)
+        model.framesUnavailable()
+        #expect(model.notice == "Look not saved with the photo."); #expect(model.viewfinderLook == nil)
+        model.clearNotice(from: .capture)
+        model.framesUnavailable()
+        #expect(model.notice == "The look cannot be shown in the viewfinder with this format.")
+    }
+
     /// After a fallback, a format that fails restores the configuration without frames, and the viewfinder follows it.
     @Test func aFailedFormatAfterAFallbackKeepsThePlainViewfinder() async throws {
         let (model, look) = try make()

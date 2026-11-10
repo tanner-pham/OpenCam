@@ -48,7 +48,13 @@ extension CameraModel {
     func settleLook() {
         guard !isSweeping, cameraLook != nil, !isLookOffered else { return }
         cameraLook = nil
+        showLookNotice(LookAvailability.turnedOff)
+    }
+
+    /// The look's own notices are shown only when there is no notice or the current one is the look's, so a capture or
+    /// configuration notice is never replaced.
+    func showLookNotice(_ text: String) {
         guard notice == nil || noticeSource == .look else { return }
-        show(LookAvailability.turnedOff, from: .look)
+        show(text, from: .look)
     }
 }

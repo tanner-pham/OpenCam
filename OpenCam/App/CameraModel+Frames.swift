@@ -11,7 +11,7 @@ extension CameraModel {
     /// detached, and the look stays selected (photos still take it). The next lens, mode, format or look change tries again.
     func framesUnavailable() {
         isLookViewfinderUnavailable = true
-        show(Self.framesUnavailableNotice, from: .look)
+        showLookNotice(Self.framesUnavailableNotice)
         enqueueConfigure()
     }
 
