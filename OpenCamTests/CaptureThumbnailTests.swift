@@ -54,14 +54,21 @@ import Testing
     }
 
     /// A photo taken since the last reload is still found; a clip is left to the strip's own preview.
-    @Test func aNewPhotoIsFoundAndAClipIsNot() async throws {
+    /// Taking a photo or stopping a clip never scans the library: a new photo is drawn from its own file and edit file
+    /// alone, with that edit, and a clip is left to the strip's own preview at once.
+    @Test func aNewCaptureNeverReloadsTheLibrary() async throws {
         let dir = try TestFiles.directory()
         let store = try LibraryStoreTests.make(dir); store.reload()
+        let reloads = store.reloadCount
         let photo = dir.appending(path: "OC_0002.JPG")
         _ = try TestFiles.writeJPEG(width: 40, height: 30, rgb: SIMD3(0.5, 0.5, 0.5), to: photo)
-        #expect(await store.captureThumbnail(for: photo) != nil)
+        try EditStore(directory: dir).save(PhotoEdit(adjustments: Adjustments().setting(.exposure, to: 1)), stem: "OC_0002")
+        let image = try #require(await store.captureThumbnail(for: photo))
+        #expect(abs(try PixelReader.rgb(CIImage(cgImage: image), x: image.width / 2, y: image.height / 2).x - 0.686) < 0.03)
         let clip = dir.appending(path: "OC_0003.MOV")
         try Data("x".utf8).write(to: clip)
         #expect(await store.captureThumbnail(for: clip) == nil); #expect(store.captureThumbnailKey(for: clip) == nil)
+        #expect(await store.captureThumbnail(for: clip) == nil)
+        #expect(store.reloadCount == reloads); #expect(store.items.isEmpty)
     }
 }

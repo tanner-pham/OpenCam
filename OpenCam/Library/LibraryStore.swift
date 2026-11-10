@@ -5,7 +5,7 @@ import OSLog
 
 /// The library's items, their edits and the looks, for the screens to show.
 @MainActor @Observable final class LibraryStore {
-    private static let logger = Logger(subsystem: "local.opencam.app", category: "LibraryStore")
+    private nonisolated static let logger = Logger(subsystem: "local.opencam.app", category: "LibraryStore")
 
     let captures: CaptureStore
     let edits: EditStore
@@ -18,6 +18,8 @@ import OSLog
     /// Imports that have finished. An import can outlive the Library screen, so the camera follows this to read its last
     /// capture again once the new files are there.
     private(set) var importsFinished = 0
+    /// Full reloads so far: each scans the folder and reads every edit. Tests use it to show a capture never causes one.
+    @ObservationIgnored private(set) var reloadCount = 0
     private var editsByStem: [String: PhotoEdit] = [:]
     /// Photos whose edit file exists but could not be loaded, by stem, with why: unreadable, or from a newer build in a shape
     /// this one cannot decode. Such a photo shows unedited, and no batch change or delete touches its edit.
@@ -33,6 +35,7 @@ import OSLog
     /// Reads the items, the photos' edits and the looks. An edit that cannot be loaded is logged and kept apart in
     /// `editFailures`; the photo shows unedited.
     func reload() {
+        reloadCount += 1
         let scanned = LibraryScanner.items(in: captures.directory)
         var loaded: [String: PhotoEdit] = [:]
         var failures: [String: EditStoreError] = [:]
@@ -93,12 +96,37 @@ import OSLog
     }
 
     /// The camera strip's picture of a photo, from the same cache and with the same edit as its Library cell, so a photo
-    /// looks the same in both places. A capture made since the last reload is found by reloading. Nil for a clip, which the
-    /// strip draws its own way, or when the photo cannot be drawn.
+    /// looks the same in both places. Never scans the library: a capture made since the last reload is read alone, its one
+    /// file and its one edit file, off the main actor, and the store's items are left as they are. Nil at once for a clip,
+    /// which the strip draws its own way, and nil when the photo cannot be drawn.
     func captureThumbnail(for url: URL) async -> CGImage? {
-        if photoItem(forCapture: url) == nil { reload() }
-        guard let item = photoItem(forCapture: url), case .ready(let image) = await thumbnail(for: item) else { return nil }
-        return image
+        if let item = photoItem(forCapture: url) {
+            guard case .ready(let image) = await thumbnail(for: item) else { return nil }
+            return image
+        }
+        let fileExtension = url.pathExtension.uppercased()
+        guard LibraryScanner.pictureExtensions.contains(fileExtension),
+              let (item, edit) = await Self.newCapture(at: url, edits: edits) else { return nil }
+        do {
+            return try await thumbnails.thumbnail(for: item, edit: edit)
+        } catch {
+            Self.logger.error("\(error.description, privacy: .public)")
+            return nil
+        }
+    }
+
+    /// The photo item for one capture file and its edit, read off the main actor; nil when the file does not make a photo
+    /// item. An edit that cannot be loaded draws the photo unedited, as the Library does.
+    @concurrent private static func newCapture(at url: URL, edits: EditStore) async -> (LibraryItem, PhotoEdit)? {
+        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+        let items = LibraryScanner.group(names: [url.lastPathComponent], directory: url.deletingLastPathComponent()) { _ in modified }
+        guard let item = items.first, item.isEditable else { return nil }
+        do {
+            return (item, try edits.load(stem: item.stem))
+        } catch {
+            logger.error("\(error.description, privacy: .public)")
+            return (item, PhotoEdit())
+        }
     }
 
     /// Each photo's edit becomes a copy of the look, so later changes to the look never reach it. Clips are skipped.
