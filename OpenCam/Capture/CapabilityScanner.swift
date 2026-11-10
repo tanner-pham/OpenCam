@@ -3,6 +3,7 @@ import OSLog
 
 /// Asks each camera what it can record, modelled on the probe's `Inventory.scanOutputs`.
 /// Each camera gets a throwaway session with photo and movie outputs; the output lists follow the device's active format.
+/// Photo sizes and RAW come from one more throwaway session on the photo preset (`presetReading`).
 nonisolated enum CapabilityScanner {
     private static let logger = Logger(subsystem: "local.opencam.app", category: "CapabilityScanner")
 
@@ -24,10 +25,62 @@ nonisolated enum CapabilityScanner {
         return descriptors
     }
 
+    /// Photo sizes and RAW come from the photo preset reading when there is one: only under the preset does the camera
+    /// offer Bayer RAW (measured on the Duo, 2026-11-10). Without a reading the format walk's own photo fields stay.
     private static func scan(_ lens: Lens) throws(CameraSessionError) -> [FormatDescriptor] {
         guard let device = AVCaptureDevice(uniqueID: lens.deviceUniqueID) else {
             throw .deviceMissing(lensID: lens.id)
         }
+        let reading = presetReading(of: device, lensID: lens.id)
+        return PhotoPresetReading.assign(reading, to: try walkFormats(of: device, lens: lens))
+    }
+
+    /// A throwaway session holding only the camera and a photo output, as measured, on the photo preset and committed,
+    /// never started. The preset picks the active format at the commit (AVCaptureSession.h, beginConfiguration: changes
+    /// "will be pended until the client calls [session commitConfiguration]"), so everything is read after it.
+    /// Nil, logged, when the session cannot take the camera or the preset.
+    private static func presetReading(of device: AVCaptureDevice, lensID: String) -> PhotoPresetReading? {
+        let session = AVCaptureSession()
+        let photo = AVCapturePhotoOutput()
+        session.beginConfiguration()
+        guard let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else {
+            session.commitConfiguration()
+            logger.error("[CapabilityScanner:presetReading] Cannot add input — {lens: \(lensID, privacy: .public)}")
+            return nil
+        }
+        session.addInput(input)
+        defer {
+            session.beginConfiguration()
+            session.inputs.forEach { session.removeInput($0) }
+            session.outputs.forEach { session.removeOutput($0) }
+            session.commitConfiguration()
+        }
+        guard session.canAddOutput(photo) else {
+            session.commitConfiguration()
+            logger.error("[CapabilityScanner:presetReading] Cannot add output — {lens: \(lensID, privacy: .public), name: photo}")
+            return nil
+        }
+        session.addOutput(photo)
+        guard session.canSetSessionPreset(.photo) else {
+            session.commitConfiguration()
+            logger.error("[CapabilityScanner:presetReading] The photo preset cannot be set — {lens: \(lensID, privacy: .public)}")
+            return nil
+        }
+        session.sessionPreset = .photo
+        session.commitConfiguration()
+
+        let format = device.activeFormat
+        let dimensions = format.formatDescription.dimensions
+        var sizes: [PhotoSize] = []
+        for size in format.supportedMaxPhotoDimensions {
+            let photoSize = PhotoSize(width: Int(size.width), height: Int(size.height))
+            if !sizes.contains(photoSize) { sizes.append(photoSize) }
+        }
+        return PhotoPresetReading(width: Int(dimensions.width), height: Int(dimensions.height), sizes: sizes,
+                                  hasBayerRAW: photo.availableRawPhotoPixelFormatTypes.contains { AVCapturePhotoOutput.isBayerRAWPixelFormat($0) })
+    }
+
+    private static func walkFormats(of device: AVCaptureDevice, lens: Lens) throws(CameraSessionError) -> [FormatDescriptor] {
         let session = AVCaptureSession()
         // Each colour space is set by hand below; the session would otherwise override it.
         session.automaticallyConfiguresCaptureDeviceForWideColor = false

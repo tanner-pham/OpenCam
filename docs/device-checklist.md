@@ -18,7 +18,7 @@ A failed check is information, not an emergency: note what happened and move on.
 - [ ] First launch asks for camera, then microphone. Allow both.
 - [ ] "Reading camera formats…" shows once, then the picture. A second launch skips it.
 - [ ] The picture is upright in all four orientations on the folded phone, nothing over it.
-- [ ] The lens menu lists 0.5x, 1x, 2x and two front lenses, with 1x selected.
+- [ ] The lens menu lists 0.5x, 1x, 2x, Outer Ultra Wide Camera and Inner Ultra Wide Camera, with 1x selected.
 - [ ] The strip has four items: Mode, Lens, Record settings, Library, none under the camera hole or clock.
 - [ ] Change lens and mode. Record settings lists only what that lens offers.
 - [ ] Copy `capabilities.json` (Files > On My iPhone > OpenCam) to the Mac. Its codecs and colours per lens should match the probe.
@@ -29,8 +29,8 @@ A failed check is information, not an emergency: note what happened and move on.
 
 - [ ] 1x, RAW + HEIF at 48 MP: one press writes `OC_000n.DNG` and `.HEIC` (Files > OpenCam > Captures). On the Mac, `mdls -name kMDItemPixelWidth -name kMDItemPixelHeight` on the DNG shows the sensor size.
 - [ ] RAW alone and HEIF alone each write the right file. No size offered fails.
-- [ ] 0.5x RAW writes a DNG. On 2x the RAW chips read "RAW needs the 0.5x or 1x lens." and HEIF works.
-- [ ] Both front lenses: HEIF works. Note whether either offers RAW.
+- [ ] RAW and RAW + HEIF are offered on 0.5x and 1x only. 0.5x RAW writes a DNG. On 2x the RAW chips read "RAW needs the 0.5x or 1x lens." and HEIF works.
+- [ ] Both front lenses are HEIF only: HEIF works and no RAW is offered.
 - [ ] Ten quick presses give ten distinct numbers, no overwrite, no crash.
 - [ ] The strip thumbnail shows the newest photo and opens it.
 - [ ] Camera Control, if present: a full press takes a photo; a light press shows zoom and exposure sliders.
