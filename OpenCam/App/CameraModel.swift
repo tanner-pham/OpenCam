@@ -141,8 +141,8 @@ final class CameraModel {
         shownVideoOption.map { String($0.frameRate) } ?? "--"
     }
 
-    /// The timecode counts frames at the selected rate.
-    var timecodeFrameRate: Int { currentVideoOption?.frameRate ?? 30 }
+    /// The timecode counts frames at the rate the FPS readout shows, 30 when none is shown.
+    var timecodeFrameRate: Int { shownVideoOption?.frameRate ?? 30 }
 
     /// Live values only while the camera is ready; otherwise (Simulator, scanning, no camera) every readout reads `--`.
     var shownReadouts: LiveReadouts { phase == .ready ? readouts : LiveReadouts() }

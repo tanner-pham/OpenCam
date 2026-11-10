@@ -5,7 +5,8 @@ struct TimecodeReadout: View {
     var isCompact = false
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1.0 / Double(model.timecodeFrameRate))) { timeline in
+        // Ticks only while recording; idle, the schedule is paused and nothing redraws.
+        TimelineView(.animation(minimumInterval: 1.0 / Double(model.timecodeFrameRate), paused: !model.isRecording)) { timeline in
             ReadoutView(caption: "TIMECODE", value: timecode(at: timeline.date), isAlert: model.isRecording, showsIndicator: model.isRecording, isCompact: isCompact)
         }
     }

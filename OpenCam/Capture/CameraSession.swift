@@ -85,6 +85,8 @@ actor CameraSession: SessionConfigurator {
                     try apply(lastWorkingConfiguration)
                     installSystemControls(CameraControlPlan.kinds(supportsControls: session.supportsControls, mode: lastWorkingConfiguration.mode, photoFormat: lastWorkingConfiguration.photo?.format ?? .heif))
                 } catch let restoreError {
+                    // The attached camera is unknown now, so no control may stay bound to the previous one.
+                    installSystemControls([])
                     continuation.yield(.runtimeError("[CameraSession:configure] Cannot restore the last configuration — {lens: \(lastWorkingConfiguration.lens.id), error: \(restoreError)}"))
                 }
             }
@@ -474,8 +476,10 @@ extension CameraSession {
     /// Replaces the session's controls with `kinds` for the current camera. A slider is left out when the active format
     /// recommends no range for it, because its initializer throws an Objective-C exception for a device that cannot
     /// set that property (AVCaptureSystemZoomSlider.h, AVCaptureSystemExposureBiasSlider.h), and when the session
-    /// cannot add it (`maxControlsCount` is known only at run time).
+    /// cannot add it (`maxControlsCount` is known only at run time). Removing and adding happen in one configuration change.
     private func installSystemControls(_ kinds: [SystemControlKind]) {
+        session.beginConfiguration()
+        defer { session.commitConfiguration() }
         for control in session.controls {
             session.removeControl(control)
         }

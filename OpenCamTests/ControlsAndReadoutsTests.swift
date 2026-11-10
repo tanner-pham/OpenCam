@@ -33,4 +33,11 @@ import Testing
         model.handleCaptureEvent(phase: .ended)
         #expect(!model.isRecording)
     }
+    @MainActor @Test func timecodeCountsAtTheRateTheFPSReadoutShows() throws {
+        let model = CameraModel(config: .parse(["app", "-mode", "video"]), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
+        model.record.frameRate = 24
+        #expect(model.frameRateText == "24"); #expect(model.timecodeFrameRate == 24)
+        let scanning = CameraModel(config: .parse(["app", "-state", "scanning"]), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
+        #expect(scanning.frameRateText == "--"); #expect(scanning.timecodeFrameRate == 30)
+    }
 }
