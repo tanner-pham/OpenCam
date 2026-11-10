@@ -59,6 +59,19 @@ import Testing
         #expect(await fake.calls == ["release", "configure", "start"])
     }
 
+    @Test func aConfigureThatFailsAfterTheScanLeavesTheCameraFailed() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: false, defaults: try Fixture.freshDefaults(),
+                                capabilitySource: source(directory))
+        model.phase = .ready
+        // The scan finds lens W, which then cannot be configured; the camera was released for the scan, so none is attached.
+        let fake = FakeSessionConfigurator(failingLensIDs: ["W"])
+        model.attachSession(fake, configuredWith: try #require(model.sessionConfiguration), selection: model.currentSelection)
+        await model.rescanCapabilities()
+        #expect(model.phase == .failed("The camera could not start."))
+        #expect(await !fake.isRunning); #expect(await !fake.holdsCamera); #expect(await fake.calls == ["release"])
+    }
+
     @Test func aWorkingRescanClearsTheEarlierScanNotice() async throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let discovered = Mutex([wide, front]), formats = [descriptor]

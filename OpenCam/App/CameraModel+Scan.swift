@@ -51,7 +51,14 @@ extension CameraModel {
         } else {
             show(Self.rescanFailedNotice, from: .scan)
         }
-        try? await applySelection()
+        do throws(CameraSessionError) {
+            try await applySelection()
+        } catch {
+            // The scan released the camera and the session restores nothing after a rescan, so no camera is attached.
+            Self.logger.error("[CameraModel:rescanCapabilities] No camera attached after the rescan — {error: \(error.description, privacy: .public)}")
+            phase = .failed("The camera could not start.")
+            return
+        }
         await configurator?.start()
     }
 

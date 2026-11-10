@@ -153,9 +153,11 @@ actor CameraSession: SessionConfigurator {
     }
 
     /// Stops the session and removes its camera input, and the controls bound to that camera, so the capability scanner
-    /// can add the camera to a session of its own. The next `configure` attaches a camera again.
+    /// can add the camera to a session of its own. The next `configure` attaches a camera again; the last working
+    /// configuration is forgotten, so a configure that fails then restores nothing and the caller knows none is attached.
     func releaseCameras() {
         stop()
+        lastWorkingConfiguration = nil
         installSystemControls([])
         guard let videoInput else { return }
         session.beginConfiguration()
