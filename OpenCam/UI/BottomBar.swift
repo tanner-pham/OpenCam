@@ -20,7 +20,8 @@ struct BottomBar: View {
         HStack(spacing: Theme.Space.l) {
             Color.clear.frame(width: Theme.Size.histogramWidth, height: Theme.Size.histogramHeight)
             Spacer(minLength: 0)
-            FormatButton(parts: model.summaryParts) { model.openRecordSettings() }
+            FormatButton(parts: model.summaryParts, isWarning: model.sweepCaption != nil,
+                         onLongPress: model.mode == .video ? { model.openSweep() } : nil) { model.openRecordSettings() }
                 .disabled(!model.canOpenRecordSettings)
             Spacer(minLength: 0)
             if model.showsVideoReadouts {

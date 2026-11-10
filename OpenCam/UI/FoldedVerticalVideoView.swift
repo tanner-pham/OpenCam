@@ -34,7 +34,8 @@ struct FoldedVerticalVideoView: View {
     private var bottomControls: some View {
         GlassEffectContainer(spacing: Theme.Space.s) {
             HStack(spacing: Theme.Space.s) {
-                FormatButton(parts: model.summaryParts) { model.openRecordSettings() }
+                FormatButton(parts: model.summaryParts, isWarning: model.sweepCaption != nil,
+                             onLongPress: { model.openSweep() }) { model.openRecordSettings() }
                     .disabled(!model.canOpenRecordSettings)
                 // "Storage full" is wider than the minutes, so the meters give way to it.
                 HStack(spacing: Theme.Space.s) {

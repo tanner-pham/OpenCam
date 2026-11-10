@@ -37,9 +37,10 @@ struct CameraRootView: View {
                                     photoResolver: model.photoResolver,
                                     record: $model.record,
                                     photo: $model.photo,
-                                    freeBytes: model.freeBytes)
+                                    freeBytes: model.freeBytes,
+                                    sweepCaption: model.sweepCaption)
             case .sweep:
-                EmptyView()
+                SweepView(model: model)
             }
         }
     }

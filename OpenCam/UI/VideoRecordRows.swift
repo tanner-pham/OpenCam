@@ -5,6 +5,7 @@ struct VideoRecordRows: View {
     let resolver: RecordSelectionResolver
     @Binding var selection: RecordSelection
     let freeBytes: Int64
+    var sweepCaption: String? = nil
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     var body: some View {
@@ -22,6 +23,11 @@ struct VideoRecordRows: View {
                 if let option = resolver.option(for: selection) {
                     Text(DataRateEstimator.footer(for: option, freeBytes: freeBytes))
                         .font(.footnote.monospacedDigit())
+                }
+                if let sweepCaption {
+                    Text(sweepCaption)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.recordRed)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

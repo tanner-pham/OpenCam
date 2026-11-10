@@ -32,8 +32,17 @@ final class CameraModel {
     private(set) var isScanningFormats = false
     /// The camera's live values, polled while the session runs; shown only through `shownReadouts`.
     private(set) var readouts = LiveReadouts()
+    /// The latest format sweep, kept after it ends so its result stays on screen.
+    private(set) var sweep: FormatSweep?
+    /// True from the start of a sweep until the user's selection is back. Lens, mode, selection, capture, Record settings
+    /// and rescans are all held meanwhile, and nothing is saved as the user's selection.
+    private(set) var isSweeping = false
+    /// Options that failed the last sweep of each lens on this OS build; loaded on the device only.
+    private(set) var failedCombinations = FailedCombinations(osBuild: "", failedByLens: [:])
 
     @ObservationIgnored private let defaults: UserDefaults
+    /// `-keepSweepClips on` keeps each sweep clip; otherwise only its sidecar stays.
+    @ObservationIgnored private let keepsSweepClips: Bool
     @ObservationIgnored private let isScripted: Bool
     /// The Simulator keeps the stand-in free space; the device reads it.
     @ObservationIgnored private let isSimulator: Bool
@@ -77,6 +86,7 @@ final class CameraModel {
         self.isScripted = config.isScripted
         self.isSimulator = isSimulator
         self.freeSpaceMarginMB = config.freeSpaceMarginMB
+        self.keepsSweepClips = config.keepsSweepClips
         if isSimulator {
             self.phase = config.simulatedState == .scanning ? .scanning : .simulator
         } else {
@@ -212,7 +222,7 @@ final class CameraModel {
 
     /// Record settings opens only once the device's formats are known.
     var canOpenRecordSettings: Bool {
-        hasCamera && !(capabilities.videoOptions.isEmpty && capabilities.photoOptions.isEmpty)
+        hasCamera && !isSweeping && !(capabilities.videoOptions.isEmpty && capabilities.photoOptions.isEmpty)
     }
 
     func openRecordSettings() {
@@ -224,7 +234,7 @@ final class CameraModel {
     var showsVideoReadouts: Bool { mode == .video }
 
     var canCapture: Bool {
-        guard StatusText.canRecord(phase: phase, mode: mode, minutesRemaining: minutesRemaining) else { return false }
+        guard !isSweeping, StatusText.canRecord(phase: phase, mode: mode, minutesRemaining: minutesRemaining) else { return false }
         switch mode {
         case .video: return currentVideoOption != nil
         case .photo: return currentPhotoOption != nil
@@ -232,10 +242,10 @@ final class CameraModel {
     }
 
     /// The strip's Lens and Mode items follow this; `isScanningFormats` also keeps configures from queuing.
-    var canChangeLensOrMode: Bool { !isRecording && !isScanningFormats }
+    var canChangeLensOrMode: Bool { !isRecording && !isScanningFormats && !isSweeping }
 
     func selectLens(_ id: String) {
-        guard id != lensID, capabilities.lenses.contains(where: { $0.id == id }) else { return }
+        guard id != lensID, !isSweeping,capabilities.lenses.contains(where: { $0.id == id }) else { return }
         lensID = id
         settleSelections()
     }
@@ -263,8 +273,10 @@ final class CameraModel {
     }
 
     /// The one path for the on-screen button and the Camera Control: stopping is always allowed,
-    /// a photo or a new recording only when `canCapture`.
+    /// a photo or a new recording only when `canCapture`. During a sweep nothing is allowed, stopping included:
+    /// the sweep starts and stops its own clips.
     private func perform(_ action: CaptureAction) {
+        guard !isSweeping else { return }
         switch action {
         case .stopRecording:
             stopRecording()
@@ -347,15 +359,17 @@ final class CameraModel {
     }
 
     /// Reserves a file number and starts recording behind any queued configure. `isRecording` holds from the press,
-    /// so lens, mode and format stay as they are until `recordingDidFinish`.
-    private func startRecording() {
+    /// so lens, mode and format stay as they are until `recordingDidFinish`. Returns the start, which ends once the clip is
+    /// recording or `recordingDidFinish` has reported its failure; nil when nothing started and no result will follow.
+    @discardableResult
+    private func startRecording() -> Task<Void, Never>? {
         guard let cameraSession, let option = currentVideoOption,
-              let store = store(failureNotice: RecordingOutcome.failedNotice) else { return }
+              let store = store(failureNotice: RecordingOutcome.failedNotice) else { return nil }
         let url = store.url(sequence: store.reserveSequence(), kind: .mov)
         let minFreeBytes = recordingReserveBytes()
         let pendingConfigure = configureTask
         isRecording = true
-        recordingStartTask = Task {
+        let task = Task {
             if let configureError = await pendingConfigure?.value {
                 // The session went back to its last working format, which is not the one the press was for.
                 recordingDidFinish(RecordingResult(url: url, option: option, outcome: .failed(configureError.description), sidecar: nil))
@@ -368,6 +382,8 @@ final class CameraModel {
                 recordingDidFinish(RecordingResult(url: url, option: option, outcome: .failed(error.description), sidecar: nil))
             }
         }
+        recordingStartTask = task
+        return task
     }
 
     /// Waits for a recording that is still starting, then stops it; the UI resets in `recordingDidFinish`.
@@ -414,8 +430,9 @@ final class CameraModel {
         enqueueConfigure()
     }
 
+    /// A sweep's options are never saved as the user's selection.
     private func persist() {
-        guard !isScripted, !isAwaitingRestore else { return }
+        guard !isScripted, !isAwaitingRestore, !isSweeping else { return }
         currentSelection.save(to: defaults)
     }
 
@@ -522,6 +539,7 @@ extension CameraModel {
     /// then follows its events for as long as the calling task runs.
     func start(session: CameraSession) async {
         refreshFreeBytes()
+        failedCombinations = FailedCombinations.load(directory: capabilitySource.cacheDirectory, osBuild: DeviceIdentity.osBuild())
         access = await CameraSession.requestAccess()
         guard access.canUseCamera else {
             phase = access.camera == .restricted ? .cameraRestricted : .cameraDenied
@@ -599,12 +617,18 @@ extension CameraModel {
     /// Resets the record button and timecode, keeps a playable clip as the last capture, and says what happened:
     /// the outcome's notice, else dropped frames, else nothing (clearing an earlier recording notice).
     /// A selection change held back while recording is applied now.
+    /// During a sweep the result goes to the sweep instead, which reports it in its own rows and drives the next configure.
     func recordingDidFinish(_ result: RecordingResult) {
         isRecording = false
         recordingStart = nil
         recordingStartTask = nil
         if case .failed(let message) = result.outcome {
             Self.logger.error("\(message, privacy: .public)")
+        }
+        if isSweeping, let sweep {
+            refreshFreeBytes()
+            sweep.recordingDidFinish(result)
+            return
         }
         if result.outcome.isPlayable { lastCapture = result.url }
         let clipName = result.url.deletingPathExtension().lastPathComponent
@@ -638,8 +662,8 @@ extension CameraModel {
         adoptScan(capabilities, lenses: lenses)
     }
 
-    /// Off while recording or while formats are being read.
-    var canRescanCapabilities: Bool { !isRecording && phase != .scanning && phase != .simulator }
+    /// Off while recording, while formats are being read, and during a sweep.
+    var canRescanCapabilities: Bool { !isRecording && !isSweeping && phase != .scanning && phase != .simulator }
 
     /// Clears the cache and reads every camera again, for a camera that could not be read before. The session is stopped
     /// meanwhile, because the scan sets each camera's format directly; the saved selections are restored afterwards.
@@ -758,6 +782,90 @@ extension CameraModel {
             pressureLevel = level
             isThermalPressure = isThermal
         }
+    }
+}
+
+extension CameraModel: SweepDriver {
+    /// The format sweep needs a working camera; the Simulator and every failed or denied state read this.
+    static let sweepNeedsCamera = "The sweep needs the camera."
+
+    /// Every video option of the current lens that a selection can reach, in the order the device reported them.
+    var sweepOptions: [VideoOption] {
+        let resolver = recordResolver
+        return capabilities.videoOptions.filter { $0.lensID == lensID && resolver.option(for: Self.selection(from: $0)) == $0 }
+    }
+
+    /// Never while recording, while formats are read, or during another sweep; only in video mode with a working camera.
+    var canStartSweep: Bool {
+        phase == .ready && mode == .video && !isRecording && !isScanningFormats && !isSweeping && cameraSession != nil
+            && canCapture && !sweepOptions.isEmpty
+    }
+
+    /// Red text in Record settings and the warning style on the format summary when the selection failed the last sweep.
+    var sweepCaption: String? {
+        mode == .video ? failedCombinations.caption(for: shownVideoOption) : nil
+    }
+
+    /// The format summary's long press, in video mode.
+    func openSweep() {
+        guard mode == .video, canOpenRecordSettings else { return }
+        sheet = .sweep
+    }
+
+    /// Sweeps the current lens one option at a time, then puts the user's selection back, waits for it to apply, and keeps
+    /// the failed options for this lens. The user's saved selection is untouched throughout.
+    func startSweep() async {
+        guard canStartSweep, let lens = currentLens,
+              let store = store(failureNotice: RecordingOutcome.failedNotice) else { return }
+        let userRecord = record
+        let sweep = FormatSweep(driver: self, store: store, lens: lens, options: sweepOptions, keepsClips: keepsSweepClips)
+        self.sweep = sweep
+        isSweeping = true
+        await sweep.run()
+        record = userRecord
+        let isRestored: Bool
+        do throws(CameraSessionError) {
+            try await applySelection()
+            isRestored = true
+        } catch {
+            // The session stays on the last option that worked, and the notice says the format could not be used.
+            Self.logger.error("[CameraModel:startSweep] The user's selection could not be restored — {lens: \(lens.id, privacy: .public), error: \(error.description, privacy: .public)}")
+            isRestored = false
+        }
+        isSweeping = false
+        if isRestored { persist() }
+        failedCombinations = failedCombinations.replacing(lensID: lens.id, with: sweep.rows.filter { $0.status == .fail }.map(\.requested))
+        do throws(CapabilityError) {
+            try failedCombinations.save(directory: capabilitySource.cacheDirectory)
+        } catch {
+            Self.logger.error("\(error.description, privacy: .public)")
+        }
+    }
+
+    func cancelSweep() {
+        sweep?.cancel()
+    }
+
+    // MARK: SweepDriver
+
+    func applySweepOption(_ option: VideoOption) async throws(CameraSessionError) {
+        record = Self.selection(from: option)
+        try await applySelection()
+    }
+
+    func beginSweepClip() async -> Bool {
+        guard let start = startRecording() else { return false }
+        await start.value
+        return true
+    }
+
+    func endSweepClip() {
+        stopRecording()
+    }
+
+    private static func selection(from option: VideoOption) -> RecordSelection {
+        RecordSelection(family: option.codec.family, quality: option.codec.quality, resolution: option.resolution,
+                        frameRate: option.frameRate, colour: option.colour)
     }
 }
 
