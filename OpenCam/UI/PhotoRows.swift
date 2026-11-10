@@ -3,6 +3,7 @@ import SwiftUI
 struct PhotoRows: View {
     let resolver: PhotoSelectionResolver
     @Binding var selection: PhotoSelection
+    let look: LookChoice
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     var body: some View {
@@ -17,11 +18,14 @@ struct PhotoRows: View {
                         if let changed = resolver.select(row, chipID: chipID, in: selection) { selection = changed }
                     }
                 }
+                ChipRow(title: "Look", chips: look.chips, selectedID: look.selectedID, reason: look.reason, columns: 1,
+                        isSingleLine: true, onSelect: look.onSelect)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, verticalSizeClass == .compact ? 0 : Theme.Space.l)
             .padding(.trailing, Theme.Space.l)
         }
+        .defaultScrollAnchor(look.scrollsIntoView ? .bottom : .top, for: .initialOffset)
     }
 
     private func selectedID(_ row: PhotoRow) -> String {

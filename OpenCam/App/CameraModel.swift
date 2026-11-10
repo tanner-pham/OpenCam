@@ -96,6 +96,8 @@ final class CameraModel {
     @ObservationIgnored let isLibraryAvailable: Bool
     /// The store shared with the Library and the editor; nil when none could be made, and the camera then has only None.
     @ObservationIgnored let lookStore: LookStore?
+    /// True when Record settings opens scrolled to the Look row (a scripted launch with a look, for screenshots).
+    @ObservationIgnored let scrollsToLookRow: Bool
     /// The tail of the serial chain that releases the camera for the Library and takes it back.
     @ObservationIgnored var libraryHandoff: Task<Void, Never>?
     /// True from the moment the session let go of its camera for the Library until it runs again.
@@ -147,8 +149,11 @@ final class CameraModel {
         } else {
             self.cameraLook = CameraLook.reconciled(saved?.look, with: looks)
         }
+        self.scrollsToLookRow = config.screen == .record && config.cameraLookName != nil
         // A device launch starts with no capabilities, so the saved choices wait for real ones and must not be overwritten meanwhile.
         self.isAwaitingRestore = !config.isScripted && capabilities.lenses.isEmpty
+        // A look the launch mode cannot take is None, with no notice.
+        if !isLookOffered { self.cameraLook = nil }
         if isSimulator { simulate(config.simulatedState) }
     }
 
@@ -197,7 +202,7 @@ final class CameraModel {
 
     /// The current options as the screen may name them: none while formats are being read, and none the device has not reported.
     /// Only a working camera, or the Simulator's labelled stand-in, names a format or a measurement.
-    private var hasCamera: Bool { phase == .ready || phase == .simulator }
+    var hasCamera: Bool { phase == .ready || phase == .simulator }
     var shownVideoOption: VideoOption? { hasCamera ? currentVideoOption : nil }
     private var shownPhotoOption: PhotoOption? { hasCamera ? currentPhotoOption : nil }
 
@@ -210,10 +215,10 @@ final class CameraModel {
         switch mode {
         case .video:
             guard let option = shownVideoOption else { return ["--"] }
-            return [option.codec.family.title, option.resolution.label, option.colour.shortName]
+            return [option.codec.family.title, option.resolution.label, option.colour.shortName] + (summaryLookName.map { [$0] } ?? [])
         case .photo:
             guard let option = shownPhotoOption else { return ["--"] }
-            return [option.format.rawValue, option.label]
+            return [option.format.rawValue, option.label] + (summaryLookName.map { [$0] } ?? [])
         }
     }
 
@@ -434,6 +439,7 @@ final class CameraModel {
 
     func selectionChanged() {
         guard !isApplyingSelection else { return }
+        settleLook()
         persist()
         enqueueConfigure()
     }
@@ -511,6 +517,7 @@ final class CameraModel {
         record = lastWorking.selection.record
         photo = lastWorking.selection.photo
         isApplyingSelection = false
+        settleLook()
         requestedConfiguration = lastWorking.configuration
         configureTask = nil
         persist()

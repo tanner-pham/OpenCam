@@ -8,6 +8,8 @@ struct ChipRow: View {
     let selectedID: String
     let reason: String?
     let columns: Int
+    /// One horizontally scrolling line of chips instead of the grid; `columns` is ignored.
+    var isSingleLine = false
     let onSelect: (String) -> Void
 
     var body: some View {
@@ -16,10 +18,22 @@ struct ChipRow: View {
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.secondary)
             GlassEffectContainer(spacing: 0) {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.Space.s), count: columns),
-                          spacing: Theme.Space.xs) {
-                    ForEach(chips) { chip in
-                        ChipButton(chip: chip, isSelected: chip.id == selectedID) { onSelect(chip.id) }
+                if isSingleLine {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: Theme.Space.s) {
+                            ForEach(chips) { chip in
+                                ChipButton(chip: chip, isSelected: chip.id == selectedID, isSingleLine: true) { onSelect(chip.id) }
+                                    .frame(minWidth: 2 * Theme.Size.minTarget, maxWidth: Theme.Size.lookChipMax)
+                            }
+                        }
+                    }
+                    .scrollClipDisabled()
+                } else {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.Space.s), count: columns),
+                              spacing: Theme.Space.xs) {
+                        ForEach(chips) { chip in
+                            ChipButton(chip: chip, isSelected: chip.id == selectedID) { onSelect(chip.id) }
+                        }
                     }
                 }
             }

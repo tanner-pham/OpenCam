@@ -16,4 +16,31 @@ extension CameraModel {
         cameraLook = reconciled
         selectionChanged()
     }
+
+    var isLookOffered: Bool { LookAvailability.isOffered(mode: mode, colour: record.colour) }
+    var lookChips: [Chip] { LookAvailability.chips(looks: looks, isOffered: isLookOffered) }
+    var lookChipID: String { cameraLook?.id.uuidString ?? LookAvailability.noneID }
+    var lookReason: String? {
+        LookAvailability.reasonLine(mode: mode, isOffered: isLookOffered, hasLook: cameraLook != nil)
+    }
+
+    /// A choice from the Look row: None, or a look's id. Choosing clears the look's own notice.
+    func selectLook(chipID: String) {
+        clearNotice(from: .look)
+        selectLook(UUID(uuidString: chipID))
+    }
+
+    /// The look's name for the format summary; nil with no camera picture or no look.
+    var summaryLookName: String? {
+        guard hasCamera, let cameraLook else { return nil }
+        return LookAvailability.summaryName(cameraLook.name)
+    }
+
+    /// A look the current mode and colour cannot take becomes None, with a notice. Sets the look directly, so it never
+    /// asks the camera to change.
+    func settleLook() {
+        guard cameraLook != nil, !isLookOffered else { return }
+        cameraLook = nil
+        show(LookAvailability.turnedOff, from: .look)
+    }
 }
