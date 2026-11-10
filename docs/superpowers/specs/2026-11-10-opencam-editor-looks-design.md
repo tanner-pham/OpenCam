@@ -110,6 +110,8 @@ All of it uses the system components, system glass and Theme already in the app.
 - The colour table works in Display P3, not sRGB.
 - The library also lists video clips, so they stay reachable once the Library screen replaces the last-capture preview. Clips are not editable; "Apply look" skips them and says so.
 - "Remove look" clears the photo's whole edit.
+- The photo also sits beside the panel when the screen is short (the folded phone held horizontally), not only on the open phone.
+- An edit file written by a newer version of OpenCam is read-only to an older one: it shows, but cannot be changed, so nothing the newer version stored is lost.
 - The exact slider formulas (in plan E1). They are simple and pinned by tests; they are not a match for any other editor's sliders.
 
 Plan for E1: `docs/superpowers/plans/2026-11-10-opencam-editor-looks-e1.md`.

@@ -30,12 +30,13 @@ Added by this plan:
 - Capture files are matched by `CaptureStore.clipKey(for:)` (the file name), never by URL equality, wherever this plan compares a file it found with one it holds.
 - Camera notices: E1 shows none on the camera screen. Any later one goes only through `CameraModel.show(_:from:)` / `clearNotice(from:)` with a `NoticeSource`. The Library and Editor show their own messages in their own alerts.
 - Names: E1's colour maths is `ColourMath` in `OpenCam/Render/`; it is unrelated to the capture `ColourMode` in `OpenCam/Capability/` and never touches it.
-- Files: looks are `Documents/Looks/<uuid>.json`; an edit is `Documents/Captures/<stem>.edit.json` (`OC_0001.edit.json`); thumbnails are `Library/Caches/Thumbnails/<key>.jpg`; exports go to `tmp/Export/`. Nothing in E1 writes into Captures except imports, Simulator samples and `.edit.json` files. No original is ever rewritten.
+- Files: looks are `Documents/Looks/<uuid>.json`; an edit is `Documents/Captures/<stem>.edit.json` (`OC_0001.edit.json`); thumbnails are `Library/Caches/Thumbnails/<key>`, where the key already ends in `.jpg`; exports go to `tmp/Export/`. Nothing in E1 writes into Captures except imports, Simulator samples and `.edit.json` files. No original is ever rewritten.
 - One renderer: `LookRenderer.shared` owns the only `CIContext`. The editor preview, look tiles, thumbnails and export all pass through `LookRenderer.render(_:adjustments:)`. The colour table is applied in Display P3 (`CGColorSpace.displayP3`), because iPhone photos are P3 and an sRGB table would clip them; every rendered `CGImage`, thumbnail and exported file is Display P3. Display P3 and sRGB share one transfer curve, so `ColourMath` works on P3-encoded values unchanged. Its luma uses the Rec. 709 weights on P3-encoded values: a deliberate simplification, not a colourimetric luminance.
 - Proxy rule: while editing, every render uses a proxy whose long side is at most `EditorModel.proxyLongSide = 2048` px. The full-size original is decoded only by `PhotoExporter`.
-- Exact UI copy, used verbatim: slider names Exposure, Contrast, Highlights, Shadows, Whites, Blacks, Temperature, Tint, Vibrance, Saturation, Sharpening, Noise reduction, Grain, Vignette; groups Light, Colour, Detail, Effects, Looks; "This photo could not be opened."; "The photo could not be exported."; "The edit could not be saved."; "The items could not be deleted."; "This video could not be opened."; "No photos yet" / "Take one or import from Photos."; "Enter a name."; "Use 40 characters or fewer."; buttons "Done", "Reset all", "Export", "Import", "Select", "Apply look", "Remove look", "None", "Save as look", "Rename", "Duplicate", "Delete", "Cancel", "Save", "OK", "Original".
+- Exact UI copy, used verbatim: slider names Exposure, Contrast, Highlights, Shadows, Whites, Blacks, Temperature, Tint, Vibrance, Saturation, Sharpening, Noise reduction, Grain, Vignette; groups Light, Colour, Detail, Effects, Looks; "This photo could not be opened."; "The photo could not be exported."; "The edit could not be saved."; "The items could not be deleted."; "This video could not be opened."; "No photos yet" / "Take one or import from Photos."; "This photo was edited by a newer version of OpenCam."; "No photos were changed."; "Enter a name."; "Use 40 characters or fewer."; buttons "Done", "Reset all", "Export", "Import", "Select", "Apply look", "Remove look", "None", "Save as look", "Rename", "Duplicate", "Delete", "Cancel", "Save", "OK", "Original".
 - Screenshots: `SHOT_DIR=docs/screenshots/e1`, names prefixed `e1-`, taken on display 1 (the outer display) by `scripts/shot.sh`, which Task 5 extends. The implementer reads every PNG.
-- Calls made in this plan (deviations from the brief, each small): (1) The editor also uses the side-by-side layout when the vertical size class is compact, because a picture above a panel does not fit the outer display's 466 pt landscape height; regular width still means side by side. (2) The empty state is a `ContentUnavailableView` titled "No photos yet" with the description "Take one or import from Photos.". (3) Import keeps the original bytes and accepts HEIC, HEIF, JPEG, PNG and DNG; any other type, and anything that does not decode, fails with the plain message. (4) "Remove look" and the Looks group's "None" clear the whole edit of a photo that has a look (a look is copied in, so its values cannot be separated from later changes); photos without a look are untouched. (5) Simulator samples are JPEG, so the samples do not depend on HEVC encoding in the Simulator. (6) One extra scripted flag, `-librarySelect on`, opens Library in Select mode with the newest photo selected, so Select mode can be screenshotted. (7) The Library item keeps Task 11's last-capture image (now counting JPG and PNG too); tapping it opens Library instead of Quick Look. Library lists clips too, and a clip opens in the system preview, so videos stay reachable in the app. (8) The share sheet is a `UIActivityViewController` in a `UIViewControllerRepresentable`, because the file exists only after the render.
+- Edit files from a newer build (Task 1, as built): `EditStore` loads them, but `save` and `remove` throw `EditStoreError.newerVersion(path:version:)` and leave the file unchanged. Every later path that saves or removes an edit (editor Done, Apply look, Remove look, Delete) catches that case, logs it and shows `LibraryCopy.newerEdit` ("This photo was edited by a newer version of OpenCam."), never an error description; Apply look and Remove look count such photos as skipped. Task 1 also defines `LookStoreError.unreadable(path:reason:)` for look read and decode failures; later tasks use it rather than adding another case. An `.edit.json` counts toward `CaptureStore`'s next number (numbers only skip ahead), so a library item is never deleted without its edit file.
+- Calls made in this plan (deviations from the brief, each small): (1) The editor also uses the side-by-side layout when the vertical size class is compact, because a picture above a panel does not fit the outer display's 466 pt landscape height; regular width still means side by side. This is a deliberate addition to the spec's "Folded (outer display): photo above the panel", which then holds for portrait only; it is recorded in the spec's calls made without Tanner. (2) The empty state is a `ContentUnavailableView` titled "No photos yet" with the description "Take one or import from Photos.". (3) Import keeps the original bytes and accepts HEIC, HEIF, JPEG, PNG and DNG; any other type, and anything that does not decode, fails with the plain message. (4) "Remove look" and the Looks group's "None" clear the whole edit of a photo that has a look (a look is copied in, so its values cannot be separated from later changes); photos without a look are untouched. (5) Simulator samples are JPEG, so the samples do not depend on HEVC encoding in the Simulator. (6) One extra scripted flag, `-librarySelect on`, opens Library in Select mode with the newest photo selected, so Select mode can be screenshotted. (7) The Library item keeps Task 11's last-capture image (now counting JPG and PNG too); tapping it opens Library instead of Quick Look. Library lists clips too, and a clip opens in the system preview, so videos stay reachable in the app. (8) The share sheet is a `UIActivityViewController` in a `UIViewControllerRepresentable`, because the file exists only after the render.
 
 ## Review Focus
 
@@ -223,7 +224,7 @@ git commit -m "feat: add adjustments, looks and photo edits with their stores"
 
 **Files:**
 - Create in `OpenCam/Render/`: `ColourMath.swift`, `ColourCube.swift`, `LookCompiler.swift`
-- Test: `OpenCamTests/ColourMathTests.swift`, `OpenCamTests/LookCompilerTests.swift`
+- Test: `OpenCamTests/ColourMathTests.swift`, `OpenCamTests/LookCompilerTests.swift`, `OpenCamTests/Probe.swift` (the `Probe` argument type alone, declared `nonisolated` so its `CustomTestStringConvertible` conformance is not main-actor-isolated under the test target's MainActor default)
 
 **Interfaces:**
 - Consumes: Task 1 `Adjustments`, `AdjustmentKey`.
@@ -277,11 +278,13 @@ Highlights and shadows weights are 0 at 0 and 1, so black and white stay put; bo
 - [ ] **Step 1: Write the failing tests**
 
 ```swift
-struct Probe: Sendable, CustomTestStringConvertible {
+// OpenCamTests/Probe.swift
+nonisolated struct Probe: Sendable, CustomTestStringConvertible {
     let key: AdjustmentKey; let rgb: SIMD3<Float>; let channel: Int; let rises: Bool
     var testDescription: String { "\(key) channel \(channel)" }
 }
 
+// OpenCamTests/ColourMathTests.swift
 @Suite struct ColourMathTests {
     let grey = SIMD3<Float>(repeating: 0.5)
     func apply(_ key: AdjustmentKey, _ value: Double, _ rgb: SIMD3<Float>) -> SIMD3<Float> { ColourMath.apply(Adjustments().setting(key, to: value), to: rgb) }
@@ -471,12 +474,18 @@ enum PictureError: Error, CustomStringConvertible, Equatable { case missing(path
         await #expect(throws: PictureError.missing(path: gone.path(percentEncoded: false))) { try await PictureDecoder.proxy(at: gone, longSide: 360) }
         #expect(throws: PictureError.self) { try PictureDecoder.full(at: junk) }
     }
+    @Test func heicHelperRoundTripsInTheSimulator() throws {   // Task 9's HEIF test depends on HEIC encoding in OpenCam Dev
+        let url = try TestFiles.writeHEIC(width: 64, height: 48, rgb: SIMD3(0.4, 0.5, 0.6), to: TestFiles.directory().appending(path: "probe.HEIC"))
+        #expect(try PictureDecoder.pixelSize(at: url) == CGSize(width: 64, height: 48))
+        #expect(diff(try PixelReader.rgb(PictureDecoder.full(at: url), x: 32, y: 24), SIMD3(0.4, 0.5, 0.6)) < 0.03)
+    }
+    func diff(_ a: SIMD3<Float>, _ b: SIMD3<Float>) -> Float { ((a - b) * (a - b)).squareRoot().max() }
 }
 ```
 
 - [ ] **Step 2: Run to see them fail** — `scripts/test.sh LookRendererTests`. Expected: `cannot find 'LookRenderer' in scope`.
 - [ ] **Step 3: Implement the renderer and decoder to the values above, then the test helpers.**
-- [ ] **Step 4: Run to see them pass** — `scripts/test.sh LookRendererTests && scripts/test.sh PictureDecoderTests`. Expected: `** TEST SUCCEEDED **` twice. If `identityCubeKeepsPixelsSoTheDataOrderIsRight` swaps red and blue, the cube order is wrong; fix the compiler, never the test.
+- [ ] **Step 4: Run to see them pass** — `scripts/test.sh LookRendererTests && scripts/test.sh PictureDecoderTests`. Expected: `** TEST SUCCEEDED **` twice. If `identityCubeKeepsPixelsSoTheDataOrderIsRight` swaps red and blue, the cube order is wrong; fix the compiler, never the test. If `heicHelperRoundTripsInTheSimulator` fails because the Simulator cannot encode HEIC, stop and report it: Task 9's HEIF export test and Call (5) need a ruling, so do not weaken the test.
 - [ ] **Step 5: Commit**
 
 ```bash
@@ -531,7 +540,11 @@ nonisolated struct ThumbnailCache: Sendable {
     // photo: cached file, else proxy(360) through LookRenderer; clip: AVAssetImageGenerator frame at zero, preferred transform applied,
     // maximumSize 360 x 360, edit ignored; both written as Display P3 JPEG
 }
-nonisolated enum LibraryError: Error, CustomStringConvertible { case deleteFailed(path: String, reason: String), editFailed(stem: String, reason: String) }
+nonisolated enum LibraryError: Error, CustomStringConvertible, Equatable {
+    case deleteFailed(path: String, reason: String), editFailed(stem: String, reason: String)
+    case newerEdit(path: String, version: Int)                              // from EditStoreError.newerVersion; shown as LibraryCopy.newerEdit
+    case seedFailed(path: String, reason: String)                           // a sample that could not be rendered or written
+}
 @MainActor @Observable final class LibraryStore {
     init(captures: CaptureStore, edits: EditStore, looks: LookStore, thumbnails: ThumbnailCache)
     let captures: CaptureStore; let edits: EditStore; let lookStore: LookStore
@@ -541,10 +554,13 @@ nonisolated enum LibraryError: Error, CustomStringConvertible { case deleteFaile
     func edit(for item: LibraryItem) -> PhotoEdit                          // PhotoEdit() for a clip
     func thumbnailKey(for item: LibraryItem) -> String
     func thumbnail(for item: LibraryItem) async -> ThumbnailState          // .failed when the file cannot be decoded
-    func delete(_ items: [LibraryItem]) throws(LibraryError)               // each item's fileURLs and, for a photo, its edit file, then reload
+    func delete(_ items: [LibraryItem]) throws(LibraryError)
+    // per item, all or nothing: a photo's edit file is removed first (EditStore.remove), then its fileURLs. An item whose edit is
+    // newer (EditStoreError.newerVersion) is left whole, because an orphan .edit.json would still raise the next number.
+    // The other items are still deleted; then reload, then throw the first error (.newerEdit before any other kind).
 }
 @MainActor enum SampleSeeder {
-    static func seedIfEmpty(_ captures: CaptureStore) throws(LibraryError) -> Int   // 0 when Captures already has any library item, photo or clip
+    static func seedIfEmpty(_ captures: CaptureStore) throws(LibraryError) -> Int   // 0 when Captures already has any library item, photo or clip; a failed render or write throws .seedFailed
 }
 struct ColourBarsPattern: View   // eight vertical bars (white, yellow, cyan, green, magenta, red, blue, black) over a bottom quarter grey ramp
 struct HueSweepPattern: View     // hue left to right, saturation 1 at the top to 0 at the bottom
@@ -623,6 +639,16 @@ Grouping: photo files group by stem (name up to the first dot) into one photo it
         #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path(percentEncoded: false)) == ["OC_0002.JPG"])
         #expect(store.items.map(\.id) == ["OC_0002"])
     }
+    @Test func deleteKeepsAPhotoWhoseEditIsNewer() throws {
+        let dir = try TestFiles.directory()
+        for name in ["OC_0001.JPG", "OC_0002.JPG"] { try Data("x".utf8).write(to: dir.appending(path: name)) }
+        let newer = Data(#"{"version": 99, "adjustments": {"exposure": 1}}"#.utf8), editURL = dir.appending(path: "OC_0002.edit.json")
+        try newer.write(to: editURL)
+        let store = try Self.make(dir); store.reload()
+        #expect(throws: LibraryError.newerEdit(path: editURL.path(percentEncoded: false), version: 99)) { try store.delete(store.items) }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path(percentEncoded: false)).sorted() == ["OC_0002.JPG", "OC_0002.edit.json"])
+        #expect(try Data(contentsOf: editURL) == newer); #expect(store.items.map(\.id) == ["OC_0002"])
+    }
 }
 
 @MainActor @Suite struct SampleSeederTests {
@@ -663,7 +689,8 @@ git commit -m "feat: add the library store with thumbnails and simulator samples
 - Produces:
 
 ```swift
-// LaunchConfig gains (each sets isScripted when it parses to a valid value):
+// LaunchConfig gains. -editorGroup sets isScripted when its value is an EditorGroup raw value. The three on/off flags set
+// their property and isScripted only when the value is "on"; "off" or anything else leaves both unchanged.
 var editorGroup: EditorGroup = .light   // -editorGroup light|colour|detail|effects|looks
 var seedsSamples = false                // -seedSamples on   (honoured in the Simulator only)
 var seedsLook = false                   // -seedLook on      (honoured in the Simulator only; used by Task 8)
@@ -676,6 +703,7 @@ nonisolated enum LibraryCopy {
     static let title = "Library", emptyTitle = "No photos yet", emptyDetail = "Take one or import from Photos."
     static let cannotOpen = "This photo could not be opened.", clipCannotOpen = "This video could not be opened."
     static let deleteFailed = "The items could not be deleted."
+    static let newerEdit = "This photo was edited by a newer version of OpenCam."   // any save or remove that meets EditStoreError.newerVersion
     static let deleteMessage = "The files and their edits are removed from OpenCam. This cannot be undone."
     static func selectionTitle(count: Int) -> String   // "Select items", "1 selected", "3 selected"
     static func deleteTitle(count: Int) -> String      // "Delete 1 item?", "Delete 3 items?"
@@ -686,7 +714,7 @@ struct LibraryCell: View { let library: LibraryStore; let item: LibraryItem; let
 struct LibrarySelectionBar: View { let count: Int; let onDelete: () -> Void }   // Task 8 adds the Apply look menu
 ```
 
-`LibraryView`: `NavigationStack(path:)` over `[LibraryItem]`, title "Library", `.onAppear { library.reload() }`. Toolbar: leading `Button(role: .close)` dismisses; trailing "Select" toggles Select mode ("Done" while selecting). Content: when `items` is empty, `ContentUnavailableView("No photos yet", systemImage: "photo.on.rectangle", description: Text("Take one or import from Photos."))`; else a `LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 2)])` of square cells. `LibraryCell` runs `.task(id: library.thumbnailKey(for: item))`, shows a `ProgressView` while loading, the thumbnail with `.scaledToFill()` when ready, and `LibraryCopy.cannotOpen` (`clipCannotOpen` for a clip) in `.caption` text on `.secondary` background when failed. A clip cell adds a `play.fill` badge and `LibraryCopy.duration(seconds:)` from `ClipDuration.seconds(of:)` at the bottom trailing corner on a glass capsule (no duration text when it is nil), and its accessibility label reads "Video" and the duration; in Select mode a `checkmark.circle.fill` tinted `Theme.accent` marks a selected cell, and an accessibility label names the stem and "Selected". Outside Select mode a tap on a photo pushes the item (Task 7 adds the destination); a tap on a clip sets `previewURL` and `.quickLookPreview($previewURL)` plays it in the system preview. Clips are never pushed to the editor. Select mode: title `selectionTitle(count:)`; `LibrarySelectionBar` in `.toolbar` `.bottomBar` with "Delete" (`role: .destructive`, disabled at 0) opening `.confirmationDialog(deleteTitle(count:))` with message `deleteMessage` and a destructive "Delete"; a thrown `LibraryError` is logged and shows an alert titled `deleteFailed`. `-librarySelect on` starts in Select mode with `items.first` selected.
+`LibraryView`: `NavigationStack(path:)` over `[LibraryItem]`, title "Library", `.onAppear { library.reload() }`. Toolbar: leading `Button(role: .close)` dismisses; trailing "Select" toggles Select mode ("Done" while selecting). Content: when `items` is empty, `ContentUnavailableView("No photos yet", systemImage: "photo.on.rectangle", description: Text("Take one or import from Photos."))`; else a `LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 2)])` of square cells. `LibraryCell` runs `.task(id: library.thumbnailKey(for: item))`, shows a `ProgressView` while loading, the thumbnail with `.scaledToFill()` when ready, and `LibraryCopy.cannotOpen` (`clipCannotOpen` for a clip) in `.caption` text on `.secondary` background when failed. A clip cell adds a `play.fill` badge and `LibraryCopy.duration(seconds:)` from `ClipDuration.seconds(of:)` at the bottom trailing corner on a glass capsule (no duration text when it is nil), and its accessibility label reads "Video" and the duration; in Select mode a `checkmark.circle.fill` tinted `Theme.accent` marks a selected cell, and an accessibility label names the stem and "Selected". Outside Select mode a tap on a photo pushes the item (Task 7 adds the destination); a tap on a clip sets `previewURL` and `.quickLookPreview($previewURL)` plays it in the system preview. Clips are never pushed to the editor. Select mode: title `selectionTitle(count:)`; `LibrarySelectionBar` in `.toolbar` `.bottomBar` with "Delete" (`role: .destructive`, disabled at 0) opening `.confirmationDialog(deleteTitle(count:))` with message `deleteMessage` and a destructive "Delete"; a thrown `LibraryError` is logged and shows an alert titled `newerEdit` for `.newerEdit` and `deleteFailed` for any other case, never the error's description. `-librarySelect on` starts in Select mode with `items.first` selected.
 
 `scripts/shot.sh` changes (today it hardcodes `mkdir -p docs/screenshots/p1a` and writes `docs/screenshots/p1a/$NAME.png` after `sleep 4`): the output folder becomes `${SHOT_DIR:-docs/screenshots/p1a}`, so camera core shots are unchanged; when `SHOT_FRESH=1`, `xcrun simctl uninstall "$UDID" local.opencam.app || true` runs before install so Captures and Looks start empty; `sleep 6` instead of 4, for seeding and thumbnails.
 
@@ -708,6 +736,7 @@ struct LibrarySelectionBar: View { let count: Int; let onDelete: () -> Void }   
         #expect(LibraryCopy.deleteTitle(count: 1) == "Delete 1 item?"); #expect(LibraryCopy.deleteTitle(count: 2) == "Delete 2 items?")
         #expect(LibraryCopy.duration(seconds: 42.5) == "0:42"); #expect(LibraryCopy.duration(seconds: 62) == "1:02"); #expect(LibraryCopy.duration(seconds: 3725) == "1:02:05")
         #expect(LibraryCopy.emptyTitle + ". " + LibraryCopy.emptyDetail == "No photos yet. Take one or import from Photos.")
+        #expect(LibraryCopy.newerEdit == "This photo was edited by a newer version of OpenCam.")
     }
 }
 
@@ -780,7 +809,7 @@ nonisolated struct ImportResult: Sendable, Equatable { let imported: [URL]; let 
     static func candidate(from item: PhotosPickerItem) async -> ImportCandidate?   // loadTransferable(type: Data.self); type = item.supportedContentTypes.first
 }
 extension LibraryStore { func importPhotos(_ candidates: [ImportCandidate]) -> ImportResult }   // imports, then reload
-extension LibraryCopy {
+nonisolated extension LibraryCopy {   // nonisolated, as SessionConfiguration.swift:12 does: ImportResult.message calls it off the main actor
     static func importResult(imported: Int, failed: Int) -> String?
     // (0,0) nil; (1,0) "Imported 1 photo."; (3,0) "Imported 3 photos."; (2,1) "Imported 2 photos. 1 could not be imported.";
     // (0,1) "The photo could not be imported."; (0,2) "2 photos could not be imported."
@@ -846,7 +875,7 @@ git commit -m "feat: import photos from the Photos library as new originals"
 **Files:**
 - Create: `OpenCam/Edit/EditorPhase.swift`, `OpenCam/Edit/EditorLayout.swift`
 - Create in `OpenCam/UI/Editor/`: `EditorModel.swift`, `EditorView.swift`, `EditorPicture.swift`, `EditorPanel.swift`, `AdjustmentSlider.swift`
-- Modify: `OpenCam/UI/Library/LibraryView.swift` (`.navigationDestination(for: LibraryItem.self)` builds an `EditorModel`; `-screen editor` pushes the first item with `isEditable` with `launch.editorGroup` once on appear; the destination is reached only from photos; a pop reloads the library), `OpenCam/Library/LibraryCopy.swift` (`saveFailed = "The edit could not be saved."`)
+- Modify: `OpenCam/UI/Library/LibraryView.swift` (`.navigationDestination(for: LibraryItem.self)` builds an `EditorModel`; `-screen editor` pushes the first item with `isEditable` with `launch.editorGroup` once on appear; the destination is reached only from photos; a pop reloads the library), `OpenCam/Library/LibraryCopy.swift` (`saveFailed = "The edit could not be saved."`, added inside the enum body; `newerEdit` already exists from Task 5)
 - Test: `OpenCamTests/EditorModelTests.swift`, `OpenCamTests/EditorLayoutTests.swift`, `OpenCamTests/EditorFixture.swift`
 
 **Interfaces:**
@@ -864,16 +893,21 @@ nonisolated enum EditorLayout: Equatable, Sendable {
     static let proxyLongSide = 2048
     init(item: LibraryItem, edits: EditStore, looks: LookStore, group: EditorGroup = .light, renderer: LookRenderer = .shared)
     let item: LibraryItem; var group: EditorGroup; var isShowingOriginal: Bool
+    private let edits: EditStore; private let lookStore: LookStore   // the `looks:` argument; never stored as `looks`, which Task 8 uses for [Look]
     var adjustments: Adjustments                  // didSet schedules a preview render
     private(set) var lookName: String?; private(set) var phase: EditorPhase   // .loading until load() returns
     private(set) var preview: CGImage?; private(set) var original: CGImage?   // the edit on the proxy; the proxy unedited
     private(set) var proxySize: CGSize?; private(set) var renderedAdjustments: Adjustments?   // what `preview` shows
-    private(set) var largestRenderedSize: CGSize; private(set) var previewRenderCount: Int  // the proxy rule's evidence
+    private(set) var lastRenderPixelSize: CGSize?  // width x height of the CGImage the last completed renderedCGImage call returned,
+                                                   // measured on that output; never copied from proxySize or the input
+    private(set) var previewRenderCount: Int       // completed preview renders, the first one included
     var hasChanges: Bool { get }                  // adjustments or lookName differ from the loaded edit
-    func load() async                             // edit (unreadable counts as none, logged), proxy off the main actor, first render
+    func load() async                             // edit (unreadable counts as none, logged), proxy off the main actor, first render;
+                                                  // an edit whose version > PhotoEdit.currentVersion sets .failed(LibraryCopy.newerEdit) and decodes nothing
     func waitForPreview() async                   // returns when no render is running or pending
     func reset(_ key: AdjustmentKey); func resetAll()   // resetAll also clears lookName
-    func save() -> Bool                           // false with phase .failed(LibraryCopy.cannotOpen) when the original is gone, nothing written
+    func save() -> Bool                           // false with phase .failed(LibraryCopy.cannotOpen) when the original is gone, nothing written;
+                                                  // EditStoreError.newerVersion -> false with .failed(LibraryCopy.newerEdit); other EditStoreError -> .failed(LibraryCopy.saveFailed)
 }
 struct EditorView: View { @Bindable var model: EditorModel; let onDone: () -> Void }
 struct AdjustmentSlider: View { let key: AdjustmentKey; @Binding var value: Double; let onReset: () -> Void }
@@ -881,9 +915,9 @@ struct AdjustmentSlider: View { let key: AdjustmentKey; @Binding var value: Doub
 //   writes a mid-grey OC_0001.JPG, scans it, loads the model with an empty LookStore
 ```
 
-Rendering rule (not fixed by the signatures): at most one render runs; a change while it runs only replaces the pending value; when a render finishes, the latest pending value renders once. Every render takes the in-memory proxy, never the file. A decode failure in `load` sets `.failed(LibraryCopy.cannotOpen)`; an `EditStoreError` in `save` is logged and sets `.failed(LibraryCopy.saveFailed)`.
+Rendering rule (not fixed by the signatures): at most one render runs; a change while it runs only replaces the pending value; when a render finishes, the latest pending value renders once. Every render takes the in-memory proxy, never the file. A decode failure in `load` sets `.failed(LibraryCopy.cannotOpen)`; an `EditStoreError` in `save` is logged and sets `.failed(LibraryCopy.newerEdit)` for `.newerVersion`, else `.failed(LibraryCopy.saveFailed)`; no error description is ever shown. `lastRenderPixelSize` is set in the render path from the returned `CGImage`'s `width` and `height`, so a full-size render would show up as 8064 x 6048.
 
-`EditorView`: `EditorLayout.choose` from the size-class environment values; side by side puts `EditorPicture` beside an `EditorPanel` of width 320, stacked puts the picture above the panel. `EditorPicture` shows `original` while `isShowingOriginal`, else `preview`, `.scaledToFit()`; `onLongPressGesture(minimumDuration: 0.15, perform: {}, onPressingChanged:)` sets `isShowingOriginal`, and a glass capsule reads "Original" while held; in `.failed(m)` it shows `m` instead of the picture and disables the panel and toolbar except Done. `EditorPanel`: a segmented `Picker` over `EditorGroup.allCases.filter { $0 != .looks }` (Task 8 removes the filter), then the group's `AdjustmentSlider`s in a `ScrollView`. `AdjustmentSlider`: the title and `key.valueText(value)` (monospaced digits) on one row, a system `Slider(value:in: key.range, step: key.step)` below; double-tapping the title calls `onReset`, also offered as the accessibility action "Reset". Toolbar: "Done" (`.confirmationAction`) calls `save()` and then `onDone` when it returns true; "Reset all" disabled when `adjustments.isIdentity && lookName == nil`. The navigation back button is hidden; the title is `item.stem`.
+`EditorView`: `EditorLayout.choose` from the size-class environment values; side by side puts `EditorPicture` beside an `EditorPanel` of width 320, stacked puts the picture above the panel. `EditorPicture` shows `original` while `isShowingOriginal`, else `preview`, `.scaledToFit()`; `onLongPressGesture(minimumDuration: 0.15, perform: {}, onPressingChanged:)` sets `isShowingOriginal`, and a glass capsule reads "Original" while held; in `.failed(m)` it shows `m` instead of the picture and disables the panel and toolbar except Done. `EditorPanel`: a segmented `Picker` over `EditorGroup.allCases.filter { $0 != .looks }` (Task 8 removes the filter), then the group's `AdjustmentSlider`s in a `ScrollView`. `AdjustmentSlider`: the title and `key.valueText(value)` (monospaced digits) on one row, a system `Slider(value:in: key.range, step: key.step)` below; double-tapping the title calls `onReset`, also offered as the accessibility action "Reset". Toolbar: "Done" (`.confirmationAction`) calls `onDone` without saving when `phase` is `.failed` (so a failed photo never traps the user), otherwise calls `save()` and then `onDone` when it returns true; "Reset all" disabled when `adjustments.isIdentity && lookName == nil`. The navigation back button is hidden; the title is `item.stem`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -892,9 +926,12 @@ Rendering rule (not fixed by the signatures): at most one render runs; a change 
     @Test func fortyEightMegapixelOriginalRendersOnlyTheProxy() async throws {   // Review Focus 2
         let (model, _, _) = try await EditorFixture.make(width: 8064, height: 6048)
         #expect(model.phase == .ready); #expect(model.proxySize == CGSize(width: 2048, height: 1536))
+        let rendersBefore = model.previewRenderCount
         for step in 1...30 { model.adjustments.exposure = Double(step) / 10 }
         await model.waitForPreview()
-        #expect(model.largestRenderedSize.width <= 2048); #expect(model.largestRenderedSize.height <= 2048)
+        #expect(model.previewRenderCount > rendersBefore)   // the slider change really rendered
+        let size = try #require(model.lastRenderPixelSize)   // measured on the CGImage the renderer returned
+        #expect(max(size.width, size.height) <= 2048); #expect(size == CGSize(width: 2048, height: 1536))
         #expect(model.renderedAdjustments == model.adjustments); #expect(model.previewRenderCount <= 3)
     }
     @Test func opensWithItsSavedEdit() async throws {
@@ -928,6 +965,16 @@ Rendering rule (not fixed by the signatures): at most one render runs; a change 
         let model = EditorModel(item: try #require(LibraryScanner.items(in: dir).first), edits: EditStore(directory: dir), looks: try LookStore(directory: TestFiles.directory()))
         await model.load()
         #expect(model.phase == .failed("This photo could not be opened.")); #expect(model.preview == nil)
+    }
+    @Test func editFromANewerVersionOpensReadOnly() async throws {
+        let dir = try TestFiles.directory()
+        _ = try TestFiles.writeJPEG(width: 400, height: 300, rgb: SIMD3(0.5, 0.5, 0.5), to: dir.appending(path: "OC_0001.JPG"))
+        let newer = Data(#"{"version": 99, "adjustments": {"exposure": 1}, "masks": []}"#.utf8), editURL = dir.appending(path: "OC_0001.edit.json")
+        try newer.write(to: editURL)
+        let model = EditorModel(item: try #require(LibraryScanner.items(in: dir).first), edits: EditStore(directory: dir), looks: try LookStore(directory: TestFiles.directory()))
+        await model.load()
+        #expect(model.phase == .failed("This photo was edited by a newer version of OpenCam."))
+        #expect(!model.save()); #expect(try Data(contentsOf: editURL) == newer)
     }
 }
 
@@ -982,7 +1029,8 @@ nonisolated enum LookSeeder {
     static let warmFade: Adjustments   // exposure 0.3, contrast -15, highlights -20, shadows 25, blacks 15, temperature 20, tint 5, vibrance 10, saturation -10, grain 20, vignette -15
     static func seedWarmFade(into store: LookStore) throws(LookStoreError) -> Look?   // nil when a look named "Warm fade" exists
 }
-// EditorModel gains a stored `private(set) var looks: [Look]`, loaded in load(), and:
+// EditorModel gains a stored `private(set) var looks: [Look]` (Task 7's LookStore is the separate `lookStore`), loaded in load()
+// and refreshed from lookStore.all() after every save, rename, duplicate and delete, and:
 extension EditorModel {
     func applyLook(_ look: Look?)                                   // copies adjustments and name; nil clears to Adjustments() and no look
     func saveAsLook(named name: String) throws(LookStoreError) -> Look
@@ -992,22 +1040,27 @@ extension EditorModel {
     func lookPreview(_ look: Look?) async -> CGImage?               // the look on a copy of the proxy with long side 240
 }
 extension LibraryStore {
-    func applyLook(_ look: Look, to items: [LibraryItem]) throws(LibraryError) -> LookChange   // each photo's edit becomes PhotoEdit(adjustments: look.adjustments, lookName: look.name); clips skipped
-    func removeLook(from items: [LibraryItem]) throws(LibraryError) -> LookChange            // removes the edit of photos whose lookName is set; others and clips untouched
+    func applyLook(_ look: Look, to items: [LibraryItem]) throws(LibraryError) -> LookChange
+    // each photo's edit becomes PhotoEdit(adjustments: look.adjustments, lookName: look.name); clips skipped; a photo whose save throws
+    // EditStoreError.newerVersion is left unchanged and counted in newerSkipped; any other EditStoreError throws .editFailed after the rest; then reload
+    func removeLook(from items: [LibraryItem]) throws(LibraryError) -> LookChange
+    // removes the edit of photos whose lookName is set; others and clips untouched; newerVersion counts in newerSkipped as above; then reload
 }
 nonisolated struct LookChange: Sendable, Equatable {        // OpenCam/Library/LookChange.swift
-    enum Action: Sendable { case applied, removed }
-    let action: Action; let photosChanged: Int; let clipsSkipped: Int
+    nonisolated enum Action: Sendable { case applied, removed }
+    let action: Action; let photosChanged: Int; let clipsSkipped: Int; let newerSkipped: Int
     var message: String { get }
-    // applied: "Applied to 1 photo." / "Applied to 2 photos."; removed: "Look removed from 2 photos."
-    // then, when clips were skipped: " 1 video was skipped." / " 2 videos were skipped."
-}
+    // first sentence: photosChanged 0 "No photos were changed."; applied 1 "Applied to 1 photo.", N "Applied to N photos.";
+    //   removed 1 "Look removed from 1 photo.", N "Look removed from N photos."
+    // then, only when clipsSkipped > 0: " 1 video was skipped." / " N videos were skipped."
+    // then, only when newerSkipped > 0: " 1 photo was edited by a newer version of OpenCam and was skipped." /
+    //   " N photos were edited by a newer version of OpenCam and were skipped."
 }
 struct LooksPanel: View { @Bindable var model: EditorModel }
 struct LookTile: View { let title: String; let image: CGImage?; let isSelected: Bool }
 ```
 
-`LooksPanel`: a `LazyVGrid` (adaptive, minimum 96) with "None" first, then every look; each `LookTile` loads its image with `.task(id:)` from `lookPreview`, shows the name below, and is selected when its name equals `model.lookName` ("None" when nil); a tap calls `applyLook`. Each look tile has a `.contextMenu` with "Rename", "Duplicate" and "Delete" (`role: .destructive`); Rename and "Save as look" (a bordered button under the grid) open an alert with a `TextField("Name", …)` and "Save" disabled while `LookStore.nameProblem` returns a message, shown as the alert message; Delete asks `.confirmationDialog("Delete \u{201C}\(name)\u{201D}?")` with the message "Photos that used it keep their edits." In the library, `LibrarySelectionBar` gains a `Menu("Apply look")` (disabled at 0 selected) listing every look by name, a divider, then "Remove look"; applying or removing reloads the grid and shows the returned `LookChange.message` in an alert with "OK".
+`LooksPanel`: a `LazyVGrid` (adaptive, minimum 96) with "None" first, then every look; each `LookTile` loads its image with `.task(id:)` from `lookPreview`, shows the name below, and is selected when its name equals `model.lookName` ("None" when nil); a tap calls `applyLook`. Each look tile has a `.contextMenu` with "Rename", "Duplicate" and "Delete" (`role: .destructive`); Rename and "Save as look" (a bordered button under the grid) open an alert with a `TextField("Name", …)` and "Save" disabled while `LookStore.nameProblem` returns a message, shown as the alert message; Delete asks `.confirmationDialog("Delete \u{201C}\(name)\u{201D}?")` with the message "Photos that used it keep their edits." In the library, `LibrarySelectionBar` gains a `Menu("Apply look")` (disabled at 0 selected) listing every look by name, a divider, then "Remove look"; applying or removing reloads the grid and shows the returned `LookChange.message` in an alert with "OK"; a thrown `LibraryError` is logged and shows `LibraryCopy.saveFailed`, never its description.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1055,15 +1108,36 @@ struct LookTile: View { let title: String; let image: CGImage?; let isSelected: 
         let (store, dir) = try setUp()
         let look = try store.lookStore.save(name: "Warm fade", adjustments: LookSeeder.warmFade)
         let applied = try store.applyLook(look, to: store.items.filter { $0.stem != "OC_0003" })   // OC_0004.MOV, OC_0002, OC_0001
-        #expect(applied == LookChange(action: .applied, photosChanged: 2, clipsSkipped: 1)); #expect(applied.message == "Applied to 2 photos. 1 video was skipped.")
+        #expect(applied == LookChange(action: .applied, photosChanged: 2, clipsSkipped: 1, newerSkipped: 0)); #expect(applied.message == "Applied to 2 photos. 1 video was skipped.")
         #expect(!FileManager.default.fileExists(atPath: dir.appending(path: "OC_0004.edit.json").path(percentEncoded: false)))
         let edits = EditStore(directory: dir), expected = PhotoEdit(adjustments: LookSeeder.warmFade, lookName: "Warm fade")
         #expect(try edits.load(stem: "OC_0001") == expected); #expect(try edits.load(stem: "OC_0002") == expected)
+        #expect(store.edit(for: try #require(store.items.first { $0.stem == "OC_0001" })) == expected)   // the store reloaded
         let removed = try store.removeLook(from: store.items)
         #expect(removed.message == "Look removed from 2 photos. 1 video was skipped.")
         #expect(try edits.load(stem: "OC_0001") == PhotoEdit()); #expect(try edits.load(stem: "OC_0003").adjustments.exposure == 1)
-        #expect(LookChange(action: .applied, photosChanged: 1, clipsSkipped: 0).message == "Applied to 1 photo.")
-        #expect(LookChange(action: .applied, photosChanged: 0, clipsSkipped: 2).message == "Applied to 0 photos. 2 videos were skipped.")
+    }
+    @Test func messagesForEveryCount() {
+        func message(_ action: LookChange.Action, _ photos: Int, _ clips: Int, _ newer: Int) -> String {
+            LookChange(action: action, photosChanged: photos, clipsSkipped: clips, newerSkipped: newer).message
+        }
+        #expect(message(.applied, 0, 0, 0) == "No photos were changed."); #expect(message(.removed, 0, 0, 0) == "No photos were changed.")
+        #expect(message(.applied, 1, 0, 0) == "Applied to 1 photo."); #expect(message(.applied, 3, 0, 0) == "Applied to 3 photos.")
+        #expect(message(.removed, 1, 0, 0) == "Look removed from 1 photo."); #expect(message(.removed, 3, 0, 0) == "Look removed from 3 photos.")
+        #expect(message(.applied, 0, 1, 0) == "No photos were changed. 1 video was skipped.")
+        #expect(message(.applied, 2, 2, 0) == "Applied to 2 photos. 2 videos were skipped.")
+        #expect(message(.applied, 1, 0, 1) == "Applied to 1 photo. 1 photo was edited by a newer version of OpenCam and was skipped.")
+        #expect(message(.removed, 0, 1, 2) == "No photos were changed. 1 video was skipped. 2 photos were edited by a newer version of OpenCam and were skipped.")
+    }
+    @Test func newerEditsAreSkippedAndUntouched() throws {
+        let (store, dir) = try setUp()
+        let newer = Data(#"{"version": 99, "lookName": "Old", "adjustments": {"exposure": 2}}"#.utf8), editURL = dir.appending(path: "OC_0002.edit.json")
+        try newer.write(to: editURL); store.reload()
+        let look = try store.lookStore.save(name: "Warm fade", adjustments: LookSeeder.warmFade)
+        let photos = store.items.filter { $0.stem == "OC_0001" || $0.stem == "OC_0002" }
+        #expect(try store.applyLook(look, to: photos) == LookChange(action: .applied, photosChanged: 1, clipsSkipped: 0, newerSkipped: 1))
+        #expect(try store.removeLook(from: store.items.filter { $0.stem == "OC_0002" }) == LookChange(action: .removed, photosChanged: 0, clipsSkipped: 0, newerSkipped: 1))
+        #expect(try Data(contentsOf: editURL) == newer)
     }
     @Test func deletingALookKeepsPhotosThatUsedIt() throws {   // Review Focus 3
         let (store, dir) = try setUp()
@@ -1105,8 +1179,8 @@ git commit -m "feat: save, apply and manage looks in the editor and the library"
 
 **Files:**
 - Create in `OpenCam/Render/`: `PhotoExporter.swift`, `ExportFormat.swift`, `ExportError.swift`; Create `OpenCam/UI/Editor/ShareSheet.swift`
-- Modify: `OpenCam/UI/Editor/EditorModel.swift` (`export()`, `alertMessage`), `OpenCam/UI/Editor/EditorView.swift` ("Export" toolbar item, `ProgressView` while exporting, share sheet, alert), `OpenCam/Library/LibraryCopy.swift` (`exportFailed = "The photo could not be exported."`), `OpenCam/UI/LibraryThumbnail.swift` (its `Button` calls `model.openLibrary()` instead of setting `previewURL`; `@State previewURL` and `.quickLookPreview($previewURL)` are removed, because Library now previews photos and clips; `.disabled(model.lastCapture == nil)` becomes `.disabled(!model.canOpenLibrary)`, so an empty folder still opens Library's empty state; the `QLThumbnailGenerator` image and `.task(id: model.lastCapture) { model.loadLastCapture() … }` stay; `StripToolbar`'s `.library` case already shows `LibraryThumbnail(model:)` and is unchanged), `OpenCam/App/CameraModel.swift` (adds `func refreshLastCapture()`: `lastCapture = captureStore?.latestCapture()`, creating the store as `loadLastCapture()` does, so a capture deleted in Library stops showing), `OpenCam/Capture/CaptureStore.swift` (`latestCaptureName`'s rank list `[.heic, .mov, .dng]` becomes `[.heic, .jpg, .png, .mov, .dng]`, so imports and samples show; the existing `StatusTextTests` expectations still hold), `OpenCam/UI/CameraRootView.swift` (the library cover's `onDismiss` calls `model.refreshLastCapture()`)
-- Test: `OpenCamTests/PhotoExporterTests.swift`, `OpenCamTests/EditorExportTests.swift`; Modify `OpenCamTests/TestFiles.swift` (`static func snapshot(_ directory: URL) throws -> [String: Date]`, names to modification dates)
+- Modify: `OpenCam/UI/Editor/EditorModel.swift` (`export()`, `alertMessage`), `OpenCam/UI/Editor/EditorView.swift` ("Export" toolbar item, `ProgressView` while exporting, share sheet, alert), `OpenCam/Library/LibraryCopy.swift` (`exportFailed = "The photo could not be exported."`), `OpenCam/UI/LibraryThumbnail.swift` (its `Button` calls `model.openLibrary()` instead of setting `previewURL`; `@State previewURL` and `.quickLookPreview($previewURL)` are removed, because Library now previews photos and clips; `.disabled(model.lastCapture == nil)` becomes `.disabled(!model.canOpenLibrary)`, so an empty folder still opens Library's empty state; the `QLThumbnailGenerator` image and `.task(id: model.lastCapture) { model.loadLastCapture() … }` stay; `StripToolbar`'s `.library` case already shows `LibraryThumbnail(model:)` and is unchanged), `OpenCam/App/CameraModel.swift` (adds `func refreshLastCapture()`: `lastCapture = captureStore?.latestCapture()`, creating the store as `loadLastCapture()` does, so a capture deleted in Library stops showing), `OpenCam/Capture/CaptureStore.swift` (`latestCaptureName`'s rank list `[.heic, .mov, .dng]` becomes `[.heic, .jpg, .png, .mov, .dng]`, so imports and samples show; the existing `StatusTextTests` expectations still hold; `nextSequence(existingNames:)` and `latestCaptureName` stop parsing `OC_` numbers themselves and call the nonisolated `LibraryScanner.sequence(ofStem:)` on the name up to its first dot, so one parser serves capture numbering and the library, and `.edit.json` names still count toward the next number), `OpenCam/UI/CameraRootView.swift` (the library cover's `onDismiss` calls `model.refreshLastCapture()`)
+- Test: `OpenCamTests/PhotoExporterTests.swift`, `OpenCamTests/EditorExportTests.swift`, `OpenCamTests/LastCaptureTests.swift` (the camera's last-capture tests, kept out of the editor suite); Modify `OpenCamTests/TestFiles.swift` (`static func snapshot(_ directory: URL) throws -> [String: Date]`, names to modification dates)
 
 **Interfaces:**
 - Consumes: Task 3 `PictureDecoder.full`, `LookRenderer`; Task 4 `LibraryItem`; Task 7 `EditorModel`; Task 5 `CameraModel.openLibrary()`, `canOpenLibrary`, the injected `captureStore`; from the tree: `struct LibraryThumbnail: View { let model: CameraModel }`, `CameraModel.lastCapture: URL?`, `CameraModel.loadLastCapture()`, `CaptureStore.latestCapture() -> URL?`, `static func latestCaptureName(_ names: [String]) -> String?` (HEIC, then MOV, then DNG within a number; sidecars and sweep reports never offered).
@@ -1176,6 +1250,10 @@ Export decodes the full-size original with `PictureDecoder.full`, applies `LookR
         try FileManager.default.removeItem(at: dir.appending(path: "OC_0001.JPG"))
         #expect(await model.export() == nil); #expect(model.phase == .failed("This photo could not be opened."))
     }
+}
+
+// OpenCamTests/LastCaptureTests.swift
+@MainActor @Suite struct LastCaptureTests {
     @Test func refreshDropsADeletedLastCapture() throws {
         let dir = try TestFiles.directory()
         try Data("x".utf8).write(to: dir.appending(path: "OC_0001.HEIC")); try Data("x".utf8).write(to: dir.appending(path: "OC_0002.JPG"))
@@ -1189,6 +1267,7 @@ Export decodes the full-size original with `PictureDecoder.full`, applies `LookR
     @Test func latestCaptureCountsImportsAndSamples() {
         #expect(CaptureStore.latestCaptureName(["OC_0003.HEIC", "OC_0004.JPG", "OC_0005.json", "OC_0005.edit.json"]) == "OC_0004.JPG")
         #expect(CaptureStore.latestCaptureName(["OC_0006.DNG", "OC_0006.HEIC", "OC_0002.PNG"]) == "OC_0006.HEIC")
+        #expect(CaptureStore.nextSequence(existingNames: ["OC_0003.HEIC", "OC_0009.edit.json", "IMG_7.JPG", "OC_.json"]) == 10)   // one shared parser
     }
 }
 ```
