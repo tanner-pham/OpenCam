@@ -4,10 +4,13 @@ import SwiftUI
 struct FoldedVerticalVideoView: View {
     let model: CameraModel
     let size: CGSize
+    /// The system bars' top and bottom insets the controls keep clear of; zero on the folded phone. The picture still fills
+    /// the whole height.
+    var insets = EdgeInsets()
 
     var body: some View {
         ZStack {
-            ViewfinderArea(phase: model.phase, captionTopInset: Theme.Space.l + Theme.Size.minTarget + Theme.Space.s)
+            ViewfinderArea(phase: model.phase, captionTopInset: insets.top + Theme.Space.l + Theme.Size.minTarget + Theme.Space.s)
             VStack(spacing: 0) {
                 TopReadoutBar(model: model, isCompact: true)
                     .padding(.horizontal, Theme.Space.s)
@@ -26,6 +29,8 @@ struct FoldedVerticalVideoView: View {
                     .padding(.horizontal, Theme.Space.l)
                     .padding(.bottom, Theme.Space.l)
             }
+            .padding(.top, insets.top)
+            .padding(.bottom, insets.bottom)
         }
         .frame(width: size.width, height: size.height)
         .clipped()

@@ -17,21 +17,10 @@ struct CameraRootView: View {
 
     var body: some View {
         NavigationStack {
-            GeometryReader { geo in
-                Group {
-                    if isLandscape {
-                        FoldedHorizontalView(model: model, size: geo.size)
-                    } else if model.mode == .video {
-                        FoldedVerticalVideoView(model: model, size: geo.size)
-                    } else {
-                        FoldedVerticalView(model: model, size: geo.size)
-                    }
-                }
-            }
-            .ignoresSafeArea(.container, edges: [.top, .bottom])
-            .background(Color.black.ignoresSafeArea())
-            .persistentSystemOverlays(.hidden)
-            .toolbar { StripToolbar(model: model, library: library, isLandscape: isLandscape) }
+            CameraLayout(model: model, isLandscape: isLandscape)
+                .background(Color.black.ignoresSafeArea())
+                .persistentSystemOverlays(.hidden)
+                .toolbar { StripToolbar(model: model, library: library, isLandscape: isLandscape) }
         }
         // The Camera Control takes the photo or starts and stops recording, through the same rules as the on-screen button.
         // Always enabled while this screen shows: a disabled interaction hands the button back to the system, which opens
