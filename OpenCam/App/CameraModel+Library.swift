@@ -72,13 +72,17 @@ extension CameraModel {
             try await applySelection()
         } catch {
             Self.logger.error("[CameraModel:returnCameraFromLibrary] No camera attached after the Library closed — {error: \(error.description, privacy: .public)}")
-            isCameraReleasedForLibrary = false
+            // The failed state says it all; the session still holds no camera, so the next close of the Library retries.
+            clearNotice(from: .configuration)
             phase = .failed(Self.cameraCouldNotStart)
             return
         }
         await configurator.start()
         isCameraReleasedForLibrary = false
-        // A failure reported meanwhile stands; a Library opened meanwhile keeps `.released` and releases again in its own step.
-        if phase == .released, !isLibraryPresented { phase = .ready }
+        // A failure reported meanwhile stands, except this step's own earlier one, which the retry has just mended. A Library
+        // opened meanwhile releases the camera again in a step of its own.
+        guard phase == .released || phase == .failed(Self.cameraCouldNotStart) else { return }
+        phase = .ready
+        releaseIfLibraryOpen()
     }
 }

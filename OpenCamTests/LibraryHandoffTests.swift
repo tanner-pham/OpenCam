@@ -54,6 +54,26 @@ import Testing
         #expect(await fake.calls == ["release"])
     }
 
+    /// After a failed return the only message is the failed state's, and opening and closing the Library again retries.
+    @Test func aFailedReturnShowsOnlyTheFailureAndTheNextCloseRetries() async throws {
+        let (model, fake) = try readyModel(failing: true)
+        model.openLibrary()
+        await model.libraryHandoff?.value
+        model.isLibraryPresented = false
+        await model.closeLibrary()
+        #expect(model.phase == .failed("The camera could not start.")); #expect(model.notice == nil)
+
+        await fake.setFailingLensIDs([])
+        model.openLibrary()
+        #expect(model.isLibraryPresented); #expect(model.phase == .failed("The camera could not start."))
+        await model.libraryHandoff?.value
+        #expect(await fake.releaseCount == 1)
+        model.isLibraryPresented = false
+        await model.closeLibrary()
+        #expect(model.phase == .ready); #expect(model.notice == nil); #expect(await fake.isRunning)
+        #expect(await fake.calls == ["release", "configure", "start"])
+    }
+
     /// Closed before the release ran: the session never let go, so nothing is released or configured and the camera is back.
     @Test func aCloseBeforeTheReleaseRanLeavesTheSessionAlone() async throws {
         let (model, fake) = try readyModel()
