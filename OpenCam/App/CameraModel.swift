@@ -56,8 +56,6 @@ final class CameraModel {
     @ObservationIgnored private var photoCaptures: [Int: Task<Void, Never>] = [:]
 
     static let formatFailedNotice = "That format could not be used."
-    static let photoNotSavedNotice = "Photo not saved."
-
     init(config: LaunchConfig, capabilities: CaptureCapabilities, isSimulator: Bool, defaults: UserDefaults = .standard,
          capabilitySource: CapabilitySource = .device) {
         self.capabilities = capabilities
@@ -191,7 +189,7 @@ final class CameraModel {
     }
 
     /// Reserves a file number now, so quick presses never share one, then captures behind any queued configure.
-    /// RAW and HEIF of one press share the number; `lastCapture` becomes the HEIC if written, else the DNG.
+    /// RAW and HEIF of one press share the number. The notice and `lastCapture` follow `PhotoSaveReport`.
     private func capturePhoto() {
         guard let cameraSession, let option = currentPhotoOption else { return }
         let store: CaptureStore
@@ -201,7 +199,8 @@ final class CameraModel {
             do throws(CaptureStoreError) {
                 store = try CaptureStore.appDefault()
             } catch {
-                photoFailed(error.description)
+                Self.logger.error("\(error.description, privacy: .public)")
+                notice = PhotoSaveReport.photoNotSaved
                 return
             }
             captureStore = store
@@ -209,22 +208,35 @@ final class CameraModel {
         let sequence = store.reserveSequence()
         let dngURL = store.url(sequence: sequence, kind: .dng)
         let heicURL = store.url(sequence: sequence, kind: .heic)
+        var requested: [URL] = []
+        if option.format.includesRAW { requested.append(dngURL) }
+        if option.format != .raw { requested.append(heicURL) }
         let pendingConfigure = configureTask
         photoCaptures[sequence] = Task {
             defer { photoCaptures[sequence] = nil }
             _ = await pendingConfigure?.value
+            let result: PhotoCaptureResult
             do throws(PhotoCaptureError) {
-                let urls = try await cameraSession.capturePhoto(format: option.format, dngURL: dngURL, heicURL: heicURL)
-                lastCapture = urls.contains(heicURL) ? heicURL : urls.first
+                result = try await cameraSession.capturePhoto(format: option.format, dngURL: dngURL, heicURL: heicURL)
             } catch {
-                photoFailed(error.description)
+                result = PhotoCaptureResult(saved: [], error: error)
             }
+            photoFinished(requested: requested, result: result)
         }
     }
 
-    private func photoFailed(_ message: String) {
-        Self.logger.error("\(message, privacy: .public)")
-        notice = Self.photoNotSavedNotice
+    /// The notice always describes the latest capture: a full save clears an earlier photo notice.
+    private func photoFinished(requested: [URL], result: PhotoCaptureResult) {
+        if let error = result.error {
+            Self.logger.error("\(error.description, privacy: .public)")
+        }
+        let report = PhotoSaveReport.make(requested: requested, saved: result.saved, error: result.error)
+        if let saved = report.lastCapture { lastCapture = saved }
+        if let reportNotice = report.notice {
+            notice = reportNotice
+        } else if let notice, PhotoSaveReport.notices.contains(notice) {
+            self.notice = nil
+        }
     }
 
     /// Waits for every photo capture already running.

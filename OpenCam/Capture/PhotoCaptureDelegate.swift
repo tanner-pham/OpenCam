@@ -4,10 +4,8 @@ import Synchronization
 /// Writes each photo of one request to its file as it arrives, and reports every file written once the capture
 /// finishes. RAW and processed photos arrive as separate callbacks (AVCapturePhotoOutput.h, `isRawPhoto`).
 nonisolated final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate, Sendable {
-    typealias Outcome = Result<[URL], PhotoCaptureError>
-
     private struct State {
-        var continuation: CheckedContinuation<Outcome, Never>?
+        var continuation: CheckedContinuation<PhotoCaptureResult, Never>?
         var saved: [URL] = []
         var failure: PhotoCaptureError?
     }
@@ -22,7 +20,7 @@ nonisolated final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDel
     }
 
     /// Set before the request is made; the outcome is delivered once, when the capture finishes.
-    func deliver(to continuation: CheckedContinuation<Outcome, Never>) {
+    func deliver(to continuation: CheckedContinuation<PhotoCaptureResult, Never>) {
         state.withLock { $0.continuation = continuation }
     }
 
@@ -36,15 +34,15 @@ nonisolated final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDel
         }
     }
 
-    /// The last callback of every request, also after a failure.
+    /// The last callback of every request, also after a failure. Reports every file saved together with the first error,
+    /// so a file that saved is never lost from the result.
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings, error: (any Error)?) {
-        let finished = state.withLock { state -> (CheckedContinuation<Outcome, Never>?, Outcome) in
+        let finished = state.withLock { state -> (CheckedContinuation<PhotoCaptureResult, Never>?, PhotoCaptureResult) in
             let continuation = state.continuation
             state.continuation = nil
-            if let failure = state.failure ?? error.map({ PhotoCaptureError.captureFailed(reason: Self.describe($0)) }) {
-                return (continuation, .failure(failure))
-            }
-            return (continuation, state.saved.isEmpty ? .failure(.noPhotoData) : .success(state.saved))
+            var failure = state.failure ?? error.map { PhotoCaptureError.captureFailed(reason: Self.describe($0)) }
+            if failure == nil, state.saved.isEmpty { failure = .noPhotoData }
+            return (continuation, PhotoCaptureResult(saved: state.saved, error: failure))
         }
         finished.0?.resume(returning: finished.1)
     }

@@ -333,8 +333,9 @@ actor CameraSession: SessionConfigurator {
 }
 
 extension CameraSession {
-    /// Captures one photo in `format`; RAW goes to `dngURL` and HEIF to `heicURL`. Returns the files written.
-    func capturePhoto(format: PhotoFormat, dngURL: URL, heicURL: URL) async throws(PhotoCaptureError) -> [URL] {
+    /// Captures one photo in `format`; RAW goes to `dngURL` and HEIF to `heicURL`. Throws when the request cannot be made;
+    /// once made, the result carries the files written and any error.
+    func capturePhoto(format: PhotoFormat, dngURL: URL, heicURL: URL) async throws(PhotoCaptureError) -> PhotoCaptureResult {
         guard let device = videoInput?.device, session.outputs.contains(photoCapturer.output) else {
             throw .captureFailed(reason: "photo output not attached")
         }

@@ -6,17 +6,18 @@ import AVFoundation
 nonisolated final class PhotoCapturer {
     let output = AVCapturePhotoOutput()
 
-    /// `deviceZoom` is the source camera's `videoZoomFactor`. Returns the files written, in the order they arrived.
-    func capture(format: PhotoFormat, deviceZoom: Double, dngURL: URL, heicURL: URL) async throws(PhotoCaptureError) -> [URL] {
+    /// `deviceZoom` is the source camera's `videoZoomFactor`. Throws when the request cannot be made;
+    /// once made, the result carries the files written and any error.
+    func capture(format: PhotoFormat, deviceZoom: Double, dngURL: URL, heicURL: URL) async throws(PhotoCaptureError) -> PhotoCaptureResult {
         let settings = try makeSettings(format: format, deviceZoom: deviceZoom)
         let delegate = PhotoCaptureDelegate(dngURL: dngURL, heicURL: heicURL)
-        let outcome = await withCheckedContinuation { continuation in
+        let result = await withCheckedContinuation { continuation in
             delegate.deliver(to: continuation)
             output.capturePhoto(with: settings, delegate: delegate)
         }
         // Held until the capture finishes, whether or not the output keeps its own reference.
         withExtendedLifetime(delegate) {}
-        return try outcome.get()
+        return result
     }
 
     private func makeSettings(format: PhotoFormat, deviceZoom: Double) throws(PhotoCaptureError) -> AVCapturePhotoSettings {
