@@ -102,6 +102,11 @@ extension CameraModel {
         // A failure reported meanwhile stands, except this step's own earlier one, which the retry has just mended. A Library
         // opened meanwhile releases the camera again in a step of its own.
         guard phase == .released || phase == .failed(Self.cameraCouldNotStart) else { return }
+        // A runtime error handled during this configure and start: the return was the one recovery, so the camera is stopped.
+        guard errors == runtimeErrorCount else {
+            phase = .failed(Self.cameraStopped)
+            return
+        }
         phase = .ready
         releaseIfLibraryOpen()
     }

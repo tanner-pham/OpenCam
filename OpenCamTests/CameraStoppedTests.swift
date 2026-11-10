@@ -185,6 +185,20 @@ import Testing
         #expect(model.phase == .failed("The camera stopped.")); #expect(model.isCameraStopped)
     }
 
+    /// The Library's return is the one recovery: a runtime error during its start leaves the camera stopped, not ready.
+    @Test func aStopDuringTheReturnFromTheLibraryEndsInTheStoppedState() async throws {
+        let (model, fake, _) = try attachedModel()
+        model.openLibrary()
+        await model.libraryHandoff?.value
+        await fake.setOnNextStart { @MainActor in model.apply(.runtimeError(Self.stop)) }
+        model.isLibraryPresented = false
+        await model.closeLibrary()
+        #expect(await fake.calls == ["release", "configure", "start"])
+        #expect(model.phase == .failed("The camera stopped.")); #expect(model.isCameraStopped)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(model.phase == .failed("The camera stopped."))
+    }
+
     /// The clip ends as it always has; only then does the camera restart.
     @Test func aStopWhileRecordingRecoversOnceTheClipHasEnded() async throws {
         let (model, fake, _) = try attachedModel()
