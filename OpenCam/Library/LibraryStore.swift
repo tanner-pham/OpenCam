@@ -84,12 +84,18 @@ import OSLog
         }
     }
 
+    /// Each item's edit for the confirmation counts in `LookChange`: nil for a clip.
+    func lookEdits(for items: [LibraryItem]) -> [PhotoEdit?] {
+        items.map { $0.isEditable ? edit(for: $0) : nil }
+    }
+
     /// Runs `change` on each photo (true when it changed the photo). A photo whose edit is from a newer version is left as it
-    /// is and counted; any other failure is logged and the rest still run. Then the store reloads and the first failure throws.
+    /// is and counted; any other failure is logged, counted, and the rest still run. Then the store reloads; when any photo
+    /// failed, `.lookChangeIncomplete` carries what happened to every item.
     private func changeEdits(of items: [LibraryItem], action: LookChange.Action,
                              _ change: (LibraryItem) throws(EditStoreError) -> Bool) throws(LibraryError) -> LookChange {
-        var changed = 0, clips = 0, newer = 0
-        var firstProblem: LibraryError?
+        var changed = 0, clips = 0, newer = 0, failed = 0
+        var firstReason: String?
         for item in items {
             guard item.isEditable else {
                 clips += 1
@@ -100,14 +106,22 @@ import OSLog
             } catch {
                 Self.logger.error("\(error.description, privacy: .public)")
                 switch error {
-                case .newerVersion: newer += 1
-                case .unreadable, .unwritable: firstProblem = firstProblem ?? .editFailed(stem: item.stem, reason: error.description)
+                case .newerVersion:
+                    newer += 1
+                case .unreadable, .unwritable:
+                    failed += 1
+                    firstReason = firstReason ?? error.description
                 }
             }
         }
         reload()
-        if let firstProblem { throw firstProblem }
-        return LookChange(action: action, photosChanged: changed, clipsSkipped: clips, newerSkipped: newer)
+        let result = LookChange(action: action, photosChanged: changed, clipsSkipped: clips, newerSkipped: newer, photosFailed: failed)
+        if let firstReason {
+            let error = LibraryError.lookChangeIncomplete(change: result, reason: firstReason)
+            Self.logger.error("\(error.description, privacy: .public)")
+            throw error
+        }
+        return result
     }
 
     /// Each item goes whole or stays: a photo's edit file is removed first, then its files. A photo whose edit is from a newer

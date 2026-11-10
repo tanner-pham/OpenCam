@@ -15,6 +15,11 @@ struct LibraryView: View {
     @State private var previewURL: URL?
     @State private var isConfirmingDelete = false
     @State private var alertTitle: String?
+    /// The look waiting for "Replace edits on N photos?", and N when it was asked.
+    @State private var replacingLook: Look?
+    @State private var replaceCount = 0
+    @State private var isConfirmingRemove = false
+    @State private var removeCount = 0
     @State private var pickedItems: [PhotosPickerItem] = []
     /// The group the next editor opens on: `-editorGroup` for the launch push, Light for a tap.
     @State private var editorGroup: EditorGroup = .light
@@ -54,6 +59,21 @@ struct LibraryView: View {
         } message: {
             Text(LibraryCopy.deleteMessage)
         }
+        .confirmationDialog(LibraryCopy.removeLookTitle(count: removeCount), isPresented: $isConfirmingRemove, titleVisibility: .visible) {
+            Button("Remove look", role: .destructive, action: removeLook)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(LibraryCopy.removeLookMessage)
+        }
+        // The Apply action gets the look the dialog was presented with, never state the dismissal clears.
+        .confirmationDialog(LibraryCopy.replaceEditsTitle(count: replaceCount),
+                            isPresented: Binding(get: { replacingLook != nil }, set: { if !$0 { replacingLook = nil } }),
+                            titleVisibility: .visible, presenting: replacingLook) { look in
+            Button("Apply look") { applyLook(look) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text(LibraryCopy.replaceEditsMessage)
+        }
         .alert(alertTitle ?? "", isPresented: Binding(get: { alertTitle != nil }, set: { if !$0 { alertTitle = nil } })) {
             Button("OK") {}
         }
@@ -92,7 +112,7 @@ struct LibraryView: View {
                 .disabled(library.items.isEmpty && !isSelecting)
         }
         if isSelecting {
-            LibrarySelectionBar(count: selectedIDs.count, looks: library.looks, onApply: applyLook, onRemoveLook: removeLook) {
+            LibrarySelectionBar(count: selectedIDs.count, looks: library.looks, onApply: requestApply, onRemoveLook: requestRemove) {
                 isConfirmingDelete = true
             }
         }
@@ -148,6 +168,22 @@ struct LibraryView: View {
         }
     }
 
+    /// Applies at once unless it would replace edits the photos already have; then it asks first.
+    private func requestApply(_ look: Look) {
+        let count = LookChange.editsToReplace(in: library.lookEdits(for: selectedItems))
+        guard count > 0 else { return applyLook(look) }
+        replaceCount = count
+        replacingLook = look
+    }
+
+    /// Asks first when any photo would change; with none there is nothing to confirm and the result says so.
+    private func requestRemove() {
+        let count = LookChange.photosToRemove(in: library.lookEdits(for: selectedItems))
+        guard count > 0 else { return removeLook() }
+        removeCount = count
+        isConfirmingRemove = true
+    }
+
     private func applyLook(_ look: Look) {
         changeLook { () throws(LibraryError) in try library.applyLook(look, to: selectedItems) }
     }
@@ -156,13 +192,14 @@ struct LibraryView: View {
         changeLook { () throws(LibraryError) in try library.removeLook(from: selectedItems) }
     }
 
-    /// The store reloads, so the grid redraws with the new edits; the selection stays for another change.
+    /// The store reloads, so the grid redraws with the new edits; the selection stays for another change. When some photos
+    /// could not be changed the result still says what happened to every item.
     private func changeLook(_ change: () throws(LibraryError) -> LookChange) {
         do throws(LibraryError) {
             alertTitle = try change().message
         } catch {
-            // The store has logged each cause; the person sees a fixed sentence.
-            alertTitle = LibraryCopy.saveFailed
+            // The store has logged each cause.
+            if case .lookChangeIncomplete(let result, _) = error { alertTitle = result.message } else { alertTitle = LibraryCopy.saveFailed }
         }
     }
 

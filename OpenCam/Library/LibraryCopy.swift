@@ -22,6 +22,17 @@ nonisolated enum LibraryCopy {
         }
     }
 
+    static let removeLookMessage = "Their edits are cleared. The original photos are not changed."
+    static let replaceEditsMessage = "Their current edits are replaced by this look."
+
+    static func removeLookTitle(count: Int) -> String {
+        count == 1 ? "Remove look from 1 photo?" : "Remove look from \(count) photos?"
+    }
+
+    static func replaceEditsTitle(count: Int) -> String {
+        count == 1 ? "Replace edits on 1 photo?" : "Replace edits on \(count) photos?"
+    }
+
     static func selectionTitle(count: Int) -> String {
         count == 0 ? "Select items" : "\(count) selected"
     }

@@ -209,6 +209,16 @@ extension EditorModel {
         return look
     }
 
+    /// The Save of the name alert: renames `look` when the alert was opened for one, else saves the current values as a new
+    /// look. `look` is the value the alert was presented with, so dismissing the alert cannot change which of the two runs.
+    func saveLookName(_ name: String, renaming look: Look?) throws(LookStoreError) {
+        if let look {
+            try renameLook(look.id, to: name)
+        } else {
+            _ = try saveAsLook(named: name)
+        }
+    }
+
     /// The edit keeps the name it copied, as photos in the library do.
     func renameLook(_ id: UUID, to name: String) throws(LookStoreError) {
         defer { refreshLooks() }

@@ -13,8 +13,7 @@ struct LooksPanel: View {
 
     /// Rendered tiles by the adjustments they show.
     @State private var images: [Adjustments: CGImage] = [:]
-    @State private var isNamingNew = false
-    @State private var renaming: Look?
+    @State private var naming: LookNaming?
     @State private var nameText = ""
     @State private var deleting: Look?
     @State private var failure: String?
@@ -38,12 +37,14 @@ struct LooksPanel: View {
             .padding(.bottom, Theme.Space.l)
         }
         .scrollBounceBehavior(.basedOnSize)
-        .alert(renaming == nil ? "Save as look" : "Rename look", isPresented: isNaming) {
+        // The Save action gets the value the alert was presented with, so dismissal clearing `naming` cannot turn a rename
+        // into a new look.
+        .alert(naming?.title ?? "", isPresented: isNaming, presenting: naming) { presented in
             TextField("Name", text: $nameText)
             Button("Cancel", role: .cancel) {}
-            Button("Save", action: saveName)
+            Button("Save") { saveName(nameText, for: presented) }
                 .disabled(LookStore.nameProblem(nameText) != nil)
-        } message: {
+        } message: { _ in
             Text(LookStore.nameProblem(nameText) ?? "")
         }
         .confirmationDialog(deleting.map { "Delete \u{201C}\($0.name)\u{201D}?" } ?? "", isPresented: isDeleting,
@@ -84,11 +85,7 @@ struct LooksPanel: View {
     }
 
     private var isNaming: Binding<Bool> {
-        Binding(get: { isNamingNew || renaming != nil }, set: { isOn in
-            guard !isOn else { return }
-            isNamingNew = false
-            renaming = nil
-        })
+        Binding(get: { naming != nil }, set: { if !$0 { naming = nil } })
     }
 
     private var isDeleting: Binding<Bool> {
@@ -97,22 +94,18 @@ struct LooksPanel: View {
 
     private func startNamingNew() {
         nameText = ""
-        isNamingNew = true
+        naming = .new
     }
 
     private func startRenaming(_ look: Look) {
         nameText = look.name
-        renaming = look
+        naming = .rename(look)
     }
 
     /// Save stays disabled while the name has a problem, so only a store failure reaches the catch.
-    private func saveName() {
+    private func saveName(_ name: String, for presented: LookNaming) {
         do throws(LookStoreError) {
-            if let renaming {
-                try model.renameLook(renaming.id, to: nameText)
-            } else {
-                _ = try model.saveAsLook(named: nameText)
-            }
+            try model.saveLookName(name, renaming: presented.look)
         } catch {
             Self.logger.error("\(error.description, privacy: .public)")
             failure = Self.saveFailed

@@ -43,6 +43,20 @@ import Testing
         await reopened.load()
         #expect(reopened.phase == .ready); #expect(reopened.renderedAdjustments == LookSeeder.warmFade); #expect(reopened.lookName == "Warm fade")
     }
+    @Test func namingSavesANewLookOrRenamesTheLookItWasOpenedFor() async throws {
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300)
+        model.adjustments.contrast = 20
+        try model.saveLookName("  Golden ", renaming: nil)
+        let golden = try #require(model.looks.first)
+        #expect(model.looks.map(\.name) == ["Golden"]); #expect(golden.adjustments.contrast == 20); #expect(model.lookName == "Golden")
+        model.adjustments.contrast = 50
+        try model.saveLookName("Gold", renaming: golden)
+        #expect(model.looks.count == 1); #expect(model.looks.first?.id == golden.id); #expect(model.looks.first?.name == "Gold")
+        #expect(model.looks.first?.adjustments.contrast == 20)   // renaming keeps the look's values
+        #expect(throws: LookStoreError.emptyName) { try model.saveLookName("  ", renaming: golden) }
+        #expect(throws: LookStoreError.nameTooLong(count: 41)) { try model.saveLookName(String(repeating: "a", count: 41), renaming: nil) }
+        #expect(model.looks.map(\.name) == ["Gold"])
+    }
     @Test func seedLookOnce() throws {
         let store = try LookStore(directory: TestFiles.directory())
         #expect(try LookSeeder.seedWarmFade(into: store)?.name == "Warm fade"); #expect(try LookSeeder.seedWarmFade(into: store) == nil)
