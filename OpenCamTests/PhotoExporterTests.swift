@@ -23,7 +23,7 @@ import Testing
         _ = try TestFiles.writeHEIC(width: 400, height: 300, rgb: SIMD3(0.4, 0.5, 0.6), to: captures.appending(path: "OC_0002.HEIC"))
         let item = try #require(LibraryScanner.items(in: captures).first)
         let url = try await PhotoExporter(directory: try TestFiles.directory()).export(item, edit: PhotoEdit())
-        #expect(url.lastPathComponent == "OC_0002-edited.HEIC"); #expect(try PictureDecoder.pixelSize(at: url) == CGSize(width: 400, height: 300))
+        #expect(url.lastPathComponent == "OC_0002.HEIC"); #expect(try PictureDecoder.pixelSize(at: url) == CGSize(width: 400, height: 300))
         #expect(ExportFormat.of(URL(filePath: "/x/OC_0003.jpeg")) == .jpeg); #expect(ExportFormat.of(URL(filePath: "/x/OC_0003.DNG")) == .heif)
     }
 
@@ -46,7 +46,7 @@ import Testing
         _ = try TestFiles.writeOrientedPicture(width: 400, height: 300, orientation: 6, type: format == .jpeg ? .jpeg : .heic, to: original)
         let item = try #require(LibraryScanner.items(in: captures).first)
         let url = try await PhotoExporter(directory: try TestFiles.directory()).export(item, edit: PhotoEdit())
-        #expect(url.lastPathComponent == "OC_0005-edited." + format.rawValue)
+        #expect(url.lastPathComponent == "OC_0005." + format.rawValue)
 
         let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
         let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
@@ -155,9 +155,22 @@ import Testing
         let item = try #require(LibraryScanner.items(in: captures).first)
         let exporter = PhotoExporter(directory: out)
         _ = try await exporter.export(item, edit: PhotoEdit(adjustments: Adjustments().setting(.exposure, to: 1)))
-        let url = try await exporter.export(item, edit: PhotoEdit())
-        #expect(abs(try PixelReader.rgb(PictureDecoder.full(at: url), x: 20, y: 15).x - 0.5) < 0.02)
+        let url = try await exporter.export(item, edit: PhotoEdit(adjustments: Adjustments().setting(.exposure, to: -1)))
+        #expect(try PixelReader.rgb(PictureDecoder.full(at: url), x: 20, y: 15).x < 0.45)
         #expect(try FileManager.default.contentsOfDirectory(atPath: out.path(percentEncoded: false)) == ["OC_0006-edited.JPG"])
+    }
+
+    /// The file says "edited" only when the edit changes the picture: an edit with no adjustments, even one that still names
+    /// a look, exports under the original's own name.
+    @Test func exportIsNamedEditedOnlyWhenTheEditHasAdjustments() async throws {
+        let captures = try TestFiles.directory()
+        _ = try TestFiles.writeJPEG(width: 40, height: 30, rgb: SIMD3(0.5, 0.5, 0.5), to: captures.appending(path: "OC_0010.JPG"))
+        let item = try #require(LibraryScanner.items(in: captures).first)
+        let exporter = PhotoExporter(directory: try TestFiles.directory())
+        #expect(try await exporter.export(item, edit: PhotoEdit()).lastPathComponent == "OC_0010.JPG")
+        #expect(try await exporter.export(item, edit: PhotoEdit(lookName: "Warm fade")).lastPathComponent == "OC_0010.JPG")
+        let edited = PhotoEdit(adjustments: Adjustments().setting(.grain, to: 1), lookName: "Warm fade")
+        #expect(try await exporter.export(item, edit: edited).lastPathComponent == "OC_0010-edited.JPG")
     }
 
     @Test func undecodableSourceThrows() async throws {

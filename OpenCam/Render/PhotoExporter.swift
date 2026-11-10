@@ -24,7 +24,8 @@ nonisolated struct PhotoExporter: Sendable {
         self.writeFile = write ?? { image, url, format in try Self.encode(image, to: url, format: format, with: renderer) }
     }
 
-    /// "<stem>-edited.HEIC", or ".JPG" for a JPEG original, in `directory`, replacing an older export of that name.
+    /// "<stem>-edited.HEIC", or ".JPG" for a JPEG original, in `directory`, replacing an older export of that name; just
+    /// "<stem>.HEIC" (or ".JPG") when the edit has no adjustments, so the name never claims an edit the picture does not have.
     /// The picture is decoded upright, so the file carries no orientation tag; it is Display P3 at quality 0.9.
     @concurrent func export(_ item: LibraryItem, edit: PhotoEdit) async throws(ExportError) -> URL {
         let source = item.pictureURL
@@ -38,7 +39,8 @@ nonisolated struct PhotoExporter: Sendable {
             }
         }
         let format = ExportFormat.of(source)
-        let url = directory.appending(path: "\(item.stem)-edited.\(format.rawValue)", directoryHint: .notDirectory)
+        let name = edit.adjustments.isIdentity ? item.stem : "\(item.stem)-edited"
+        let url = directory.appending(path: "\(name).\(format.rawValue)", directoryHint: .notDirectory)
         let rendered = renderer.render(decoded, adjustments: edit.adjustments)
         // Core Image would otherwise write the decoded image's properties as they are, including the original's pixel
         // dimensions and subject area; the export's metadata is chosen here instead.
