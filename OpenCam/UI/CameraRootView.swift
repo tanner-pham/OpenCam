@@ -26,7 +26,9 @@ struct CameraRootView: View {
             .toolbar { StripToolbar(model: model, isLandscape: isLandscape) }
         }
         // The Camera Control takes the photo or starts and stops recording, through the same rules as the on-screen button.
-        .onCameraCaptureEvent(isEnabled: model.canCapture) { model.handleCaptureEvent(phase: $0.phase) }
+        // Always enabled while this screen shows: a disabled interaction hands the button back to the system, which opens
+        // Apple's Camera app. When capture is not allowed the model ignores the press.
+        .onCameraCaptureEvent { model.handleCaptureEvent(phase: $0.phase) }
         .sheet(item: $model.sheet) { sheet in
             switch sheet {
             case .record:
