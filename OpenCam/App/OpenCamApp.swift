@@ -60,6 +60,11 @@ struct OpenCamApp: App {
             .task { await LookRenderer.warmUp() }
             .task {
                 guard let model, let session else { return }
+                // Diagnostic launch: the check needs the cameras to itself, so the camera is not started.
+                if ProcessInfo.processInfo.arguments.contains("-rawCheck") {
+                    await RawCheck.runAndWrite()
+                    return
+                }
                 await model.start(session: session)
             }
         }
