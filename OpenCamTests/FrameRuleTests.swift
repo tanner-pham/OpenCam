@@ -48,6 +48,39 @@ import Testing
         #expect(model.sessionConfiguration?.needsFrames == false)
     }
 
+    /// A sweep tests the formats without a look: every option is configured without frames and the look is suspended, not
+    /// turned off by an Apple Log option. Afterwards the look is back and one configure brings the frames back.
+    @Test func aSweepSuspendsTheLookAndBringsItBack() async throws {
+        let looks = try LookStore(directory: TestFiles.directory())
+        let look = try looks.save(name: "Warm fade", adjustments: Adjustments().setting(.temperature, to: 20))
+        let source = CapabilitySource(cacheDirectory: try TestFiles.directory(), documentsDirectory: nil, discoverLenses: { [] }, scan: { _ in [] })
+        let store = try CaptureStore(directory: TestFiles.directory())
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: false, defaults: try Fixture.freshDefaults(),
+                                capabilitySource: source, captureStore: store, lookStore: looks)
+        model.phase = .ready
+        #expect(model.mode == .video)
+        model.selectLook(look.id)
+        let fake = FakeSessionConfigurator(failingLensIDs: [])
+        model.attachSession(fake, configuredWith: try #require(model.sessionConfiguration), selection: model.currentSelection)
+        #expect(model.sessionConfiguration?.needsFrames == true)
+
+        let rec709 = try #require(model.sweepOptions.first { $0.colour == .rec709 && $0 != model.currentVideoOption })
+        let log = try #require(model.sweepOptions.first { $0.colour == .appleLog })
+        let lens = try #require(model.currentLens)
+        let sweep = FormatSweep(driver: model, store: store, lens: lens, options: [rec709, log], keepsClips: false, clipDuration: .milliseconds(10),
+                                deadlines: SweepDeadlines(start: .seconds(2), finish: .seconds(2), cancelGrace: .milliseconds(10)))
+        await model.runSweep(sweep, lensID: lens.id)
+        await model.waitForQueuedConfigures()
+
+        let applied = await fake.applied
+        let swept = applied.filter { $0.video == rec709 || $0.video == log }
+        #expect(swept.count == 2); #expect(swept.allSatisfy { !$0.needsFrames })
+        #expect(model.cameraLook?.id == look.id); #expect(model.viewfinderLook?.id == look.id)
+        #expect(model.notice != "Look turned off. Looks need Rec. 709 or P3.")
+        #expect(model.sessionConfiguration?.needsFrames == true); #expect(applied.last?.needsFrames == true)
+        for url in await fake.recordingURLs { try? FileManager.default.removeItem(at: url) }
+    }
+
     /// A look deleted in the Library while the camera is released changes the configuration, but nothing is configured on
     /// the released session: the close applies the new configuration once, then starts.
     @Test func aLookDeletedUnderTheLibraryIsConfiguredOnceOnReturn() async throws {

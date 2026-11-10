@@ -3,8 +3,9 @@ import Foundation
 extension CameraModel {
     static let framesUnavailableNotice = "The look cannot be shown in the viewfinder with this format."
 
-    /// The session attaches the look's data output only while the viewfinder can draw the look.
-    var needsFrames: Bool { cameraLook != nil && isLookOffered && !isLookViewfinderUnavailable }
+    /// The session attaches the look's data output only while the viewfinder can draw the look, and never during a sweep,
+    /// which must test the formats as they are without a look.
+    var needsFrames: Bool { cameraLook != nil && isLookOffered && !isLookViewfinderUnavailable && !isSweeping }
 
     /// The look's frames cannot be drawn with this format: the viewfinder returns to the plain preview, the data output is
     /// detached, and the look stays selected (photos still take it). The next lens, mode, format or look change tries again.

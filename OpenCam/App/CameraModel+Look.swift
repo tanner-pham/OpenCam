@@ -31,7 +31,8 @@ extension CameraModel {
     }
 
     /// The look drawn on the viewfinder: the selection while the mode and colour offer it and its frames can be drawn.
-    var viewfinderLook: CameraLook? { isLookOffered && !isLookViewfinderUnavailable ? cameraLook : nil }
+    /// A sweep suspends it.
+    var viewfinderLook: CameraLook? { isLookOffered && !isLookViewfinderUnavailable && !isSweeping ? cameraLook : nil }
 
     /// The look's name for the format summary; nil with no camera picture or no look, and in video mode while the viewfinder
     /// cannot show it, since the look then applies nowhere.
@@ -41,9 +42,10 @@ extension CameraModel {
     }
 
     /// A look the current mode and colour cannot take becomes None, with a notice. Sets the look directly, so it never
-    /// asks the camera to change.
+    /// asks the camera to change. A sweep's options are not the user's choice, so nothing is settled while one runs; the
+    /// sweep settles once against the restored selection when it ends.
     func settleLook() {
-        guard cameraLook != nil, !isLookOffered else { return }
+        guard !isSweeping, cameraLook != nil, !isLookOffered else { return }
         cameraLook = nil
         show(LookAvailability.turnedOff, from: .look)
     }
