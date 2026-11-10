@@ -1,0 +1,7 @@
+.build/
+xcuserdata/
+.DS_Store
+.worktrees/
+.superpowers/
+# Local API notes quoted from the SDK headers; kept out of the public repo.
+docs/research/
