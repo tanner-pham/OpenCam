@@ -716,8 +716,9 @@ extension CameraModel {
         adoptScan(capabilities, lenses: lenses)
     }
 
-    /// Off while recording, while formats are being read, and during a sweep.
-    var canRescanCapabilities: Bool { !isRecording && !isSweeping && phase != .scanning && phase != .simulator }
+    /// Only with a running camera (so never while formats are read, in the Simulator, or after a failure or denial),
+    /// and never while recording or during a sweep.
+    var canRescanCapabilities: Bool { phase == .ready && !isRecording && !isSweeping }
 
     /// Clears the cache and reads every camera again, for a camera that could not be read before. The session is stopped
     /// meanwhile, because the scan sets each camera's format directly; the saved selections are restored afterwards.
@@ -728,7 +729,6 @@ extension CameraModel {
         } catch {
             Self.logger.error("\(error.description, privacy: .public)")
         }
-        let previousPhase = phase
         phase = .scanning
         // No configure may queue from here, and none already queued may still be running when the scanner touches the cameras.
         isScanningFormats = true
@@ -737,7 +737,8 @@ extension CameraModel {
         await configurator?.stop()
         let lenses = capabilitySource.discoverLenses()
         let capabilities = await scanCapabilities(lenses: lenses)
-        phase = previousPhase
+        // A rescan starts from `.ready`; a failure reported meanwhile stands.
+        if phase == .scanning { phase = .ready }
         // The scan moved the cameras' formats, so the session is configured again even when the selection is unchanged.
         requestedConfiguration = nil
         if let capabilities {

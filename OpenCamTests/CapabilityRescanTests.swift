@@ -82,6 +82,21 @@ import Testing
         #expect(await fake.applied.map(\.lens.id) == ["W@2"])
     }
 
+    @Test func rescanIsAvailableOnlyWithARunningCamera() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: false, defaults: try Fixture.freshDefaults(),
+                                capabilitySource: source(directory))
+        for phase in [CameraPhase.failed("The camera stopped."), .cameraDenied, .cameraRestricted, .scanning, .simulator] {
+            model.phase = phase
+            #expect(!model.canRescanCapabilities)
+        }
+        model.phase = .failed("The camera stopped.")
+        await model.rescanCapabilities()
+        #expect(model.capabilities == (try Fixture.load())); #expect(model.phase == .failed("The camera stopped."))
+        model.phase = .ready
+        #expect(model.canRescanCapabilities)
+    }
+
     @Test func rescanIsUnavailableWhileRecording() async throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let model = CameraModel(config: .parse(["app", "-recording", "on"]), capabilities: try Fixture.load(), isSimulator: false,
