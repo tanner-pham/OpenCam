@@ -271,7 +271,8 @@ actor CameraSession: SessionConfigurator {
             // on a running session. AVCaptureSession.h:1085 warns that a data output's rotation physically rotates buffers
             // and needs a lengthy pipeline reconfiguration, so it belongs before running; :1087 says some devices default
             // the front camera's video data to 180 degrees and advises setting 0; :1089 says ProRes RAW buffers must be at 0.
-            if connection.isVideoRotationAngleSupported(0) {
+            // Set only when it differs, so a connection already at 0 costs no reconfiguration.
+            if connection.videoRotationAngle != 0, connection.isVideoRotationAngleSupported(0) {
                 connection.videoRotationAngle = 0
             }
             // isVideoMirrored cannot be set while the connection adjusts it itself (AVCaptureSession.h:1050).
