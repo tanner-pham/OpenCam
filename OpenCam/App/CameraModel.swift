@@ -507,12 +507,11 @@ final class CameraModel {
     }
 
     /// Hands the model a session already running `configuration`, which was built from `selection`;
-    /// later selection changes reconfigure it.
+    /// later selection changes reconfigure it. The caller arms its confirmation once the session's start has returned.
     func attachSession(_ configurator: any SessionConfigurator, configuredWith configuration: SessionConfiguration, selection: SavedSelections) {
         self.configurator = configurator
         requestedConfiguration = configuration
         lastWorking = (configuration, selection)
-        confirmWhenRunning(configuration, since: runtimeErrorCount)
         // A change made while the first configure was awaited could not queue yet; apply it now.
         enqueueConfigure()
     }
@@ -669,6 +668,8 @@ extension CameraModel {
             return
         }
         let selection = currentSelection
+        // Read before the configure and start, so an error handled while they are awaited is not lost.
+        let errors = runtimeErrorCount
         do {
             try await session.configure(configuration)
         } catch {
@@ -681,6 +682,9 @@ extension CameraModel {
         await session.start()
         watchFrames(for: configuration)
         phase = .ready
+        // Timed only once the start has returned, so a slow start never drops it; a newer configuration already applied by
+        // the chain has armed its own.
+        if lastWorking?.configuration == configuration { confirmWhenRunning(configuration, since: errors) }
         releaseIfLibraryOpen()
         await withDiscardingTaskGroup { group in
             group.addTask { await self.followRecordings(of: session) }

@@ -19,7 +19,10 @@ import Testing
         model.confirmationDelay = .milliseconds(40)
         model.phase = .ready
         let fake = FakeSessionConfigurator(failingLensIDs: [])
-        model.attachSession(fake, configuredWith: try #require(model.sessionConfiguration), selection: model.currentSelection)
+        let configuration = try #require(model.sessionConfiguration)
+        model.attachSession(fake, configuredWith: configuration, selection: model.currentSelection)
+        // As `start(session:)` does once the session's start has returned.
+        model.confirmWhenRunning(configuration, since: model.runtimeErrorCount)
         return (model, fake, defaults)
     }
 
