@@ -17,9 +17,15 @@ extension CameraModel {
 
     /// Frames stop while the camera is interrupted or reset; when it runs again the watch starts over, so frames that never
     /// resume fall back with the notice instead of leaving the last frame frozen over the hidden preview.
+    /// The watch is armed only once the configures already queued have finished, so a configuration still being applied is
+    /// never timed; a configure that finishes meanwhile arms its own watch, which cancels this one.
     func rewatchFrames() {
-        guard let requestedConfiguration else { return }
-        watchFrames(for: requestedConfiguration)
+        frameWatch?.cancel()
+        frameWatch = Task {
+            await waitForQueuedConfigures()
+            guard !Task.isCancelled, let requestedConfiguration else { return }
+            watchFrames(for: requestedConfiguration)
+        }
     }
 
     /// After a configure that needs frames reaches a running session, waits `FrameWatch.timeout` for the first one; with
