@@ -14,6 +14,8 @@ final class CameraModel {
     var record: RecordSelection { didSet { selectionChanged() } }
     var photo: PhotoSelection { didSet { selectionChanged() } }
     var sheet: CameraSheet?
+    /// True at launch when the screen is the Library or the Editor; the Library is a full-screen cover.
+    var isLibraryPresented: Bool
     var phase: CameraPhase
     var freeBytes: Int64
     /// Set only through `show(_:from:)` and cleared only through `clearNotice(from:)`, so each event clears only its own.
@@ -72,7 +74,7 @@ final class CameraModel {
     @ObservationIgnored private var isAwaitingRestore: Bool
     /// The running session, for capture; set by `start(session:)`.
     @ObservationIgnored var cameraSession: CameraSession?
-    /// Created on the first capture.
+    /// Injected so photos, recordings, sweeps and imports number files from one store; otherwise created on first use.
     @ObservationIgnored private var captureStore: CaptureStore?
     /// Photo captures still running, by file number. A configure queued after a press waits for them,
     /// because Bayer RAW needs the zoom unchanged until the capture ends (AVCapturePhotoOutput.h).
@@ -90,7 +92,8 @@ final class CameraModel {
     static let formatFailedNotice = "That format could not be used."
     static let formatSetupFailed = "This format could not be set up."
     init(config: LaunchConfig, capabilities: CaptureCapabilities, isSimulator: Bool, defaults: UserDefaults = .standard,
-         capabilitySource: CapabilitySource = .device) {
+         capabilitySource: CapabilitySource = .device, captureStore: CaptureStore? = nil) {
+        self.captureStore = captureStore
         self.capabilities = capabilities
         self.defaults = defaults
         self.capabilitySource = capabilitySource
@@ -112,7 +115,9 @@ final class CameraModel {
         case .main: self.sheet = nil
         case .record: self.sheet = .record
         case .sweep: self.sheet = .sweep
+        case .library, .editor: self.sheet = nil
         }
+        self.isLibraryPresented = config.screen == .library || config.screen == .editor
 
         let saved = config.isScripted ? nil : SavedSelections.load(from: defaults)
         let resolved = Self.resolve(lensID: saved?.lensID, record: saved?.record, photo: saved?.photo, in: capabilities)
@@ -240,6 +245,13 @@ final class CameraModel {
     func openRecordSettings() {
         guard canOpenRecordSettings else { return }
         sheet = .record
+    }
+
+    var canOpenLibrary: Bool { !isRecording && !isSweeping }
+
+    func openLibrary() {
+        guard canOpenLibrary else { return }
+        isLibraryPresented = true
     }
 
     /// Audio meters and the remaining-time estimate describe video recording, so photo mode hides them.

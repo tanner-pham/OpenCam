@@ -9,7 +9,12 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
     var simulatedState: SimulatedState?
     var freeSpaceMarginMB: Int?
     var keepsSweepClips = false
-    /// True when -orientation, -mode, -screen, -recording or -state parsed to a valid value; such launches never restore or save selections.
+    var editorGroup: EditorGroup = .light   // -editorGroup light|colour|detail|effects|looks
+    var seedsSamples = false                // -seedSamples on (honoured in the Simulator only)
+    var seedsLook = false                   // -seedLook on (honoured in the Simulator only)
+    var startsInSelectMode = false          // -librarySelect on
+    /// True when -orientation, -mode, -screen, -recording, -state, -editorGroup or an "on" flag among -seedSamples, -seedLook and
+    /// -librarySelect parsed to a valid value; such launches never restore or save selections.
     var isScripted = false
 
     static func parse(_ args: [String]) -> LaunchConfig {
@@ -36,6 +41,22 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
         }
         if let state = value("-state").flatMap(SimulatedState.init(rawValue:)) {
             config.simulatedState = state
+            config.isScripted = true
+        }
+        if let group = value("-editorGroup").flatMap(EditorGroup.init(rawValue:)) {
+            config.editorGroup = group
+            config.isScripted = true
+        }
+        if value("-seedSamples") == "on" {
+            config.seedsSamples = true
+            config.isScripted = true
+        }
+        if value("-seedLook") == "on" {
+            config.seedsLook = true
+            config.isScripted = true
+        }
+        if value("-librarySelect") == "on" {
+            config.startsInSelectMode = true
             config.isScripted = true
         }
         config.freeSpaceMarginMB = value("-freeSpaceMarginMB").flatMap { Int($0) }

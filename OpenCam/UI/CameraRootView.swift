@@ -3,9 +3,17 @@ import SwiftUI
 
 struct CameraRootView: View {
     @Bindable var model: CameraModel
+    let library: LibraryStore?
+    let launch: LaunchConfig
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     private var isLandscape: Bool { verticalSizeClass == .compact }
+
+    init(model: CameraModel, library: LibraryStore?, launch: LaunchConfig) {
+        self.model = model
+        self.library = library
+        self.launch = launch
+    }
 
     var body: some View {
         NavigationStack {
@@ -29,6 +37,9 @@ struct CameraRootView: View {
         // Always enabled while this screen shows: a disabled interaction hands the button back to the system, which opens
         // Apple's Camera app. When capture is not allowed the model ignores the press.
         .onCameraCaptureEvent { model.handleCaptureEvent(phase: $0.phase) }
+        .fullScreenCover(isPresented: Binding(get: { model.isLibraryPresented && library != nil }, set: { model.isLibraryPresented = $0 })) {
+            if let library { LibraryView(library: library, launch: launch) }
+        }
         .sheet(item: $model.sheet) { sheet in
             switch sheet {
             case .record:

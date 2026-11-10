@@ -8,17 +8,23 @@ struct OpenCamApp: App {
 
     private let config: LaunchConfig
     @State private var model: CameraModel?
+    /// Nil when a store could not be made; the camera then shows no Library.
+    @State private var library: LibraryStore?
     /// Nil in the Simulator, which has no camera.
     @State private var session: CameraSession?
 
     init() {
         let config = LaunchConfig.parse(ProcessInfo.processInfo.arguments)
         self.config = config
+        // One capture store serves the camera and the Library, so photos, recordings, sweeps and imports share one numbering.
+        let captureStore = Self.makeCaptureStore()
+        let library = captureStore.flatMap { Self.makeLibrary(captures: $0, config: config) }
+        _library = State(initialValue: library)
         #if targetEnvironment(simulator)
         // The fixture stands in for the scan in the Simulator only.
         do {
             let capabilities = try CaptureCapabilities.bundledFixture()
-            _model = State(initialValue: CameraModel(config: config, capabilities: capabilities, isSimulator: true))
+            _model = State(initialValue: CameraModel(config: config, capabilities: capabilities, isSimulator: true, captureStore: captureStore))
         } catch {
             Self.logger.error("[OpenCamApp:init] Fixture failed to load — {error: \(String(describing: error), privacy: .public)}")
             _model = State(initialValue: nil)
@@ -27,7 +33,7 @@ struct OpenCamApp: App {
         #else
         // On the device nothing is known until the scan or the cache provides it.
         let empty = CaptureCapabilities(lenses: [], videoOptions: [], photoOptions: [], osBuild: "", modelIdentifier: "")
-        _model = State(initialValue: CameraModel(config: config, capabilities: empty, isSimulator: false))
+        _model = State(initialValue: CameraModel(config: config, capabilities: empty, isSimulator: false, captureStore: captureStore))
         _session = State(initialValue: CameraSession())
         #endif
     }
@@ -36,7 +42,7 @@ struct OpenCamApp: App {
         WindowGroup {
             Group {
                 if let model {
-                    CameraRootView(model: model)
+                    CameraRootView(model: model, library: library, launch: config)
                 } else {
                     Color.black
                         .ignoresSafeArea()
@@ -51,6 +57,36 @@ struct OpenCamApp: App {
                 guard let model, let session else { return }
                 await model.start(session: session)
             }
+        }
+    }
+
+    private static func makeCaptureStore() -> CaptureStore? {
+        do throws(CaptureStoreError) {
+            return try CaptureStore.appDefault()
+        } catch {
+            logger.error("\(error.description, privacy: .public)")
+            return nil
+        }
+    }
+
+    private static func makeLibrary(captures: CaptureStore, config: LaunchConfig) -> LibraryStore? {
+        #if targetEnvironment(simulator)
+        if config.seedsSamples {
+            do throws(LibraryError) {
+                _ = try SampleSeeder.seedIfEmpty(captures)
+            } catch {
+                logger.error("\(error.description, privacy: .public)")
+            }
+        }
+        #endif
+        do throws(LookStoreError) {
+            let library = LibraryStore(captures: captures, edits: EditStore(directory: captures.directory),
+                                       looks: try LookStore.appDefault(), thumbnails: ThumbnailCache.appDefault())
+            library.reload()
+            return library
+        } catch {
+            logger.error("\(error.description, privacy: .public)")
+            return nil
         }
     }
 
