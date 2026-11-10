@@ -36,6 +36,12 @@ extension CameraModel {
         await enqueueLibraryHandoff { await $0.returnCameraFromLibrary() }.value
     }
 
+    /// An import finished, possibly after the Library closed and the last capture was read: read it again so an imported
+    /// photo shows on the strip.
+    func libraryImportFinished() {
+        refreshLastCapture()
+    }
+
     /// Steps run one after another, so an open and a close can never overlap on the session.
     @discardableResult
     private func enqueueLibraryHandoff(_ step: @escaping (CameraModel) async -> Void) -> Task<Void, Never> {

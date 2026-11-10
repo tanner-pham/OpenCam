@@ -15,6 +15,9 @@ import OSLog
     /// Photos and clips, newest first.
     private(set) var items: [LibraryItem] = []
     private(set) var looks: [Look] = []
+    /// Imports that have finished. An import can outlive the Library screen, so the camera follows this to read its last
+    /// capture again once the new files are there.
+    private(set) var importsFinished = 0
     private var editsByStem: [String: PhotoEdit] = [:]
     /// Photos whose edit file exists but could not be loaded, by stem, with why: unreadable, or from a newer build in a shape
     /// this one cannot decode. Such a photo shows unedited, and no batch change or delete touches its edit.
@@ -47,10 +50,12 @@ import OSLog
         looks = lookStore.all()
     }
 
-    /// Loads and imports the pictures into the shared Captures folder one at a time, then reloads once so they show.
+    /// Loads and imports the pictures into the shared Captures folder one at a time, then reloads once so they show and
+    /// counts the import in `importsFinished`.
     func importPhotos<Source>(_ sources: [Source], load: (Source) async -> ImportCandidate?) async -> ImportResult {
         let result = await PhotoImporter.importEach(sources, into: captures, load: load)
         reload()
+        importsFinished += 1
         return result
     }
 

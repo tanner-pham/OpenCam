@@ -36,6 +36,23 @@ import Testing
         #expect(try #require(store.captureThumbnailKey(for: url)) != plain)
     }
 
+    /// An import can finish after the Library has closed and the camera read its last capture; the store counts finished
+    /// imports so the camera reads it again, and then shows the imported photo.
+    @Test func aFinishedImportIsCountedSoTheCameraReadsTheLastCaptureAgain() async throws {
+        let dir = try TestFiles.directory()
+        try Data("x".utf8).write(to: dir.appending(path: "OC_0001.JPG"))
+        let store = try LibraryStoreTests.make(dir); store.reload()
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults(),
+                                captureStore: store.captures)
+        model.refreshLastCapture()
+        #expect(model.lastCapture?.lastPathComponent == "OC_0001.JPG"); #expect(store.importsFinished == 0)
+        let jpeg = try TestFiles.jpegData(width: 16, height: 16, rgb: SIMD3(0.5, 0.5, 0.5))
+        _ = await store.importPhotos([jpeg]) { ImportCandidate(data: $0, contentType: .jpeg) }
+        #expect(store.importsFinished == 1)
+        model.libraryImportFinished()
+        #expect(model.lastCapture?.lastPathComponent == "OC_0002.JPG")
+    }
+
     /// A photo taken since the last reload is still found; a clip is left to the strip's own preview.
     @Test func aNewPhotoIsFoundAndAClipIsNot() async throws {
         let dir = try TestFiles.directory()
