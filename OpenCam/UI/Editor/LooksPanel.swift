@@ -14,7 +14,6 @@ struct LooksPanel: View {
     /// Rendered tiles by the adjustments they show.
     @State private var images: [Adjustments: CGImage] = [:]
     @State private var naming: LookNaming?
-    @State private var nameText = ""
     @State private var deleting: Look?
     @State private var failure: String?
 
@@ -37,15 +36,10 @@ struct LooksPanel: View {
             .padding(.bottom, Theme.Space.l)
         }
         .scrollBounceBehavior(.basedOnSize)
-        // The Save action gets the value the alert was presented with, so dismissal clearing `naming` cannot turn a rename
+        // The Save action gets the value the sheet was presented with, so dismissal clearing `naming` cannot turn a rename
         // into a new look.
-        .alert(naming?.title ?? "", isPresented: isNaming, presenting: naming) { presented in
-            TextField("Name", text: $nameText)
-            Button("Cancel", role: .cancel) {}
-            Button("Save") { saveName(nameText, for: presented) }
-                .disabled(LookStore.nameProblem(nameText) != nil)
-        } message: { _ in
-            Text(LookStore.nameProblem(nameText) ?? "")
+        .sheet(item: $naming) { presented in
+            LookNameSheet(naming: presented) { saveName($0, for: presented) }
         }
         .confirmationDialog(deleting.map { "Delete \u{201C}\($0.name)\u{201D}?" } ?? "", isPresented: isDeleting,
                             titleVisibility: .visible, presenting: deleting) { look in
@@ -84,25 +78,19 @@ struct LooksPanel: View {
         }
     }
 
-    private var isNaming: Binding<Bool> {
-        Binding(get: { naming != nil }, set: { if !$0 { naming = nil } })
-    }
-
     private var isDeleting: Binding<Bool> {
         Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })
     }
 
     private func startNamingNew() {
-        nameText = ""
         naming = .new
     }
 
     private func startRenaming(_ look: Look) {
-        nameText = look.name
         naming = .rename(look)
     }
 
-    /// Save stays disabled while the name has a problem, so only a store failure reaches the catch.
+    /// Save stays unavailable while the name has a problem, so only a store failure reaches the catch.
     private func saveName(_ name: String, for presented: LookNaming) {
         do throws(LookStoreError) {
             try model.saveLookName(name, renaming: presented.look)

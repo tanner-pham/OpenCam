@@ -1,9 +1,16 @@
 import Foundation
 
-/// What the Looks group's name alert was opened for. The alert is presented with this value and hands it to its Save action.
-nonisolated enum LookNaming: Sendable, Equatable {
+/// What the Looks group's name prompt was opened for. The prompt is presented with this value and hands it to its Save action.
+nonisolated enum LookNaming: Sendable, Equatable, Identifiable {
     case new
     case rename(Look)
+
+    var id: String {
+        switch self {
+        case .new: "new"
+        case .rename(let look): "rename " + look.id.uuidString
+        }
+    }
 
     var title: String {
         switch self {
