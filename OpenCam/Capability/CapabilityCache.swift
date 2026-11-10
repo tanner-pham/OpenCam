@@ -21,6 +21,16 @@ nonisolated struct CapabilityCache: Sendable {
         return capabilities
     }
 
+    /// Removes the cached file so the next load is a miss. A missing file is already clear.
+    func clear() throws(CapabilityError) {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        do {
+            try FileManager.default.removeItem(at: fileURL)
+        } catch {
+            throw .unwritable(path: fileURL.path, reason: String(describing: error))
+        }
+    }
+
     /// Creates the directory when it is missing.
     func save(_ capabilities: CaptureCapabilities) throws(CapabilityError) {
         let data = try capabilities.encoded()

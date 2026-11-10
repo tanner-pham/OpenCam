@@ -5,6 +5,8 @@ import Foundation
 actor FakeSessionConfigurator: SessionConfigurator {
     let failingLensIDs: Set<String>
     private(set) var applied: [SessionConfiguration] = []
+    private(set) var isRunning = true
+    private(set) var stopCount = 0
 
     init(failingLensIDs: Set<String>) {
         self.failingLensIDs = failingLensIDs
@@ -15,5 +17,12 @@ actor FakeSessionConfigurator: SessionConfigurator {
             throw .noMatchingFormat(option: "fake \(configuration.lens.id)")
         }
         applied.append(configuration)
+    }
+
+    func start() { isRunning = true }
+
+    func stop() {
+        isRunning = false
+        stopCount += 1
     }
 }

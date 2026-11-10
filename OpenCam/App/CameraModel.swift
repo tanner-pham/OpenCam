@@ -28,6 +28,7 @@ final class CameraModel {
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let isScripted: Bool
+    @ObservationIgnored private let capabilitySource: CapabilitySource
     /// Set by `attachSession` once the session has a working configuration; from then on selection changes reconfigure it.
     @ObservationIgnored private var configurator: (any SessionConfigurator)?
     /// The tail of the serial configure chain; each task returns its configure error, or nil.
@@ -46,9 +47,11 @@ final class CameraModel {
 
     static let formatFailedNotice = "That format could not be used."
 
-    init(config: LaunchConfig, capabilities: CaptureCapabilities, isSimulator: Bool, defaults: UserDefaults = .standard) {
+    init(config: LaunchConfig, capabilities: CaptureCapabilities, isSimulator: Bool, defaults: UserDefaults = .standard,
+         capabilitySource: CapabilitySource = .device) {
         self.capabilities = capabilities
         self.defaults = defaults
+        self.capabilitySource = capabilitySource
         self.isScripted = config.isScripted
         if isSimulator {
             self.phase = config.simulatedState == .scanning ? .scanning : .simulator
@@ -172,7 +175,7 @@ final class CameraModel {
         photo = Self.settle(photo, with: photoResolver) ?? photo
     }
 
-    private var currentSelection: SavedSelections {
+    var currentSelection: SavedSelections {
         SavedSelections(mode: mode, lensID: lensID, record: record, photo: photo)
     }
 
@@ -187,11 +190,14 @@ final class CameraModel {
         currentSelection.save(to: defaults)
     }
 
-    /// Hands the model a session already running `configuration`; later selection changes reconfigure it.
-    func attachSession(_ configurator: any SessionConfigurator, configuredWith configuration: SessionConfiguration) {
+    /// Hands the model a session already running `configuration`, which was built from `selection`;
+    /// later selection changes reconfigure it.
+    func attachSession(_ configurator: any SessionConfigurator, configuredWith configuration: SessionConfiguration, selection: SavedSelections) {
         self.configurator = configurator
         requestedConfiguration = configuration
-        lastWorking = (configuration, currentSelection)
+        lastWorking = (configuration, selection)
+        // A change made while the first configure was awaited could not queue yet; apply it now.
+        enqueueConfigure()
     }
 
     /// Applies the current selection behind any configure already queued, and throws if it could not be used.
@@ -199,6 +205,11 @@ final class CameraModel {
     func applySelection() async throws(CameraSessionError) {
         guard let task = enqueueConfigure() ?? configureTask else { return }
         if let error = await task.value { throw error }
+    }
+
+    /// Waits for every configure already queued, without queuing one.
+    func waitForQueuedConfigures() async {
+        _ = await configureTask?.value
     }
 
     /// Queues a configure behind any running one. A lens switch changes lens, record and photo in one turn;
@@ -282,7 +293,7 @@ extension CameraModel {
             phase = access.camera == .restricted ? .cameraRestricted : .cameraDenied
             return
         }
-        let lenses = LensDiscovery.lenses()
+        let lenses = capabilitySource.discoverLenses()
         guard !lenses.isEmpty else {
             Self.logger.error("[CameraModel:start] No camera found — {lenses: 0}")
             phase = .failed("The camera could not start.")
@@ -295,6 +306,7 @@ extension CameraModel {
             phase = .failed("The camera could not start.")
             return
         }
+        let selection = currentSelection
         do {
             try await session.configure(configuration)
         } catch {
@@ -302,7 +314,7 @@ extension CameraModel {
             phase = .failed("The camera could not start.")
             return
         }
-        attachSession(session, configuredWith: configuration)
+        attachSession(session, configuredWith: configuration, selection: selection)
         await session.start()
         phase = .ready
         for await event in session.events {
@@ -310,39 +322,90 @@ extension CameraModel {
         }
     }
 
-    /// Uses the cached capabilities when they were written on this OS build and model for the same cameras;
-    /// otherwise scans, saves to the cache and leaves a copy in Documents for comparison with the probe report.
+    /// Uses the cached capabilities when they were written on this OS build and model and all their lenses are present
+    /// (lenses a scan skipped stay out until `rescanCapabilities`); otherwise scans.
     func loadCapabilities(lenses: [Lens]) async {
-        let osBuild = DeviceIdentity.osBuild(), modelIdentifier = DeviceIdentity.modelIdentifier()
-        let cache = CapabilityCache(directory: URL.applicationSupportDirectory.appending(path: "OpenCam"))
-        if let cached = cache.load(osBuild: osBuild, modelIdentifier: modelIdentifier) {
-            // The cache may lack lenses the scan skipped. Lens labels can carry localized device names,
-            // so the freshly discovered lenses are kept for the cached ids.
-            let cachedIDs = Set(cached.lenses.map(\.id))
-            let current = lenses.filter { cachedIDs.contains($0.id) }
-            if !current.isEmpty, current.count == cachedIDs.count {
-                replaceCapabilities(CaptureCapabilities(lenses: current, videoOptions: cached.videoOptions, photoOptions: cached.photoOptions,
-                                                        osBuild: osBuild, modelIdentifier: modelIdentifier))
-                return
-            }
+        let cache = CapabilityCache(directory: capabilitySource.cacheDirectory)
+        if let cached = cache.load(osBuild: DeviceIdentity.osBuild(), modelIdentifier: DeviceIdentity.modelIdentifier()),
+           let adopted = cached.adopting(discovered: lenses) {
+            replaceCapabilities(adopted)
+            return
         }
         phase = .scanning
-        let formats: [FormatDescriptor]
+        guard let capabilities = await scanCapabilities(lenses: lenses) else {
+            phase = .failed("The camera could not start.")
+            return
+        }
+        adoptScan(capabilities, lenses: lenses)
+    }
+
+    /// Off while recording or while formats are being read.
+    var canRescanCapabilities: Bool { !isRecording && phase != .scanning && phase != .simulator }
+
+    /// Clears the cache and reads every camera again, for a camera that could not be read before. The session is stopped
+    /// meanwhile, because the scan sets each camera's format directly; the saved selections are restored afterwards.
+    func rescanCapabilities() async {
+        guard canRescanCapabilities else { return }
         do {
-            formats = try await CapabilityScanner.scan(lenses: lenses)
+            try CapabilityCache(directory: capabilitySource.cacheDirectory).clear()
         } catch {
             Self.logger.error("\(error.description, privacy: .public)")
-            phase = .failed("The camera could not start.")
-            return
         }
-        let capabilities = CapabilityMapper.capabilities(lenses: lenses, formats: formats, osBuild: osBuild, modelIdentifier: modelIdentifier)
+        let previousPhase = phase
+        phase = .scanning
+        await configurator?.stop()
+        let lenses = capabilitySource.discoverLenses()
+        let capabilities = await scanCapabilities(lenses: lenses)
+        phase = previousPhase
+        // The scan moved the cameras' formats, so the session is configured again even when the selection is unchanged.
+        requestedConfiguration = nil
+        if let capabilities {
+            adoptScan(capabilities, lenses: lenses)
+        } else {
+            notice = Self.rescanFailedNotice
+        }
+        try? await applySelection()
+        await configurator?.start()
+    }
+
+    static let rescanFailedNotice = "Camera formats could not be read."
+
+    static func skippedCamerasNotice(count: Int) -> String? {
+        switch count {
+        case 0: nil
+        case 1: "1 camera could not be read."
+        default: "\(count) cameras could not be read."
+        }
+    }
+
+    /// Nil when the scan failed or no camera reported a usable format; the reason is logged.
+    private func scanCapabilities(lenses: [Lens]) async -> CaptureCapabilities? {
+        let formats: [FormatDescriptor]
+        do {
+            formats = try await capabilitySource.scan(lenses)
+        } catch {
+            Self.logger.error("\(error.description, privacy: .public)")
+            return nil
+        }
+        let capabilities = CapabilityMapper.capabilities(lenses: lenses, formats: formats,
+                                                         osBuild: DeviceIdentity.osBuild(), modelIdentifier: DeviceIdentity.modelIdentifier())
         guard !capabilities.lenses.isEmpty else {
-            Self.logger.error("[CameraModel:loadCapabilities] No camera reported a usable format — {lenses: \(lenses.count), formats: \(formats.count)}")
-            phase = .failed("The camera could not start.")
-            return
+            Self.logger.error("[CameraModel:scanCapabilities] No camera reported a usable format — {lenses: \(lenses.count), formats: \(formats.count)}")
+            return nil
         }
+        return capabilities
+    }
+
+    /// Applies a finished scan, says how many cameras were skipped, saves it to the cache and leaves a copy
+    /// in Documents for comparison with the probe report.
+    private func adoptScan(_ capabilities: CaptureCapabilities, lenses: [Lens]) {
         replaceCapabilities(capabilities)
-        for directory in [cache.directory, URL.documentsDirectory] {
+        // Notices count cameras, and a skipped camera can carry two lenses (1x and 2x).
+        let skipped = Set(lenses.filter { capabilities.skippedLensIDs.contains($0.id) }.map(\.deviceUniqueID))
+        if let skippedNotice = Self.skippedCamerasNotice(count: skipped.count) {
+            notice = skippedNotice
+        }
+        for directory in [capabilitySource.cacheDirectory, capabilitySource.documentsDirectory].compactMap({ $0 }) {
             do {
                 try CapabilityCache(directory: directory).save(capabilities)
             } catch {

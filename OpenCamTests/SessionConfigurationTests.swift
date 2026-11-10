@@ -16,7 +16,7 @@ import Testing
         model.phase = .ready
         let working = try #require(model.sessionConfiguration)
         let fake = FakeSessionConfigurator(failingLensIDs: ["ultraWide"])
-        model.attachSession(fake, configuredWith: working)
+        model.attachSession(fake, configuredWith: working, selection: model.currentSelection)
         let lensID = model.lensID, record = model.record, photo = model.photo
 
         model.selectLens("ultraWide")
@@ -29,5 +29,18 @@ import Testing
         try await model.applySelection()
         #expect(model.lensID == "wide@2"); #expect(model.notice == nil)
         #expect(await fake.applied.map(\.lens.id) == ["wide@2"])
+    }
+
+    @Test func lensChangeBeforeTheSessionAttachesIsApplied() async throws {
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: false, defaults: try Fixture.freshDefaults())
+        model.phase = .ready
+        // The first configure was built from this selection; the lens changes while it is awaited.
+        let working = try #require(model.sessionConfiguration), selection = model.currentSelection
+        model.selectLens("ultraWide")
+        let fake = FakeSessionConfigurator(failingLensIDs: [])
+        model.attachSession(fake, configuredWith: working, selection: selection)
+        await model.waitForQueuedConfigures()
+        #expect(await fake.applied.map(\.lens.id) == ["ultraWide"])
+        #expect(model.sessionConfiguration?.lens.id == "ultraWide")
     }
 }

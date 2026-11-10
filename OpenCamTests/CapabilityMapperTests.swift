@@ -26,7 +26,7 @@ import Testing
     @Test func lensWithoutDescriptorsIsOmittedAndTheOthersSurvive() {
         let front = Lens(id: "F", kind: .outerUltraWide, deviceUniqueID: "F", zoomFactor: 1, label: "Front")
         let caps = CapabilityMapper.capabilities(lenses: [wide, tele, front], formats: [fmt(1920, 1080, [1...60], [0: ["hvc1"]])], osBuild: "B", modelIdentifier: "M")
-        #expect(caps.lenses.map(\.id) == ["W", "W@2"])
+        #expect(caps.lenses.map(\.id) == ["W", "W@2"]); #expect(caps.skippedLensIDs == ["F"])
         #expect(!caps.videoOptions(forLens: "W").isEmpty); #expect(caps.videoOptions(forLens: "F").isEmpty)
     }
 }

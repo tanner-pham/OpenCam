@@ -88,7 +88,9 @@ nonisolated enum CapabilityMapper {
         }
         let photo = photoOptions(from: formats, lenses: lenses)
         let kept = lenses.filter { lens in video.contains { $0.lensID == lens.id } || photo.contains { $0.lensID == lens.id } }
-        return CaptureCapabilities(lenses: kept, videoOptions: video, photoOptions: photo, osBuild: osBuild, modelIdentifier: modelIdentifier)
+        let skipped = lenses.filter { !kept.contains($0) }.map(\.id)
+        return CaptureCapabilities(lenses: kept, videoOptions: video, photoOptions: photo, osBuild: osBuild, modelIdentifier: modelIdentifier,
+                                   skippedLensIDs: skipped)
     }
 
     /// The scan reads each camera once, under its unzoomed lens; a zoomed lens reuses that lens's descriptors.
