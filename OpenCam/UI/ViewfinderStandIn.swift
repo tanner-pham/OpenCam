@@ -59,13 +59,7 @@ struct ViewfinderStandIn: View {
         }
         .overlay(alignment: .topLeading) {
             if showsCaption {
-                Text("No camera in Simulator")
-                    .font(.caption2)
-                    .padding(.horizontal, Theme.Space.s)
-                    .padding(.vertical, Theme.Space.xs)
-                    .glassEffect(.regular, in: .capsule)
-                    .padding(Theme.Space.s)
-                    .padding(.top, captionTopInset)
+                StandInCaption(topInset: captionTopInset)
             }
         }
     }

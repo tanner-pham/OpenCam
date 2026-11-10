@@ -20,7 +20,8 @@ struct BottomBar: View {
 
     private var controls: some View {
         HStack(spacing: Theme.Space.l) {
-            Color.clear.frame(width: Theme.Size.histogramWidth, height: Theme.Size.histogramHeight)
+            // Empty room for the histogram; it gives way when a look's name makes the summary too wide for the row.
+            Color.clear.frame(maxWidth: Theme.Size.histogramWidth, minHeight: Theme.Size.histogramHeight, maxHeight: Theme.Size.histogramHeight)
             Spacer(minLength: 0)
             FormatButton(parts: model.summaryParts, isWarning: model.sweepCaption != nil,
                          onLongPress: model.mode == .video ? { model.openSweep() } : nil) { model.openRecordSettings() }

@@ -8,6 +8,7 @@ extension EnvironmentValues {
 /// The picture area: the live preview when ready, the stand-in in the Simulator, what is wrong in words when there is no camera picture.
 struct ViewfinderArea: View {
     let phase: CameraPhase
+    var look: CameraLook? = nil
     var captionTopInset: CGFloat = 0
 
     @Environment(\.previewSource) private var previewSource
@@ -15,7 +16,7 @@ struct ViewfinderArea: View {
     var body: some View {
         switch phase {
         case .simulator:
-            ViewfinderStandIn(captionTopInset: captionTopInset)
+            LookStandIn(look: look, captionTopInset: captionTopInset)
         case .ready:
             if let previewSource {
                 CameraPreviewView(source: previewSource)
