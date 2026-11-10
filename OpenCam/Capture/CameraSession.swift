@@ -27,6 +27,8 @@ actor CameraSession: SessionConfigurator {
     private var lastWorkingConfiguration: SessionConfiguration?
     /// The white-balance mode a ProRes RAW recording replaced, restored when that recording finishes.
     private var whiteBalanceRestore: (device: AVCaptureDevice, mode: AVCaptureDevice.WhiteBalanceMode)?
+    /// Held here because the session does not keep its controls delegate alive.
+    private let controlsDelegate = CameraControlsDelegate()
     private static let logger = Logger(subsystem: "local.opencam.app", category: "CameraSession")
 
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
@@ -70,15 +72,18 @@ actor CameraSession: SessionConfigurator {
     /// On failure the last configuration that worked is applied again, so the session keeps running as it was,
     /// and the original error is thrown. If that restore fails too, a runtime error is reported.
     /// Refused while recording, because changing the format or outputs ends the clip.
+    /// The Camera Control's system controls are installed last, for the device and mode now applied.
     func configure(_ configuration: SessionConfiguration) throws(CameraSessionError) {
         guard !recorder.output.isRecording else { throw .recordingInProgress }
         do throws(CameraSessionError) {
             try apply(configuration)
             lastWorkingConfiguration = configuration
+            installSystemControls(CameraControlPlan.kinds(supportsControls: session.supportsControls, mode: configuration.mode, photoFormat: configuration.photo?.format ?? .heif))
         } catch {
             if let lastWorkingConfiguration, lastWorkingConfiguration != configuration {
                 do {
                     try apply(lastWorkingConfiguration)
+                    installSystemControls(CameraControlPlan.kinds(supportsControls: session.supportsControls, mode: lastWorkingConfiguration.mode, photoFormat: lastWorkingConfiguration.photo?.format ?? .heif))
                 } catch let restoreError {
                     continuation.yield(.runtimeError("[CameraSession:configure] Cannot restore the last configuration — {lens: \(lastWorkingConfiguration.lens.id), error: \(restoreError)}"))
                 }
@@ -443,5 +448,62 @@ extension CameraSession {
         }
         device.whiteBalanceMode = mode
         device.unlockForConfiguration()
+    }
+}
+
+extension CameraSession {
+    /// What the current camera reports now; empty while the session is stopped or has no camera.
+    /// Read on the session queue, so a lens switch is never seen half done.
+    func currentReadouts() -> LiveReadouts {
+        guard session.isRunning, let device = videoInput?.device else { return LiveReadouts() }
+        let duration = device.exposureDuration
+        // AVCaptureDevice.h: the conversion throws NSRangeException for gains outside 1.0...maxWhiteBalanceGain.
+        let gains = device.deviceWhiteBalanceGains
+        let maxGain = device.maxWhiteBalanceGain
+        let isGainInRange = { (gain: Float) in gain >= 1 && gain <= maxGain }
+        let whiteBalance = isGainInRange(gains.redGain) && isGainInRange(gains.greenGain) && isGainInRange(gains.blueGain)
+            ? device.temperatureAndTintValues(for: gains) : nil
+        return LiveReadouts(iso: device.iso,
+                            shutterSeconds: duration.isNumeric ? duration.seconds : nil,
+                            kelvin: whiteBalance?.temperature,
+                            tint: whiteBalance?.tint,
+                            exposureBias: device.exposureTargetBias,
+                            lensPosition: device.lensPosition)
+    }
+
+    /// Replaces the session's controls with `kinds` for the current camera. A slider is left out when the active format
+    /// recommends no range for it, because its initializer throws an Objective-C exception for a device that cannot
+    /// set that property (AVCaptureSystemZoomSlider.h, AVCaptureSystemExposureBiasSlider.h), and when the session
+    /// cannot add it (`maxControlsCount` is known only at run time).
+    private func installSystemControls(_ kinds: [SystemControlKind]) {
+        for control in session.controls {
+            session.removeControl(control)
+        }
+        guard !kinds.isEmpty, let device = videoInput?.device else { return }
+        if session.controlsDelegate == nil {
+            session.setControlsDelegate(controlsDelegate, queue: queue)
+        }
+        for kind in kinds {
+            let control: AVCaptureControl
+            switch kind {
+            case .zoom:
+                guard device.activeFormat.systemRecommendedVideoZoomRange != nil else {
+                    Self.logger.error("[CameraSession:installSystemControls] No recommended zoom range — {device: \(device.localizedName, privacy: .public)}")
+                    continue
+                }
+                control = AVCaptureSystemZoomSlider(device: device)
+            case .exposureBias:
+                guard device.activeFormat.systemRecommendedExposureBiasRange != nil else {
+                    Self.logger.error("[CameraSession:installSystemControls] No recommended exposure bias range — {device: \(device.localizedName, privacy: .public)}")
+                    continue
+                }
+                control = AVCaptureSystemExposureBiasSlider(device: device)
+            }
+            guard session.canAddControl(control) else {
+                Self.logger.error("[CameraSession:installSystemControls] Cannot add control — {kind: \(String(describing: kind), privacy: .public), count: \(self.session.controls.count), max: \(self.session.maxControlsCount)}")
+                continue
+            }
+            session.addControl(control)
+        }
     }
 }

@@ -1,3 +1,4 @@
+import AVKit
 import Foundation
 import Observation
 import OSLog
@@ -29,6 +30,8 @@ final class CameraModel {
     /// True while the scanner sets formats on the cameras (first scan or rescan). Lens and mode cannot change then,
     /// and no configure is queued; the selection in force when the scan ends is configured afterwards.
     private(set) var isScanningFormats = false
+    /// The camera's live values, polled while the session runs; shown only through `shownReadouts`.
+    private(set) var readouts = LiveReadouts()
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let isScripted: Bool
@@ -138,6 +141,18 @@ final class CameraModel {
         shownVideoOption.map { String($0.frameRate) } ?? "--"
     }
 
+    /// The timecode counts frames at the selected rate.
+    var timecodeFrameRate: Int { currentVideoOption?.frameRate ?? 30 }
+
+    /// Live values only while the camera is ready; otherwise (Simulator, scanning, no camera) every readout reads `--`.
+    var shownReadouts: LiveReadouts { phase == .ready ? readouts : LiveReadouts() }
+    var shutterText: String { ReadoutFormatter.shutter(shownReadouts.shutterSeconds) }
+    var isoText: String { ReadoutFormatter.iso(shownReadouts.iso) }
+    var whiteBalanceText: String { ReadoutFormatter.kelvin(shownReadouts.kelvin) }
+    var tintText: String { ReadoutFormatter.tint(shownReadouts.tint) }
+    var exposureBiasText: String { ReadoutFormatter.bias(shownReadouts.exposureBias) }
+    var focusText: String { ReadoutFormatter.focus(shownReadouts.lensPosition) }
+
     var remainingText: String {
         guard let option = shownVideoOption else { return "-- min" }
         return "\(DataRateEstimator.minutesRemaining(freeBytes: freeBytes, option: option)) min"
@@ -192,14 +207,21 @@ final class CameraModel {
 
     /// In video mode a press starts recording, or stops it.
     func capturePressed() {
-        if mode == .video, isRecording {
+        perform(.forPress(mode: mode, isRecording: isRecording))
+    }
+
+    /// The one path for the on-screen button and the Camera Control: stopping is always allowed,
+    /// a photo or a new recording only when `canCapture`.
+    private func perform(_ action: CaptureAction) {
+        switch action {
+        case .stopRecording:
             stopRecording()
-            return
-        }
-        guard canCapture else { return }
-        switch mode {
-        case .photo: capturePhoto()
-        case .video: startRecording()
+        case .takePhoto:
+            guard canCapture else { return }
+            capturePhoto()
+        case .startRecording:
+            guard canCapture else { return }
+            startRecording()
         }
     }
 
@@ -467,6 +489,7 @@ extension CameraModel {
         await withDiscardingTaskGroup { group in
             group.addTask { await self.followRecordings(of: session) }
             group.addTask { await self.pollMeters(of: session) }
+            group.addTask { await self.pollReadouts(of: session) }
             for await event in session.events {
                 apply(event)
             }
@@ -487,6 +510,20 @@ extension CameraModel {
             if levels != meterLevels { meterLevels = levels }
             do {
                 try await Task.sleep(for: .milliseconds(100))
+            } catch {
+                return
+            }
+        }
+    }
+
+    /// Four times a second while ready; the session reads whichever camera is current, so a lens switch needs nothing here,
+    /// and reports nothing while stopped.
+    private func pollReadouts(of session: CameraSession) async {
+        while !Task.isCancelled {
+            let latest = phase == .ready ? await session.currentReadouts() : LiveReadouts()
+            if latest != readouts { readouts = latest }
+            do {
+                try await Task.sleep(for: .milliseconds(250))
             } catch {
                 return
             }
@@ -653,5 +690,13 @@ extension CameraModel {
             pressureLevel = level
             isThermalPressure = isThermal
         }
+    }
+}
+
+extension CameraModel {
+    /// A Camera Control press: the same action and the same rules as the on-screen button.
+    func handleCaptureEvent(phase: AVCaptureEventPhase) {
+        guard let action = CaptureAction.forEvent(phase: phase, mode: mode, isRecording: isRecording) else { return }
+        perform(action)
     }
 }

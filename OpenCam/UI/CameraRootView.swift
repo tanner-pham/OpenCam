@@ -1,3 +1,4 @@
+import AVKit
 import SwiftUI
 
 struct CameraRootView: View {
@@ -24,6 +25,8 @@ struct CameraRootView: View {
             .persistentSystemOverlays(.hidden)
             .toolbar { StripToolbar(model: model, isLandscape: isLandscape) }
         }
+        // The Camera Control takes the photo or starts and stops recording, through the same rules as the on-screen button.
+        .onCameraCaptureEvent(isEnabled: model.canCapture) { model.handleCaptureEvent(phase: $0.phase) }
         .sheet(item: $model.sheet) { sheet in
             switch sheet {
             case .record:

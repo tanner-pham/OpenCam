@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Folded and vertical, photo. 3:4 picture, a readout row, then the shutter row.
+/// Folded and vertical, photo. 3:4 picture, a row of live read-only readouts, then the shutter row.
 struct FoldedVerticalView: View {
     let model: CameraModel
     let size: CGSize
@@ -13,10 +13,11 @@ struct FoldedVerticalView: View {
 
             VStack(spacing: Theme.Space.s) {
                 HStack(spacing: 0) {
-                    ReadoutView(caption: "SHUTTER", value: "--")
-                    ReadoutView(caption: "ISO", value: "--")
-                    ReadoutView(caption: "EV", value: "--")
-                    ReadoutView(caption: "WB", value: "--")
+                    ReadoutView(caption: "SHUTTER", value: model.shutterText)
+                    ReadoutView(caption: "ISO", value: model.isoText)
+                    ReadoutView(caption: "EV", value: model.exposureBiasText)
+                    ReadoutView(caption: "WB", value: model.whiteBalanceText)
+                    ReadoutView(caption: "FOCUS", value: model.focusText)
                 }
                 HStack {
                     FormatButton(parts: model.summaryParts, isStacked: true) { model.openRecordSettings() }
