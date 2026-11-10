@@ -16,6 +16,9 @@ import OSLog
     private(set) var items: [LibraryItem] = []
     private(set) var looks: [Look] = []
     private var editsByStem: [String: PhotoEdit] = [:]
+    /// Photos whose edit file exists but could not be loaded, by stem, with why: unreadable, or from a newer build in a shape
+    /// this one cannot decode. Such a photo shows unedited, and no batch change or delete touches its edit.
+    private var editFailures: [String: EditStoreError] = [:]
 
     init(captures: CaptureStore, edits: EditStore, looks: LookStore, thumbnails: ThumbnailCache) {
         self.captures = captures
@@ -24,20 +27,23 @@ import OSLog
         self.thumbnails = thumbnails
     }
 
-    /// Reads the items, the photos' edits and the looks. An edit that cannot be read counts as no edit and is logged.
+    /// Reads the items, the photos' edits and the looks. An edit that cannot be loaded is logged and kept apart in
+    /// `editFailures`; the photo shows unedited.
     func reload() {
         let scanned = LibraryScanner.items(in: captures.directory)
         var loaded: [String: PhotoEdit] = [:]
+        var failures: [String: EditStoreError] = [:]
         for item in scanned where item.isEditable {
             do {
                 loaded[item.stem] = try edits.load(stem: item.stem)
             } catch {
                 Self.logger.error("\(error.description, privacy: .public)")
-                loaded[item.stem] = PhotoEdit()
+                failures[item.stem] = error
             }
         }
         items = scanned
         editsByStem = loaded
+        editFailures = failures
         looks = lookStore.all()
     }
 
@@ -90,7 +96,8 @@ import OSLog
     }
 
     /// Runs `change` on each photo (true when it changed the photo). A photo whose edit is from a newer version is left as it
-    /// is and counted; any other failure is logged, counted, and the rest still run. Then the store reloads; when any photo
+    /// is and counted; one whose edit could not be loaded is left as it is and counted as failed; any other failure is
+    /// logged, counted, and the rest still run. Then the store reloads; when any photo
     /// failed, `.lookChangeIncomplete` carries what happened to every item.
     private func changeEdits(of items: [LibraryItem], action: LookChange.Action,
                              _ change: (LibraryItem) throws(EditStoreError) -> Bool) throws(LibraryError) -> LookChange {
@@ -101,7 +108,9 @@ import OSLog
                 clips += 1
                 continue
             }
-            do {
+            do throws(EditStoreError) {
+                // An edit that could not be loaded is never passed to `change`: what it holds is unknown.
+                if let failure = editFailures[item.stem] { throw failure }
                 if try change(item) { changed += 1 }
             } catch {
                 Self.logger.error("\(error.description, privacy: .public)")
@@ -125,8 +134,9 @@ import OSLog
     }
 
     /// Each item goes whole or stays: a photo's edit file is removed first, then its files. A photo whose edit is from a newer
-    /// version stays whole, because an orphan edit file would still raise the next number. The other items are still deleted;
-    /// then the store reloads and the first error is thrown, `.newerEdit` before any other kind.
+    /// version, or one that cannot be read, stays whole, because this build never removes such a file and an orphan edit file
+    /// would still raise the next number. The other items are still deleted; then the store reloads and the first error is
+    /// thrown, `.newerEdit` first, then `.unreadableEdit`, then any other kind.
     func delete(_ items: [LibraryItem]) throws(LibraryError) {
         var problems: [LibraryError] = []
         for item in items {
@@ -136,7 +146,8 @@ import OSLog
                 } catch {
                     switch error {
                     case .newerVersion(let path, let version): problems.append(.newerEdit(path: path, version: version))
-                    case .unreadable, .unwritable: problems.append(.editFailed(stem: item.stem, reason: error.description))
+                    case .unreadable(let path, let reason): problems.append(.unreadableEdit(path: path, reason: reason))
+                    case .unwritable: problems.append(.editFailed(stem: item.stem, reason: error.description))
                     }
                     continue
                 }
@@ -153,6 +164,7 @@ import OSLog
         reload()
         for problem in problems { Self.logger.error("\(problem.description, privacy: .public)") }
         let newer = problems.first { if case .newerEdit = $0 { true } else { false } }
-        if let error = newer ?? problems.first { throw error }
+        let unreadable = problems.first { if case .unreadableEdit = $0 { true } else { false } }
+        if let error = newer ?? unreadable ?? problems.first { throw error }
     }
 }

@@ -78,20 +78,24 @@ import OSLog
         return hasChanges
     }
 
-    /// Reads the edit (an unreadable one counts as none), decodes the proxy off the main actor and renders the first preview.
-    /// An edit from a newer version leaves the photo read-only and decodes nothing.
+    /// Reads the edit, decodes the proxy off the main actor and renders the first preview. An edit from a newer version, or
+    /// one that cannot be read, leaves the photo read-only and decodes nothing: this build never overwrites such a file.
     func load() async {
+        looks = lookStore.all()
         let edit: PhotoEdit
         do {
             edit = try edits.load(stem: item.stem)
         } catch {
             Self.logger.error("\(error.description, privacy: .public)")
-            edit = PhotoEdit()
+            switch error {
+            case .newerVersion: phase = .failed(LibraryCopy.newerEdit)
+            case .unreadable, .unwritable: phase = .failed(LibraryCopy.unreadableEdit)
+            }
+            return
         }
         savedEdit = edit
         lookName = edit.lookName
         adjustments = edit.adjustments
-        looks = lookStore.all()
         guard edit.version <= PhotoEdit.currentVersion else {
             Self.logger.error("[EditorModel:load] Edit is from a newer version, so the photo opens read-only — {stem: \(self.item.stem, privacy: .public), version: \(edit.version)}")
             phase = .failed(LibraryCopy.newerEdit)
@@ -157,7 +161,11 @@ import OSLog
             try edits.save(edit, stem: item.stem)
         } catch {
             Self.logger.error("\(error.description, privacy: .public)")
-            if case .newerVersion = error { phase = .failed(LibraryCopy.newerEdit) } else { phase = .failed(LibraryCopy.saveFailed) }
+            switch error {
+            case .newerVersion: phase = .failed(LibraryCopy.newerEdit)
+            case .unreadable: phase = .failed(LibraryCopy.unreadableEdit)
+            case .unwritable: phase = .failed(LibraryCopy.saveFailed)
+            }
             return false
         }
         savedEdit = edit

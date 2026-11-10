@@ -9,6 +9,8 @@ nonisolated enum LibraryCopy {
     static let exportFailed = "The photo could not be exported."
     /// Shown for any save or remove that meets `EditStoreError.newerVersion`.
     static let newerEdit = "This photo was edited by a newer version of OpenCam."
+    /// Shown for an edit file that exists but cannot be read; this build never overwrites or removes it.
+    static let unreadableEdit = "This photo's edit could not be read."
     static let deleteMessage = "The files and their edits are removed from OpenCam. This cannot be undone."
 
     /// The sentence after an import; nil when nothing was chosen.

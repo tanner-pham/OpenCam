@@ -214,7 +214,11 @@ struct LibraryView: View {
             setSelecting(false)
         } catch {
             // The store has logged the cause; the person sees a fixed sentence.
-            if case .newerEdit = error { alertTitle = LibraryCopy.newerEdit } else { alertTitle = LibraryCopy.deleteFailed }
+            switch error {
+            case .newerEdit: alertTitle = LibraryCopy.newerEdit
+            case .unreadableEdit: alertTitle = LibraryCopy.unreadableEdit
+            default: alertTitle = LibraryCopy.deleteFailed
+            }
             let remaining = Set(library.items.map(\.id))
             selectedIDs.formIntersection(remaining)
         }
