@@ -87,7 +87,7 @@ extension CameraModel {
 
     /// Resets the record button and timecode, keeps a playable clip as the last capture, and says what happened:
     /// the outcome's notice, else dropped frames, else nothing (clearing an earlier recording notice).
-    /// A selection change held back while recording is applied now.
+    /// A selection change held back while recording is applied now, then a recovery held back by a runtime error runs.
     /// During a sweep the result goes to the sweep instead, which reports it in its own rows and drives the next configure.
     /// A sweep clip whose result arrives after the sweep ended never becomes the last capture or a notice, and is deleted
     /// unless `-keepSweepClips on` (its sidecar stays).
@@ -112,6 +112,7 @@ extension CameraModel {
             if !keepsSweepClips { FormatSweep.removeClip(at: result.url) }
             refreshFreeBytes()
             enqueueConfigure()
+            resumeDeferredRecovery()
             return
         }
         if result.outcome.isPlayable { lastCapture = result.url }
@@ -127,5 +128,7 @@ extension CameraModel {
         }
         refreshFreeBytes()
         enqueueConfigure()
+        // A runtime error during the clip stopped the camera; it recovers now that the clip has ended.
+        resumeDeferredRecovery()
     }
 }

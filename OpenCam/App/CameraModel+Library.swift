@@ -91,6 +91,8 @@ extension CameraModel {
         }
         await configurator.start()
         isCameraReleasedForLibrary = false
+        // The session runs again; once it has run long enough it is confirmed, and a camera that stopped meanwhile is ready.
+        if let lastWorking { confirmWhenRunning(lastWorking.configuration) }
         // A selection changed while the camera started was held; it is configured now, and its own configure watches frames.
         if enqueueConfigure() == nil, let configuration = requestedConfiguration {
             watchFrames(for: configuration)

@@ -64,6 +64,8 @@ extension CameraModel: SweepDriver {
         // brings the data output back if the look is still on.
         settleLook()
         enqueueConfigure()
+        // A runtime error during the sweep stopped the camera; it recovers now from the restored selection.
+        resumeDeferredRecovery()
         // A selection still queued behind a stuck configure or recording applies when that ends, and is the user's, so it is
         // saved; after a failed restore the selection is a sweep option, which never is.
         if record == userRecord { persist() }

@@ -15,6 +15,8 @@ struct ViewfinderArea: View {
     let phase: CameraPhase
     var look: CameraLook? = nil
     var captionTopInset: CGFloat = 0
+    /// The stopped state's Try again; nil in every other state.
+    var onRetry: (() -> Void)? = nil
 
     @Environment(\.previewSource) private var previewSource
     @State private var isFrameDrawn = false
@@ -41,7 +43,7 @@ struct ViewfinderArea: View {
             Color.black
                 .overlay {
                     if let status = StatusText.viewfinder(phase) {
-                        StatusOverlay(status: status)
+                        StatusOverlay(status: status, onRetry: onRetry)
                     }
                 }
         }

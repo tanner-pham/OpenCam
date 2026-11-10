@@ -1,5 +1,6 @@
 import AVFoundation
 import OSLog
+import Synchronization
 
 /// Owns `AVCaptureSession` and every device it touches, on its own serial queue.
 actor CameraSession: SessionConfigurator {
@@ -33,7 +34,11 @@ actor CameraSession: SessionConfigurator {
     /// so a session stopped on purpose (during a rescan, say) stays stopped.
     private var isMeantToRun = false
     /// Restored when a later configure fails.
-    private var lastWorkingConfiguration: SessionConfiguration?
+    private var lastWorkingConfiguration: SessionConfiguration? {
+        didSet { appliedConfiguration.withLock { $0 = lastWorkingConfiguration.map { "lens: \($0.lens.id), mode: \($0.mode.rawValue)" } } }
+    }
+    /// The lens and mode of `lastWorkingConfiguration`, for the runtime error's message, which is written off the session queue.
+    private nonisolated let appliedConfiguration = Mutex<String?>(nil)
     /// The white-balance mode a ProRes RAW recording replaced, restored when that recording finishes.
     private var whiteBalanceRestore: (device: AVCaptureDevice, mode: AVCaptureDevice.WhiteBalanceMode)?
     /// Held here because the session does not keep its controls delegate alive.
@@ -444,14 +449,24 @@ actor CameraSession: SessionConfigurator {
         }
         let runtimeError = center.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: session, queue: nil) { [weak owner] notification in
             let error = notification.userInfo?[AVCaptureSessionErrorKey] as? NSError
-            let detail = error.map { "domain: \($0.domain), code: \($0.code), \($0.localizedDescription)" } ?? "no error"
-            continuation.yield(.runtimeError("[CameraSession:runtimeError] Session stopped — {\(detail)}"))
+            continuation.yield(.runtimeError("[CameraSession:runtimeError] Session stopped — {\(runtimeErrorDetail(error, applied: owner?.appliedConfiguration.withLock { $0 }))}"))
             // AVError.h: AVErrorMediaServicesWereReset (-11819) in AVFoundationErrorDomain.
             if let error, error.domain == AVFoundationErrorDomain, error.code == AVError.Code.mediaServicesWereReset.rawValue {
                 Task { await owner?.restartAfterMediaServicesReset() }
             }
         }
         return [interrupted, ended, runtimeError]
+    }
+
+    /// The error's domain, code and description, its underlying error (`NSUnderlyingErrorKey`) as domain and code, and the
+    /// lens and mode applied. Only the top-level code is written as `code: <n>`, which `CameraModel.isMediaServicesReset` reads.
+    private nonisolated static func runtimeErrorDetail(_ error: NSError?, applied: String?) -> String {
+        var parts = [error.map { "domain: \($0.domain), code: \($0.code), \($0.localizedDescription)" } ?? "no error"]
+        if let underlying = error?.userInfo[NSUnderlyingErrorKey] as? NSError {
+            parts.append("underlying: \(underlying.domain) \(underlying.code)")
+        }
+        parts.append(applied ?? "lens: none, mode: none")
+        return parts.joined(separator: ", ")
     }
 
     private nonisolated static func observePressure(
