@@ -11,22 +11,14 @@ struct CameraPreviewView: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
         let container = UIView()
         container.backgroundColor = .black
-        adopt(PreviewUIView.shared(for: source), into: container)
-        return container
-    }
-
-    private func adopt(_ preview: PreviewUIView, into container: UIView) {
+        let preview = PreviewUIView.shared(for: source)
         preview.frame = container.bounds
         preview.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         container.addSubview(preview)
+        return container
     }
 
     func updateUIView(_ container: UIView, context: Context) {
-        // A container on screen without the preview lost it to a newer container that has since been taken down; it takes
-        // the preview back rather than staying black.
-        if container.window != nil, !container.subviews.contains(where: { $0 is PreviewUIView }) {
-            adopt(PreviewUIView.shared(for: source), into: container)
-        }
         for case let preview as PreviewUIView in container.subviews {
             preview.updateRotationCoordinator()
         }
