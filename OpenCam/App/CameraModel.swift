@@ -388,6 +388,9 @@ final class CameraModel {
         guard !isSweeping else { return }
         switch action {
         case .stopRecording:
+            // The stop is felt at the press, not when the clip's result arrives, which for a long clip can be much later;
+            // the result then counts nothing more.
+            recordingEnded()
             stopRecording()
         case .takePhoto:
             guard canCapture else { return }
@@ -809,7 +812,8 @@ extension CameraModel {
         feedback.recordingsStarted += 1
     }
 
-    /// The recording whose start was counted has ended, however it ended.
+    /// The recording whose start was counted has ended: at the accepted stop press, or when it ends by itself (its result,
+    /// or no result). Counts once per recording, whichever comes first.
     func recordingEnded() {
         guard isRecordingStartCounted else { return }
         isRecordingStartCounted = false

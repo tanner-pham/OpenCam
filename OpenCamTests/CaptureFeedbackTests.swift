@@ -51,6 +51,26 @@ import Testing
         await removeClips(of: fake)
     }
 
+    /// The stop counts at the accepted press, before the clip's result arrives; the result, however late, counts nothing more.
+    @Test func theStopCountsAtThePressNotAtTheResult() async throws {
+        let fake = FakeSessionConfigurator(failingLensIDs: [], isClipInFlight: true)
+        let model = try deviceModel(fake)
+        let option = try #require(model.currentVideoOption)
+        model.capturePressed()
+        #expect(await eventually { model.recordingStart != nil })
+        model.capturePressed()
+        // Counted at once, while the clip is still being finished.
+        #expect(model.isRecording); #expect(model.feedback.recordingsStopped == 1)
+        // Let the stop reach the session, which answers that the clip is still in flight.
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(await fake.stopRecordingCount == 1); #expect(model.isRecording)
+        let url = try #require(await fake.recordingURLs.first)
+        model.recordingDidFinish(RecordingResult(url: url, option: option, outcome: .completed, sidecar: nil))
+        #expect(!model.isRecording)
+        #expect(model.feedback == CaptureFeedback(photosTaken: 0, recordingsStarted: 1, recordingsStopped: 1))
+        await removeClips(of: fake)
+    }
+
     /// Storage full ends the clip with no press; the stop still counts, once.
     @Test func aRecordingThatEndsByItselfStillCountsItsStop() async throws {
         let fake = FakeSessionConfigurator(failingLensIDs: [], isClipInFlight: true)
