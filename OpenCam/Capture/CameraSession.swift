@@ -99,6 +99,8 @@ actor CameraSession: SessionConfigurator {
     /// The Camera Control's system controls are installed last, for the device and mode now applied.
     func configure(_ configuration: SessionConfiguration) throws(CameraSessionError) {
         guard !recorder.output.isRecording else { throw .recordingInProgress }
+        let timing = (start: ContinuousClock.now, previous: lastWorkingConfiguration)
+        defer { TimingJournal.configure(configuration, after: timing.previous, since: timing.start) }
         do throws(CameraSessionError) {
             try apply(configuration)
             lastWorkingConfiguration = configuration
@@ -486,6 +488,35 @@ extension CameraSession {
     /// Captures one photo in `format`; RAW goes to `dngURL` and HEIF to `heicURL`. Throws when the request cannot be made;
     /// once made, the result carries the files written and any error.
     func capturePhoto(format: PhotoFormat, dngURL: URL, heicURL: URL) async throws(PhotoCaptureError) -> PhotoCaptureResult {
+        do throws(PhotoCaptureError) {
+            let result = try await requestPhoto(format: format, dngURL: dngURL, heicURL: heicURL)
+            if let error = result.error {
+                ErrorJournal.record("[CameraSession:capturePhoto] \(error.description) — {\(photoContext(format))}")
+            }
+            return result
+        } catch {
+            ErrorJournal.record("[CameraSession:capturePhoto] \(error.description) — {\(photoContext(format))}")
+            throw error
+        }
+    }
+
+    /// What the session offered when a photo request was refused or failed, for the error journal.
+    private func photoContext(_ format: PhotoFormat) -> String {
+        let output = photoCapturer.output
+        let device = videoInput?.device
+        let active = device.map { device -> String in
+            let size = device.activeFormat.formatDescription.dimensions
+            return "\(size.width)x\(size.height) subtype \(device.activeFormat.formatDescription.mediaSubType.rawValue)"
+        } ?? "none"
+        let maximum = output.maxPhotoDimensions
+        return "asked: \(format.rawValue), preset: \(session.sessionPreset.rawValue), running: \(session.isRunning), "
+            + "activeFormat: \(active), zoom: \(device.map { Double($0.videoZoomFactor) } ?? 0), "
+            + "maxPhoto: \(maximum.width)x\(maximum.height), rawFormats: \(output.availableRawPhotoPixelFormatTypes), "
+            + "rawFileTypes: \(output.availableRawPhotoFileTypes.map(\.rawValue)), outputs: \(session.outputs.count), "
+            + "controls: \(session.controls.count)"
+    }
+
+    private func requestPhoto(format: PhotoFormat, dngURL: URL, heicURL: URL) async throws(PhotoCaptureError) -> PhotoCaptureResult {
         guard let device = videoInput?.device, session.outputs.contains(photoCapturer.output) else {
             throw .captureFailed(reason: "photo output not attached")
         }

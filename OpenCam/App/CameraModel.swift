@@ -22,8 +22,11 @@ final class CameraModel {
     private(set) var notice: String?
     private(set) var meterLevels: [Double] = []
     var lastCapture: URL?
-    private(set) var capabilities: CaptureCapabilities
+    private(set) var capabilities: CaptureCapabilities { didSet { recordResolvers = [:] } }
     private(set) var lensID: String { didSet { selectionChanged() } }
+    /// Each lens's record resolver, made on first use and kept until the capabilities change, so a view reading the current
+    /// option does a lookup instead of walking every video option.
+    @ObservationIgnored private var recordResolvers: [String: RecordSelectionResolver] = [:]
     var isRecording: Bool
     var recordingStart: Date?
     private(set) var access: CaptureAccess
@@ -136,6 +139,8 @@ final class CameraModel {
     @ObservationIgnored var frameWatch: Task<Void, Never>?
     /// True while a rescan holds the session stopped, until it runs again; no frame watch starts meanwhile.
     @ObservationIgnored var isSessionStoppedForRescan = false
+    /// The launch phases, journalled once when the session first runs.
+    @ObservationIgnored var launchTimeline = LaunchTimeline()
 
     static let formatFailedNotice = "That format could not be used."
     static let formatSetupFailed = "This format could not be set up."
@@ -190,6 +195,7 @@ final class CameraModel {
         // A look the launch mode cannot take is None, with no notice.
         if !isLookOffered { self.cameraLook = nil }
         if isSimulator { simulate(config.simulatedState) }
+        launchTimeline.mark("model")
     }
 
     /// Puts the Simulator in a state the device would reach, for screenshots; `scanning` is set with the phase.
@@ -219,7 +225,11 @@ final class CameraModel {
     var currentLens: Lens? { capabilities.lenses.first { $0.id == lensID } }
 
     var recordResolver: RecordSelectionResolver {
-        RecordSelectionResolver(options: capabilities.videoOptions, lens: currentLens)
+        guard let lens = currentLens else { return RecordSelectionResolver(lensOptions: []) }
+        if let cached = recordResolvers[lens.id] { return cached }
+        let resolver = RecordSelectionResolver(options: capabilities.videoOptions, lens: lens)
+        recordResolvers[lens.id] = resolver
+        return resolver
     }
 
     var photoResolver: PhotoSelectionResolver {
@@ -329,8 +339,12 @@ final class CameraModel {
 
     func selectLens(_ id: String) {
         guard id != lensID, !isSweeping, capabilities.lenses.contains(where: { $0.id == id }) else { return }
+        // Lens, record and photo change as one: saved and queued once, with the settled selections.
+        isApplyingSelection = true
         lensID = id
         settleSelections()
+        isApplyingSelection = false
+        selectionChanged()
     }
 
     /// On a launch that is not scripted, the saved mode, lens and selections are applied again and settled against
@@ -385,6 +399,7 @@ final class CameraModel {
                 captureStore = try CaptureStore.appDefault()
             } catch {
                 Self.logger.error("\(error.description, privacy: .public)")
+                ErrorJournal.record(error.description)
                 return
             }
         }
@@ -400,6 +415,7 @@ final class CameraModel {
             return store
         } catch {
             Self.logger.error("\(error.description, privacy: .public)")
+            ErrorJournal.record(error.description)
             show(failureNotice, from: .capture)
             return nil
         }
@@ -451,6 +467,7 @@ final class CameraModel {
     func photoFinished(requested: [URL], result: PhotoCaptureResult, lookNotice: String? = nil) {
         if let error = result.error {
             Self.logger.error("\(error.description, privacy: .public)")
+            ErrorJournal.record(error.description)
         }
         let report = PhotoSaveReport.make(requested: requested, saved: result.saved, error: result.error)
         if let saved = report.lastCapture { lastCapture = saved }
@@ -493,6 +510,11 @@ final class CameraModel {
 
     func selectionChanged() {
         guard !isApplyingSelection else { return }
+        let started = ContinuousClock.now
+        defer {
+            TimingJournal.record("selection change \(mode.rawValue) \(currentLens?.label ?? "-")", since: started,
+                                 over: TimingJournal.mainActorThreshold)
+        }
         // A selection change is a user action: it gives the automatic restart back.
         autoRestarted = nil
         // A new lens, mode, format or look tries the viewfinder again.
@@ -572,6 +594,7 @@ final class CameraModel {
     /// unless a newer selection is queued, which then stands.
     private func configureFailed(_ error: CameraSessionError, generation: Int) {
         Self.logger.error("\(error.description, privacy: .public)")
+        ErrorJournal.record(error.description)
         guard let lastWorking else {
             phase = .failed(Self.formatSetupFailed)
             return
@@ -652,15 +675,16 @@ final class CameraModel {
 extension CameraModel {
     /// Asks for access, loads the device's capabilities in place of the fixture, configures and starts the session,
     /// then follows its events for as long as the calling task runs.
+    /// File and device reads run off the main actor, so the screen stays responsive while the camera starts.
     func start(session: CameraSession) async {
         refreshFreeBytes()
-        failedCombinations = FailedCombinations.load(directory: capabilitySource.cacheDirectory, osBuild: DeviceIdentity.osBuild())
+        failedCombinations = await Self.loadFailedCombinations(from: capabilitySource)
         access = await CameraSession.requestAccess()
         guard access.canUseCamera else {
             phase = access.camera == .restricted ? .cameraRestricted : .cameraDenied
             return
         }
-        let lenses = capabilitySource.discoverLenses()
+        let lenses = await Self.discoverLenses(with: capabilitySource)
         guard !lenses.isEmpty else {
             Self.logger.error("[CameraModel:start] No camera found — {lenses: 0}")
             phase = .failed("The camera could not start.")
@@ -668,6 +692,7 @@ extension CameraModel {
         }
         await loadCapabilities(lenses: lenses)
         if case .failed = phase { return }
+        launchTimeline.mark("capabilities")
         guard let configuration = sessionConfiguration else {
             Self.logger.error("[CameraModel:start] No lens selected — {lenses: \(lenses.count)}")
             phase = .failed("The camera could not start.")
@@ -680,12 +705,20 @@ extension CameraModel {
             try await session.configure(configuration)
         } catch {
             Self.logger.error("\(error.description, privacy: .public)")
+            ErrorJournal.record(error.description)
             phase = .failed(Self.formatSetupFailed)
             return
         }
+        launchTimeline.mark("configured")
+        // The look renderer's Metal device and CIContext are made now, off the main actor and at low priority, while the
+        // session starts on its own queue: a look's frame view, which reads the renderer on the main actor, can exist only
+        // once the phase is ready below, after the start has returned. Not awaited, so it never delays the first frame.
+        Task(priority: .utility) { await LookRenderer.warmUp() }
         attachSession(session, configuredWith: configuration, selection: selection)
         cameraSession = session
         await session.start()
+        launchTimeline.mark("running")
+        ErrorJournal.record(launchTimeline.line)
         isResettingMediaServices = false
         watchFrames(for: configuration)
         phase = .ready
@@ -703,6 +736,15 @@ extension CameraModel {
             }
             group.cancelAll()
         }
+    }
+
+    @concurrent nonisolated private static func loadFailedCombinations(from source: CapabilitySource) async -> FailedCombinations {
+        FailedCombinations.load(directory: source.cacheDirectory, osBuild: DeviceIdentity.osBuild())
+    }
+
+    /// The discovery sessions are created off the main actor.
+    @concurrent nonisolated private static func discoverLenses(with source: CapabilitySource) async -> [Lens] {
+        source.discoverLenses()
     }
 
     /// Ten times a second; the levels stay empty without a microphone.
@@ -764,6 +806,7 @@ extension CameraModel {
             // Sets no notice; the phase says the camera stopped. The session restarts itself and `.restarted` follows, so no
             // pending confirmation may mark the camera ready and nothing here starts it meanwhile.
             Self.logger.error("\(message, privacy: .public)")
+            ErrorJournal.record(message)
             runtimeErrorCount += 1
             confirmation?.cancel()
             confirmation = nil
@@ -793,6 +836,7 @@ extension CameraModel {
         case .microphoneUnavailable(let message):
             // Reads the same as microphone denied: video still records, without sound.
             Self.logger.error("\(message, privacy: .public)")
+            ErrorJournal.record(message)
             access.microphone = .denied
         case .pressure(let level, let isThermal):
             pressureLevel = level

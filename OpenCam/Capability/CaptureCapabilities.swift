@@ -14,7 +14,8 @@ nonisolated struct CaptureCapabilities: Codable, Sendable, Equatable {
 
     static let fixtureName = "CapabilitiesFixture"
     /// 2: photo sizes and RAW come from each camera under the photo preset.
-    static let currentScanVersion = 2
+    /// 3: RAW and RAW + HEIF only at the preset format's own size, the one size the preset delivers RAW at.
+    static let currentScanVersion = 3
 
     static func bundledFixture(in bundle: Bundle = .main) throws(CapabilityError) -> CaptureCapabilities {
         guard let url = bundle.url(forResource: fixtureName, withExtension: "json") else {

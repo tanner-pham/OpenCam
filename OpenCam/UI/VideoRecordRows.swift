@@ -13,10 +13,12 @@ struct VideoRecordRows: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
                 ForEach(RecordRow.allCases, id: \.self) { row in
+                    // Worked out once per row; the reason line is the first dimmed chip's reason (`reasonLine`).
+                    let chips = resolver.chips(row, for: selection)
                     ChipRow(title: row.title,
-                            chips: resolver.chips(row, for: selection),
+                            chips: chips,
                             selectedID: selectedID(row),
-                            reason: resolver.reasonLine(row, for: selection),
+                            reason: chips.first { !$0.isAvailable }?.reason,
                             columns: row.columns(isWide: verticalSizeClass == .compact)) { chipID in
                         if let changed = resolver.select(row, chipID: chipID, in: selection) { selection = changed }
                     }

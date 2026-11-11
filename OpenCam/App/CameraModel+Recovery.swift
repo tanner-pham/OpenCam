@@ -27,6 +27,7 @@ extension CameraModel {
     /// Called for every runtime error that is not a media-services reset.
     func cameraStopped(_ message: String) {
         Self.logger.error("\(message, privacy: .public)")
+        ErrorJournal.record(message)
         runtimeErrorCount += 1
         confirmation?.cancel()
         confirmation = nil

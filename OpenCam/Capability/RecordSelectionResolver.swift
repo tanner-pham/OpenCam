@@ -1,5 +1,9 @@
 import Foundation
 
+/// One lens's video options, indexed once when it is made: each option's id in every row is numbered up front and the
+/// options are keyed by their five values, so a lookup is a dictionary read and a row of chips is one integer pass over the
+/// lens.
+/// The model keeps one per lens and rebuilds them only when the capabilities change.
 nonisolated struct RecordSelectionResolver: Sendable {
     private static let qualityOrder = [
         "4444 XQ", "4444", "422 HQ", "422", "422 LT", "422 Proxy",
@@ -7,11 +11,46 @@ nonisolated struct RecordSelectionResolver: Sendable {
         "Max", "High", "Medium", "Low", "Standard",
     ]
 
+    private static let columnCount = RecordRow.allCases.count
+
     private let options: [VideoOption]
+    /// `codes[i * columnCount + c]` numbers `options[i]`'s id in column `c` (`RecordRow.allCases[c]`), so a row is compared
+    /// by integers instead of strings.
+    private let codes: [Int]
+    /// Per column, the number given to each id.
+    private let codeByID: [[String: Int]]
+    /// The first option, in the device's order, for each set of values.
+    private let firstByKey: [RecordOptionKey: VideoOption]
 
     /// Keeps the options for `lens?.id` only; no lens means no options.
     init(options: [VideoOption], lens: Lens?) {
-        self.options = lens.map { lens in options.filter { $0.lensID == lens.id } } ?? []
+        self.init(lensOptions: lens.map { lens in options.filter { $0.lensID == lens.id } } ?? [])
+    }
+
+    /// `lensOptions` are already one lens's, in the device's order.
+    init(lensOptions: [VideoOption]) {
+        var tables = Array(repeating: [String: Int](), count: Self.columnCount)
+        var codes: [Int] = []
+        codes.reserveCapacity(lensOptions.count * Self.columnCount)
+        var first: [RecordOptionKey: VideoOption] = [:]
+        for option in lensOptions {
+            for (column, row) in RecordRow.allCases.enumerated() {
+                let id = Self.id(row, of: option)
+                if let code = tables[column][id] {
+                    codes.append(code)
+                } else {
+                    let code = tables[column].count
+                    tables[column][id] = code
+                    codes.append(code)
+                }
+            }
+            let key = RecordOptionKey(option)
+            if first[key] == nil { first[key] = option }
+        }
+        options = lensOptions
+        self.codes = codes
+        codeByID = tables
+        firstByKey = first
     }
 
     func chips(_ row: RecordRow, for selection: RecordSelection) -> [Chip] {
@@ -31,18 +70,20 @@ nonisolated struct RecordSelectionResolver: Sendable {
     func settled(_ selection: RecordSelection) -> RecordSelection? {
         guard !options.isEmpty else { return nil }
         var current = selection
-        var pool = options
-        for row in RecordRow.allCases {
-            let same = pool.first { id(row, of: $0) == id(row, of: current) }
+        var pool = Array(options.indices)
+        for (column, row) in RecordRow.allCases.enumerated() {
+            let wanted = code(column, of: current)
+            let same = pool.first { codes[$0 * Self.columnCount + column] == wanted }
             guard let chosen = same ?? pick(row, from: pool, for: current) else { return nil }
-            current = applying(row, from: chosen, to: current)
-            pool = pool.filter { id(row, of: $0) == id(row, of: chosen) }
+            current = applying(row, from: options[chosen], to: current)
+            let chosenCode = codes[chosen * Self.columnCount + column]
+            pool = pool.filter { codes[$0 * Self.columnCount + column] == chosenCode }
         }
         return current
     }
 
     func option(for selection: RecordSelection) -> VideoOption? {
-        options.first { option in RecordRow.allCases.allSatisfy { id($0, of: option) == id($0, of: selection) } }
+        firstByKey[RecordOptionKey(selection)]
     }
 
     func defaultSelection() -> RecordSelection? {
@@ -58,30 +99,67 @@ nonisolated struct RecordSelectionResolver: Sendable {
 
     private typealias Entry = (chip: Chip, option: VideoOption)
 
+    /// The number of `selection`'s id in `column`, or -1 when no option of the lens has it.
+    private func code(_ column: Int, of selection: RecordSelection) -> Int {
+        codeByID[column][Self.id(RecordRow.allCases[column], of: selection)] ?? -1
+    }
+
+    /// One pass over the lens: the ids reachable from the rows above, and the first option of every id the row lists.
+    /// Reasons are worked out once per call, and only when a chip is dimmed.
     private func entries(_ row: RecordRow, for selection: RecordSelection) -> [Entry] {
-        let above = RecordRow.allCases.prefix { $0 != row }
-        let reachable = options.filter { option in above.allSatisfy { id($0, of: option) == id($0, of: selection) } }
-        let listed = row == .quality ? options.filter { $0.codec.family == selection.family } : options
-        var firstByID: [String: VideoOption] = [:]
-        for option in listed where firstByID[id(row, of: option)] == nil {
-            firstByID[id(row, of: option)] = option
+        let column = Self.column(of: row)
+        let selectionCodes = (0..<Self.columnCount).map { code($0, of: selection) }
+        let idCount = codeByID[column].count
+        var isReachable = [Bool](repeating: false, count: idCount)
+        var firstIndex = [Int](repeating: -1, count: idCount)
+        for index in options.indices {
+            let base = index * Self.columnCount
+            var matchesAbove = true
+            for above in 0..<column where codes[base + above] != selectionCodes[above] {
+                matchesAbove = false
+                break
+            }
+            let rowCode = codes[base + column]
+            if matchesAbove { isReachable[rowCode] = true }
+            // The quality row lists the selected codec family's qualities only.
+            if firstIndex[rowCode] < 0, row != .quality || codes[base] == selectionCodes[0] {
+                firstIndex[rowCode] = index
+            }
         }
-        return firstByID.values
-            .sorted { (sortKey(row, of: $0), id(row, of: $0)) < (sortKey(row, of: $1), id(row, of: $1)) }
-            .map { option in
-                let isAvailable = reachable.contains { id(row, of: $0) == id(row, of: option) }
+        let listed = firstIndex.indices.filter { firstIndex[$0] >= 0 }.map { (option: options[firstIndex[$0]], isAvailable: isReachable[$0]) }
+        var reasonFor: ((VideoOption) -> String?)?
+        return listed
+            .sorted { (sortKey(row, of: $0.option), Self.id(row, of: $0.option)) < (sortKey(row, of: $1.option), Self.id(row, of: $1.option)) }
+            .map { option, isAvailable in
+                let chipID = Self.id(row, of: option)
+                var reason: String?
+                if !isAvailable {
+                    let make = reasonFor ?? reasons(row, in: selection)
+                    reasonFor = make
+                    reason = make(option)
+                }
                 let chip = Chip(
-                    id: id(row, of: option),
+                    id: chipID,
                     title: title(row, of: option),
                     detail: row == .resolution ? option.resolution.detail : nil,
                     isAvailable: isAvailable,
-                    reason: isAvailable ? nil : reason(row, for: option, in: selection)
+                    reason: reason
                 )
                 return (chip, option)
             }
     }
 
-    private func id(_ row: RecordRow, of option: VideoOption) -> String {
+    private static func column(of row: RecordRow) -> Int {
+        switch row {
+        case .codec: 0
+        case .quality: 1
+        case .resolution: 2
+        case .frameRate: 3
+        case .colour: 4
+        }
+    }
+
+    private static func id(_ row: RecordRow, of option: VideoOption) -> String {
         switch row {
         case .codec: option.codec.family.rawValue
         case .quality: option.codec.quality
@@ -91,7 +169,7 @@ nonisolated struct RecordSelectionResolver: Sendable {
         }
     }
 
-    private func id(_ row: RecordRow, of selection: RecordSelection) -> String {
+    private static func id(_ row: RecordRow, of selection: RecordSelection) -> String {
         switch row {
         case .codec: selection.family.rawValue
         case .quality: selection.quality
@@ -141,14 +219,14 @@ nonisolated struct RecordSelectionResolver: Sendable {
         )
     }
 
-    /// Nearest valid value in `pool` for a row whose current value is not in it.
-    private func pick(_ row: RecordRow, from pool: [VideoOption], for selection: RecordSelection) -> VideoOption? {
-        let ordered = pool.sorted { sortKey(row, of: $0) < sortKey(row, of: $1) }
+    /// Nearest valid value in `pool` (indices into `options`) for a row whose current value is not in it.
+    private func pick(_ row: RecordRow, from pool: [Int], for selection: RecordSelection) -> Int? {
+        let ordered = pool.sorted { sortKey(row, of: options[$0]) < sortKey(row, of: options[$1]) }
         switch row {
         case .frameRate:
-            return ordered.last { $0.frameRate <= selection.frameRate } ?? ordered.first
+            return ordered.last { options[$0].frameRate <= selection.frameRate } ?? ordered.first
         case .resolution:
-            return ordered.first { $0.resolution.pixelCount <= selection.resolution.pixelCount } ?? ordered.first
+            return ordered.first { options[$0].resolution.pixelCount <= selection.resolution.pixelCount } ?? ordered.first
         case .codec, .quality, .colour:
             return ordered.first
         }
@@ -161,19 +239,25 @@ nonisolated struct RecordSelectionResolver: Sendable {
             ?? "\(selection.family.title) \(selection.quality)"
     }
 
-    private func reason(_ row: RecordRow, for chip: VideoOption, in selection: RecordSelection) -> String? {
-        let name = codecName(for: selection)
+    /// The reason for each dimmed chip of `row`; what it needs from the lens's options is read once, here.
+    private func reasons(_ row: RecordRow, in selection: RecordSelection) -> (VideoOption) -> String? {
         switch row {
         case .codec, .quality:
-            return nil
+            return { _ in nil }
         case .resolution:
-            let candidates = options.filter { $0.codec.family == selection.family && $0.codec.quality == selection.quality }
-            if let largest = candidates.map(\.resolution).max(by: { $0.pixelCount < $1.pixelCount }),
-               chip.resolution.pixelCount > largest.pixelCount {
-                return "\(name) records at up to \(largest.label)."
+            let name = codecName(for: selection)
+            let largest = options
+                .filter { $0.codec.family == selection.family && $0.codec.quality == selection.quality }
+                .map(\.resolution)
+                .max(by: { $0.pixelCount < $1.pixelCount })
+            return { chip in
+                if let largest, chip.resolution.pixelCount > largest.pixelCount {
+                    return "\(name) records at up to \(largest.label)."
+                }
+                return "\(name) is not available at \(chip.resolution.label)."
             }
-            return "\(name) is not available at \(chip.resolution.label)."
         case .frameRate:
+            let name = codecName(for: selection)
             let label = selection.resolution.label
             let rates = options
                 .filter {
@@ -181,20 +265,29 @@ nonisolated struct RecordSelectionResolver: Sendable {
                         && $0.resolution == selection.resolution
                 }
                 .map(\.frameRate)
-            if let top = rates.max(), chip.frameRate > top { return "\(name) at \(label) records at up to \(top) fps." }
-            if let bottom = rates.min(), chip.frameRate < bottom { return "\(name) at \(label) records at \(bottom) fps or more." }
-            return "\(name) at \(label) does not record at \(chip.frameRate) fps."
+            let top = rates.max(), bottom = rates.min()
+            return { chip in
+                if let top, chip.frameRate > top { return "\(name) at \(label) records at up to \(top) fps." }
+                if let bottom, chip.frameRate < bottom { return "\(name) at \(label) records at \(bottom) fps or more." }
+                return "\(name) at \(label) does not record at \(chip.frameRate) fps."
+            }
         case .colour:
-            let colour = chip.colour.rawValue
+            let name = codecName(for: selection)
             let inFamily = options.filter { $0.codec.family == selection.family }
-            if !inFamily.contains(where: { $0.colour == chip.colour }) {
-                return "\(colour) is not available with \(selection.family.title)."
+            let familyColours = Set(inFamily.map(\.colour))
+            let resolutionColours = Set(inFamily
+                .filter { $0.codec.quality == selection.quality && $0.resolution == selection.resolution }
+                .map(\.colour))
+            return { chip in
+                let colour = chip.colour.rawValue
+                if !familyColours.contains(chip.colour) {
+                    return "\(colour) is not available with \(selection.family.title)."
+                }
+                if !resolutionColours.contains(chip.colour) {
+                    return "\(colour) is not available with \(name) at \(selection.resolution.label)."
+                }
+                return "\(colour) is not available at \(selection.frameRate) fps."
             }
-            let atResolution = inFamily.filter { $0.codec.quality == selection.quality && $0.resolution == selection.resolution }
-            if !atResolution.contains(where: { $0.colour == chip.colour }) {
-                return "\(colour) is not available with \(name) at \(selection.resolution.label)."
-            }
-            return "\(colour) is not available at \(selection.frameRate) fps."
         }
     }
 }

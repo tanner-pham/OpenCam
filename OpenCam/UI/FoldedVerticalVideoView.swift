@@ -46,7 +46,7 @@ struct FoldedVerticalVideoView: View {
                     .disabled(!model.canOpenRecordSettings)
                 // "Storage full" is wider than the minutes, so the meters give way to it.
                 HStack(spacing: Theme.Space.s) {
-                    if !model.isStorageFull { AudioMetersView(levels: model.shownMeterLevels, width: 48) }
+                    if !model.isStorageFull { LiveAudioMeters(model: model, width: 48) }
                     remainingText
                 }
                 .padding(.horizontal, Theme.Space.s + Theme.Space.xs / 2)
