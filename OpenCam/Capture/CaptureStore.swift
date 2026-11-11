@@ -56,21 +56,34 @@ final class CaptureStore {
 
     /// The newest capture in the folder, or nil when there is none or the folder cannot be read.
     func latestCapture() -> URL? {
+        recentCaptures(limit: 1).first
+    }
+
+    /// The newest `limit` captures, newest first, one per number; empty when there is none or the folder cannot be read.
+    /// Lists the folder's names only: no file is opened.
+    func recentCaptures(limit: Int) -> [URL] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false))) ?? []
-        return Self.latestCaptureName(names).map { directory.appending(path: $0, directoryHint: .notDirectory) }
+        return Self.recentCaptureNames(names, limit: limit).map { directory.appending(path: $0, directoryHint: .notDirectory) }
     }
 
     /// The photo or clip with the highest number; within one number HEIC comes first, then JPG (imports and Simulator
     /// samples), PNG, MOV and DNG. Sidecars, edit files and every other file, such as a sweep's report, are never offered.
     static func latestCaptureName(_ names: [String]) -> String? {
+        recentCaptureNames(names, limit: 1).first
+    }
+
+    /// The `limit` highest numbers, highest first, each by its file `latestCaptureName` would pick for that number.
+    static func recentCaptureNames(_ names: [String], limit: Int) -> [String] {
         let kinds: [CaptureFileKind] = [.heic, .jpg, .png, .mov, .dng]
-        let candidates = names.compactMap { name -> (sequence: Int, rank: Int, name: String)? in
-            guard let dot = name.firstIndex(of: "."), let sequence = number(of: name) else { return nil }
+        var best: [Int: (rank: Int, name: String)] = [:]
+        for name in names {
+            guard let dot = name.firstIndex(of: "."), let sequence = number(of: name) else { continue }
             let fileExtension = name[name.index(after: dot)...].uppercased()
-            guard let rank = kinds.firstIndex(where: { $0.rawValue == fileExtension }) else { return nil }
-            return (sequence, rank, name)
+            guard let rank = kinds.firstIndex(where: { $0.rawValue == fileExtension }) else { continue }
+            if let current = best[sequence], current.rank <= rank { continue }
+            best[sequence] = (rank, name)
         }
-        return candidates.max { ($0.sequence, -$0.rank) < ($1.sequence, -$1.rank) }?.name
+        return best.keys.sorted(by: >).prefix(limit).compactMap { best[$0]?.name }
     }
 
     /// One above the highest number among `OC_<digits>.<extension>` names, edit files included; 1 when there is none.

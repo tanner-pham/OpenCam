@@ -18,14 +18,15 @@ struct CameraRootView: View {
     var body: some View {
         NavigationStack {
             CameraLayout(model: model, isLandscape: isLandscape)
+                .modifier(CaptureFeedbackModifier(model: model))
                 .background(Color.black.ignoresSafeArea())
                 .persistentSystemOverlays(.hidden)
                 .toolbar { StripToolbar(model: model, library: library, isLandscape: isLandscape) }
                 // The Camera Control takes the photo or starts and stops recording, through the same rules as the on-screen
                 // button. Always enabled while this screen shows: a disabled interaction hands the button back to the system,
                 // which opens Apple's Camera app. When capture is not allowed the model ignores the press.
-                // Keep this inside the NavigationStack, on its content. Applied to the NavigationStack itself it left the four
-                // strip items on the folded phone's outer display dead to taps (the open phone's floating bar still worked);
+                // Keep this inside the NavigationStack, on its content. Applied to the NavigationStack itself it left the strip's
+                // items on the folded phone's outer display dead to taps (the open phone's floating bar still worked);
                 // found by bisection on the folded Simulator, where moving only this line brought the taps back.
                 .onCameraCaptureEvent { model.handleCaptureEvent(phase: $0.phase) }
         }

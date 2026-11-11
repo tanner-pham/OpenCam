@@ -4,36 +4,39 @@ import SwiftUI
 /// change of mode, lens and availability.
 struct StripControl: View {
     let item: StripToolbar.Item
-    @Bindable var model: CameraModel
+    let model: CameraModel
     let library: LibraryStore?
 
     var body: some View {
         switch item {
         case .mode:
-            Menu {
-                Picker("Mode", selection: $model.mode) {
-                    Text("Photo").tag(CaptureMode.photo)
-                    Text("Video").tag(CaptureMode.video)
-                }
-            } label: {
+            // Two modes, so one tap switches between them; the symbol is the mode in use.
+            Button { model.toggleMode() } label: {
                 Image(systemName: model.mode == .video ? "video.fill" : "camera.fill")
             }
             .accessibilityLabel("Mode")
+            .accessibilityValue(model.mode == .video ? "Video" : "Photo")
+            .accessibilityHint(model.mode == .video ? "Switches to photo." : "Switches to video.")
             .disabled(!model.canChangeLensOrMode)
         case .lens:
+            // Every lens the scan found, in its order, each with a short title and a symbol.
+            let current = model.currentLens.map(LensBadge.make(for:))
             Menu {
                 Picker("Lens", selection: Binding(get: { model.lensID }, set: { model.selectLens($0) })) {
-                    ForEach(model.lenses) { Text($0.label).tag($0.id) }
+                    ForEach(model.lenses) { lens in
+                        let badge = LensBadge.make(for: lens)
+                        Label(badge.rowTitle, systemImage: badge.symbol ?? LensBadge.backLensSymbol).tag(lens.id)
+                    }
                 }
             } label: {
-                Text(model.currentLens?.label ?? "Lens")
+                if let symbol = current?.symbol {
+                    Image(systemName: symbol)
+                } else {
+                    Text(current?.shortText ?? "Lens")
+                }
             }
-            .accessibilityLabel("Lens, \(model.currentLens?.label ?? "none")")
+            .accessibilityLabel("Lens, \(current?.rowTitle ?? "none")")
             .disabled(!model.canChangeLensOrMode)
-        case .record:
-            // `canOpenRecordSettings` is false while recording and until the formats are known.
-            Button("Record settings", systemImage: "slider.horizontal.3") { model.openRecordSettings() }
-                .disabled(!model.canOpenRecordSettings)
         case .library:
             LibraryThumbnail(model: model, library: library)
         }

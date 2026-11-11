@@ -22,6 +22,12 @@ final class CameraModel {
     private(set) var notice: String?
     private(set) var meterLevels: [Double] = []
     var lastCapture: URL?
+    /// The newest captures, newest first, at most three. Updated when a capture finishes and when the Library closes.
+    private(set) var recentCaptures: [URL] = []
+    /// Counts photos taken and recordings started and stopped, for the shutter blink and the haptics.
+    private(set) var feedback = CaptureFeedback()
+    /// True from the moment the user's recording began until it ends, so its stop counts once and only after its start.
+    @ObservationIgnored var isRecordingStartCounted = false
     private(set) var capabilities: CaptureCapabilities { didSet { recordResolvers = [:] } }
     private(set) var lensID: String { didSet { selectionChanged() } }
     /// Each lens's record resolver, made on first use and kept until the capabilities change, so a view reading the current
@@ -337,6 +343,12 @@ final class CameraModel {
     /// The strip's Lens and Mode items follow this; `isScanningFormats` also keeps configures from queuing.
     var canChangeLensOrMode: Bool { !isRecording && !isScanningFormats && !isSweeping }
 
+    /// Photo becomes video and video becomes photo. Does nothing while `canChangeLensOrMode` is false.
+    func toggleMode() {
+        guard canChangeLensOrMode else { return }
+        mode = mode == .video ? .photo : .video
+    }
+
     func selectLens(_ id: String) {
         guard id != lensID, !isSweeping, capabilities.lenses.contains(where: { $0.id == id }) else { return }
         // Lens, record and photo change as one: saved and queued once, with the settled selections.
@@ -376,9 +388,13 @@ final class CameraModel {
         guard !isSweeping else { return }
         switch action {
         case .stopRecording:
+            // The stop is felt at the press, not when the clip's result arrives, which for a long clip can be much later;
+            // the result then counts nothing more.
+            recordingEnded()
             stopRecording()
         case .takePhoto:
             guard canCapture else { return }
+            feedback.photosTaken += 1
             capturePhoto()
         case .startRecording:
             guard canCapture else { return }
@@ -403,7 +419,18 @@ final class CameraModel {
                 return
             }
         }
-        lastCapture = captureStore?.latestCapture()
+        recentCaptures = captureStore?.recentCaptures(limit: Self.recentCaptureLimit) ?? []
+        lastCapture = recentCaptures.first
+    }
+
+    static let recentCaptureLimit = 3
+
+    /// A capture just saved becomes the newest: pushed onto the list from its own URL, with no folder listing and no
+    /// Library reload; the same file is never listed twice.
+    func captureSaved(_ url: URL) {
+        lastCapture = url
+        let key = CaptureStore.clipKey(for: url)
+        recentCaptures = Array(([url] + recentCaptures.filter { CaptureStore.clipKey(for: $0) != key }).prefix(Self.recentCaptureLimit))
     }
 
     /// The captures folder, created on first use; nil, with `failureNotice` shown, when it cannot be.
@@ -470,7 +497,7 @@ final class CameraModel {
             ErrorJournal.record(error.description)
         }
         let report = PhotoSaveReport.make(requested: requested, saved: result.saved, error: result.error)
-        if let saved = report.lastCapture { lastCapture = saved }
+        if let saved = report.lastCapture { captureSaved(saved) }
         // A full save replaces an earlier capture notice with none.
         if let notice = report.notice ?? lookNotice {
             show(notice, from: .capture)
@@ -776,6 +803,26 @@ extension CameraModel {
                 return
             }
         }
+    }
+
+    /// A recording the user started has begun; a sweep's clip is not one.
+    func recordingBegan(isSweepClip: Bool) {
+        guard !isSweepClip else { return }
+        isRecordingStartCounted = true
+        feedback.recordingsStarted += 1
+    }
+
+    /// The recording whose start was counted has ended: at the accepted stop press, or when it ends by itself (its result,
+    /// or no result). Counts once per recording, whichever comes first.
+    func recordingEnded() {
+        guard isRecordingStartCounted else { return }
+        isRecordingStartCounted = false
+        feedback.recordingsStopped += 1
+    }
+
+    /// `-shutterDemo on` in the Simulator, which has no camera: the blink runs once a second so it can be seen.
+    func demoShutter() {
+        feedback.photosTaken += 1
     }
 
     func show(_ text: String, from source: NoticeSource) {

@@ -19,8 +19,8 @@ A failed check is information, not an emergency: note what happened and move on.
 - [ ] "Reading camera formats…" shows once, then the picture. A second launch skips it.
 - [ ] The picture is upright in all four orientations on the folded phone, nothing over it.
 - [ ] The lens menu lists 0.5x, 1x, 2x, Outer Ultra Wide Camera and Inner Ultra Wide Camera, with 1x selected.
-- [ ] The strip has four items: Mode, Lens, Record settings, Library, none under the camera hole or clock.
-- [ ] On the folded phone, in portrait and landscape, each of the four strip items responds to a tap: Mode and Lens open their menus, Record settings opens its sheet, Library opens the Library.
+- [ ] The strip has three items: Mode, Lens, Library, none under the camera hole or clock. Record settings opens from the format button.
+- [ ] On the folded phone, in portrait and landscape, each of the three strip items responds to a tap: Mode switches between photo and video with no menu, Lens opens its menu, Library opens the Library. The format button opens Record settings in both modes.
 - [ ] Change lens and mode. Record settings lists only what that lens offers.
 - [ ] Copy `capabilities.json` (Files > On My iPhone > OpenCam) to the Mac. Its codecs and colours per lens should match the probe.
 - [ ] Background and return, fold and unfold: the preview resumes. Note any notice.

@@ -10,7 +10,7 @@ extension EnvironmentValues {
 /// transparent and the plain preview shows; from then on the frames show and the preview is hidden but stays in place (its
 /// rotation coordinator turns the frames). `isFrameDrawn` goes back to false when the frame view is removed: when the look
 /// turns off, when its frames fall back, and during a sweep, so the next look-on starts from the plain preview again.
-/// Turning a look on or off never rebuilds the preview.
+/// Turning a look on or off never rebuilds the preview. A photo blinks the picture, and only the picture, through `ShutterBlinkOverlay`.
 struct ViewfinderArea: View {
     let phase: CameraPhase
     var look: CameraLook? = nil
@@ -22,6 +22,12 @@ struct ViewfinderArea: View {
     @State private var isFrameDrawn = false
 
     var body: some View {
+        // The overlay reads the photo counter itself, so a photo never re-runs this body.
+        picture
+            .overlay { ShutterBlinkOverlay() }
+    }
+
+    @ViewBuilder private var picture: some View {
         switch phase {
         case .simulator:
             LookStandIn(look: look, captionTopInset: captionTopInset)

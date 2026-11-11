@@ -18,8 +18,17 @@ struct BottomBar: View {
         .padding(.bottom, Theme.Space.s)
     }
 
+    /// The row with its usual gaps when it fits; with half gaps when it would be wider than the bar (a long summary with a
+    /// look, such as "ProRes 1080p Rec. 709 Warm fade"), so it never overflows. Every control keeps its size.
     private var controls: some View {
-        HStack(spacing: Theme.Space.l) {
+        ViewThatFits(in: .horizontal) {
+            controlsRow(spacing: Theme.Space.l)
+            controlsRow(spacing: Theme.Space.s)
+        }
+    }
+
+    private func controlsRow(spacing: CGFloat) -> some View {
+        HStack(spacing: spacing) {
             // Empty room for the histogram. Its width is fixed, as it always was, unless a look's name is in the summary: only
             // then may it give way, so the row with no look is laid out exactly as before.
             Color.clear.frame(minWidth: model.summaryLookName == nil ? Theme.Size.histogramWidth : 0, maxWidth: Theme.Size.histogramWidth,

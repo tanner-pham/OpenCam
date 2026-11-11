@@ -40,10 +40,15 @@ struct FoldedVerticalVideoView: View {
     private var bottomControls: some View {
         GlassEffectContainer(spacing: Theme.Space.s) {
             HStack(spacing: Theme.Space.s) {
-                // With a look the summary has a fourth part and no longer fits beside the meters and shutter on one line.
-                FormatButton(parts: model.summaryParts, isStacked: model.summaryLookName != nil, isWarning: model.sweepCaption != nil,
-                             onLongPress: { model.openSweep() }) { model.openRecordSettings() }
-                    .disabled(!model.canOpenRecordSettings)
+                // The summary is on one line when it fits beside the meters and the shutter, and stacked when it does not (a
+                // longer summary such as "ProRes 1080p Rec. 709"), so the row is never wider than the screen. Its priority
+                // offers it all the width the meters, the time left and the shutter leave, and those keep their places and
+                // sizes either way. With a look the summary has a fourth part and is always stacked.
+                ViewThatFits(in: .horizontal) {
+                    if model.summaryLookName == nil { formatButton(isStacked: false) }
+                    formatButton(isStacked: true)
+                }
+                .layoutPriority(1)
                 // "Storage full" is wider than the minutes, so the meters give way to it.
                 HStack(spacing: Theme.Space.s) {
                     if !model.isStorageFull { LiveAudioMeters(model: model, width: 48) }
@@ -52,10 +57,17 @@ struct FoldedVerticalVideoView: View {
                 .padding(.horizontal, Theme.Space.s + Theme.Space.xs / 2)
                 .frame(minHeight: Theme.Size.minTarget)
                 .glassEffect(.regular, in: .capsule)
-                Spacer(minLength: 0)
+                // Pushed to the trailing edge by its frame rather than a spacer, which would add a second gap of its own.
                 CaptureButton(model: model)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
+    }
+
+    private func formatButton(isStacked: Bool) -> some View {
+        FormatButton(parts: model.summaryParts, isStacked: isStacked, isWarning: model.sweepCaption != nil,
+                     onLongPress: { model.openSweep() }) { model.openRecordSettings() }
+            .disabled(!model.canOpenRecordSettings)
     }
 
     private var remainingText: some View {

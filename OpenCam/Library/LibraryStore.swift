@@ -80,13 +80,25 @@ import OSLog
         }
     }
 
-    /// The photo item a capture file belongs to (its picture or its RAW), matched by file name; nil for a clip or a file not
-    /// in the last reload.
-    private func photoItem(forCapture url: URL) -> LibraryItem? {
-        let name = CaptureStore.clipKey(for: url)
-        return items.first { item in
-            item.isEditable && [item.pictureURL, item.rawURL].contains { $0.map(CaptureStore.clipKey(for:)) == name }
+    /// The photo item each capture file belongs to (its picture or its RAW), matched by file name, in the order of `urls`; nil
+    /// for a clip or a file not in the last reload. One pass over the items for all of them, ending once each is found; the
+    /// first matching item wins, as for a single file.
+    func captureItems(for urls: [URL]) -> [LibraryItem?] {
+        let names = urls.map(CaptureStore.clipKey(for:))
+        var found: [String: LibraryItem] = [:]
+        let wanted = Set(names)
+        for item in items where item.isEditable {
+            for name in [item.pictureURL, item.rawURL].compactMap({ $0.map(CaptureStore.clipKey(for:)) })
+            where wanted.contains(name) && found[name] == nil {
+                found[name] = item
+            }
+            if found.count == wanted.count { break }
         }
+        return names.map { found[$0] }
+    }
+
+    private func photoItem(forCapture url: URL) -> LibraryItem? {
+        captureItems(for: [url]).first ?? nil
     }
 
     /// What the camera strip's picture of a capture depends on: the photo's thumbnail key, which carries its edit; nil for a
@@ -100,7 +112,12 @@ import OSLog
     /// file and its one edit file, off the main actor, and the store's items are left as they are. Nil at once for a clip,
     /// which the strip draws its own way, and nil when the photo cannot be drawn.
     func captureThumbnail(for url: URL) async -> CGImage? {
-        if let item = photoItem(forCapture: url) {
+        await captureThumbnail(for: url, item: photoItem(forCapture: url))
+    }
+
+    /// `captureThumbnail(for:)` with the capture's item already found by `captureItems(for:)`, so it is not looked up again.
+    func captureThumbnail(for url: URL, item: LibraryItem?) async -> CGImage? {
+        if let item {
             guard case .ready(let image) = await thumbnail(for: item) else { return nil }
             return image
         }
