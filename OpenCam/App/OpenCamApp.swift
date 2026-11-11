@@ -12,8 +12,12 @@ struct OpenCamApp: App {
     @State private var library: LibraryStore?
     /// Nil in the Simulator, which has no camera.
     @State private var session: CameraSession?
-    /// Set once the Library and the look renderer have loaded after the camera started.
-    @State private var hasLoadedAfterStart = false
+    /// The Library's first read of the Captures folder, kept out of launch: it runs once, when the camera has started, when
+    /// the Library is about to show, or a second after launch, whichever comes first.
+    @State private var libraryLoad = RunOnce()
+    /// The fallback look renderer warm-up, once the camera has started (or could not).
+    @State private var rendererWarmUp = RunOnce()
+    private static let libraryLoadDeadline = Duration.seconds(1)
 
     init() {
         let config = LaunchConfig.parse(ProcessInfo.processInfo.arguments)
@@ -59,21 +63,31 @@ struct OpenCamApp: App {
             .preferredColorScheme(.dark)
             .environment(\.previewSource, session?.previewSource)
             .task { forceOrientation() }
-            // Nothing the first camera frame does not need runs before it: the Library's first read of the Captures folder
-            // waits until the camera has started (or could not). The look renderer is warmed by `CameraModel.start` while the
-            // session starts; this second call only covers launches with no session start (the Simulator, a denial, a
-            // failure), for the editor, and is a no-op once the renderer exists.
+            // Nothing the first camera frame does not need runs before it. The Library's first read of the Captures folder
+            // waits until the camera has started (or could not), the Library is about to show, or a second has passed. The look
+            // renderer is warmed by `CameraModel.start` while the session starts; this second call only covers launches with
+            // no session start (the Simulator, a denial, a failure), for the editor, and is a no-op once the renderer exists.
             .onChange(of: model.map { $0.phase != .scanning } ?? true, initial: true) { _, hasStarted in
-                guard hasStarted, !hasLoadedAfterStart else { return }
-                hasLoadedAfterStart = true
-                library?.reload()
-                Task(priority: .utility) { await LookRenderer.warmUp() }
+                guard hasStarted else { return }
+                loadLibraryOnce()
+                rendererWarmUp.run { Task(priority: .utility) { await LookRenderer.warmUp() } }
+            }
+            .onChange(of: model?.isLibraryPresented ?? false, initial: true) { _, isPresented in
+                if isPresented { loadLibraryOnce() }
+            }
+            .task {
+                try? await Task.sleep(for: Self.libraryLoadDeadline)
+                loadLibraryOnce()
             }
             .task {
                 guard let model, let session else { return }
                 await model.start(session: session)
             }
         }
+    }
+
+    private func loadLibraryOnce() {
+        libraryLoad.run { library?.reload() }
     }
 
     private static func makeCaptureStore() -> CaptureStore? {
