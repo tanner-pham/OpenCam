@@ -15,10 +15,23 @@ final class PreviewUIView: UIView {
     private var sessionObservers: [any NSObjectProtocol] = []
     private let frames: FramePipeline
 
+    private let session: AVCaptureSession
+    /// The one preview of the running session, kept across layout changes (`CameraPreviewView`).
+    private static var current: PreviewUIView?
+
     private var previewLayer: AVCaptureVideoPreviewLayer? { layer as? AVCaptureVideoPreviewLayer }
 
-    init(source: PreviewSource) {
+    /// The preview for `source`'s session, made on first use and reused after.
+    static func shared(for source: PreviewSource) -> PreviewUIView {
+        if let current, current.session === source.session { return current }
+        let preview = PreviewUIView(source: source)
+        current = preview
+        return preview
+    }
+
+    private init(source: PreviewSource) {
         frames = source.frames
+        session = source.session
         super.init(frame: .zero)
         backgroundColor = .black
         guard let previewLayer else {
@@ -26,7 +39,9 @@ final class PreviewUIView: UIView {
             return
         }
         previewLayer.videoGravity = .resizeAspect
+        let attachStart = ContinuousClock.now
         previewLayer.session = source.session
+        TimingJournal.record("preview attach", since: attachStart, over: TimingJournal.mainActorThreshold)
         // A new camera input arrives with the first start, and with each configure on a running session
         // (a lens switch or reconfigure); rebuild the coordinator for it then.
         let center = NotificationCenter.default
@@ -58,6 +73,8 @@ final class PreviewUIView: UIView {
 
     /// Builds a coordinator when the layer's camera differs from the one being followed.
     func updateRotationCoordinator() {
+        let started = ContinuousClock.now
+        defer { TimingJournal.record("preview rotation update", since: started, over: TimingJournal.mainActorThreshold) }
         guard let previewLayer, let device = Self.videoDevice(of: previewLayer) else { return }
         guard rotationCoordinator?.device?.uniqueID != device.uniqueID else { return }
         let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: previewLayer)
