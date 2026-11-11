@@ -21,11 +21,14 @@ struct CameraRootView: View {
                 .background(Color.black.ignoresSafeArea())
                 .persistentSystemOverlays(.hidden)
                 .toolbar { StripToolbar(model: model, library: library, isLandscape: isLandscape) }
+                // The Camera Control takes the photo or starts and stops recording, through the same rules as the on-screen
+                // button. Always enabled while this screen shows: a disabled interaction hands the button back to the system,
+                // which opens Apple's Camera app. When capture is not allowed the model ignores the press.
+                // Keep this inside the NavigationStack, on its content. Applied to the NavigationStack itself it left the four
+                // strip items on the folded phone's outer display dead to taps (the open phone's floating bar still worked);
+                // found by bisection on the folded Simulator, where moving only this line brought the taps back.
+                .onCameraCaptureEvent { model.handleCaptureEvent(phase: $0.phase) }
         }
-        // The Camera Control takes the photo or starts and stops recording, through the same rules as the on-screen button.
-        // Always enabled while this screen shows: a disabled interaction hands the button back to the system, which opens
-        // Apple's Camera app. When capture is not allowed the model ignores the press.
-        .onCameraCaptureEvent { model.handleCaptureEvent(phase: $0.phase) }
         // An import still running when the Library closed lands after the close read the last capture.
         .onChange(of: library?.importsFinished) { model.libraryImportFinished() }
         .fullScreenCover(isPresented: Binding(get: { model.isLibraryPresented && library != nil }, set: { model.isLibraryPresented = $0 }),
