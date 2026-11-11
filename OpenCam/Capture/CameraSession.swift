@@ -99,6 +99,8 @@ actor CameraSession: SessionConfigurator {
     /// The Camera Control's system controls are installed last, for the device and mode now applied.
     func configure(_ configuration: SessionConfiguration) throws(CameraSessionError) {
         guard !recorder.output.isRecording else { throw .recordingInProgress }
+        let timing = (start: ContinuousClock.now, previous: lastWorkingConfiguration)
+        defer { TimingJournal.configure(configuration, after: timing.previous, since: timing.start) }
         do throws(CameraSessionError) {
             try apply(configuration)
             lastWorkingConfiguration = configuration

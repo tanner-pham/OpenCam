@@ -12,6 +12,8 @@ struct OpenCamApp: App {
     @State private var library: LibraryStore?
     /// Nil in the Simulator, which has no camera.
     @State private var session: CameraSession?
+    /// Set once the Library and the look renderer have loaded after the camera started.
+    @State private var hasLoadedAfterStart = false
 
     init() {
         let config = LaunchConfig.parse(ProcessInfo.processInfo.arguments)
@@ -57,7 +59,14 @@ struct OpenCamApp: App {
             .preferredColorScheme(.dark)
             .environment(\.previewSource, session?.previewSource)
             .task { forceOrientation() }
-            .task { await LookRenderer.warmUp() }
+            // Nothing the first camera frame does not need runs before it: the Library's first read of the Captures folder
+            // and the look renderer's warm-up wait until the camera has started (or could not).
+            .onChange(of: model.map { $0.phase != .scanning } ?? true, initial: true) { _, hasStarted in
+                guard hasStarted, !hasLoadedAfterStart else { return }
+                hasLoadedAfterStart = true
+                library?.reload()
+                Task { await LookRenderer.warmUp() }
+            }
             .task {
                 guard let model, let session else { return }
                 await model.start(session: session)
@@ -104,10 +113,9 @@ struct OpenCamApp: App {
             }
         }
         #endif
-        let library = LibraryStore(captures: captures, edits: EditStore(directory: captures.directory),
-                                   looks: looks, thumbnails: ThumbnailCache.appDefault())
-        library.reload()
-        return library
+        // Read for the first time once the camera has started (`body`), not here before the first frame.
+        return LibraryStore(captures: captures, edits: EditStore(directory: captures.directory),
+                            looks: looks, thumbnails: ThumbnailCache.appDefault())
     }
 
     private func forceOrientation() {

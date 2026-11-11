@@ -5,8 +5,10 @@ extension CameraModel {
     /// (lenses a scan skipped stay out until `rescanCapabilities`); otherwise scans.
     func loadCapabilities(lenses: [Lens]) async {
         let cache = CapabilityCache(directory: capabilitySource.cacheDirectory)
-        if let cached = cache.load(osBuild: DeviceIdentity.osBuild(), modelIdentifier: DeviceIdentity.modelIdentifier()),
-           let adopted = cached.adopting(discovered: lenses) {
+        let started = ContinuousClock.now
+        let cached = await Self.loadCache(cache)
+        TimingJournal.record("cache load (off the main actor)", since: started, over: TimingJournal.mainActorThreshold)
+        if let cached, let adopted = cached.adopting(discovered: lenses) {
             replaceCapabilities(adopted)
             return
         }
@@ -16,6 +18,11 @@ extension CameraModel {
             return
         }
         adoptScan(capabilities, lenses: lenses)
+    }
+
+    /// Reads and decodes the cache (2.4 MB on the Duo) off the main actor.
+    @concurrent nonisolated private static func loadCache(_ cache: CapabilityCache) async -> CaptureCapabilities? {
+        cache.load(osBuild: DeviceIdentity.osBuild(), modelIdentifier: DeviceIdentity.modelIdentifier())
     }
 
     /// Only with a running camera (so never while formats are read, in the Simulator, or after a failure or denial),
