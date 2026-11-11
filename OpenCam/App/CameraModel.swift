@@ -710,6 +710,10 @@ extension CameraModel {
             return
         }
         launchTimeline.mark("configured")
+        // The look renderer's Metal device and CIContext are made now, off the main actor and at low priority, while the
+        // session starts on its own queue: a look's frame view, which reads the renderer on the main actor, can exist only
+        // once the phase is ready below, after the start has returned. Not awaited, so it never delays the first frame.
+        Task(priority: .utility) { await LookRenderer.warmUp() }
         attachSession(session, configuredWith: configuration, selection: selection)
         cameraSession = session
         await session.start()

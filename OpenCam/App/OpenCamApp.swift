@@ -60,12 +60,14 @@ struct OpenCamApp: App {
             .environment(\.previewSource, session?.previewSource)
             .task { forceOrientation() }
             // Nothing the first camera frame does not need runs before it: the Library's first read of the Captures folder
-            // and the look renderer's warm-up wait until the camera has started (or could not).
+            // waits until the camera has started (or could not). The look renderer is warmed by `CameraModel.start` while the
+            // session starts; this second call only covers launches with no session start (the Simulator, a denial, a
+            // failure), for the editor, and is a no-op once the renderer exists.
             .onChange(of: model.map { $0.phase != .scanning } ?? true, initial: true) { _, hasStarted in
                 guard hasStarted, !hasLoadedAfterStart else { return }
                 hasLoadedAfterStart = true
                 library?.reload()
-                Task { await LookRenderer.warmUp() }
+                Task(priority: .utility) { await LookRenderer.warmUp() }
             }
             .task {
                 guard let model, let session else { return }
