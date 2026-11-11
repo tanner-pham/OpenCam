@@ -65,6 +65,18 @@ import Testing
         #expect(names(model) == ["OC_0003.HEIC", "OC_0001.HEIC"])
     }
 
+    /// The strip finds the Library items of all its recent captures in one pass, with the same results as one file at a time.
+    @Test func recentCapturesAreFoundInOnePassWithTheSameItems() throws {
+        let dir = try TestFiles.directory()
+        for name in ["OC_0001.DNG", "OC_0001.HEIC", "OC_0002.JPG", "OC_0003.MOV"] { try Data("x".utf8).write(to: dir.appending(path: name)) }
+        let library = try LibraryStoreTests.make(dir); library.reload()
+        let urls = ["OC_0001.DNG", "OC_0002.JPG", "OC_0003.MOV", "OC_0009.HEIC", "OC_0001.HEIC"].map { dir.appending(path: $0) }
+        let items = library.captureItems(for: urls)
+        #expect(items.map { $0.map { library.thumbnailKey(for: $0) } } == urls.map { library.captureThumbnailKey(for: $0) })
+        #expect(items.map { $0 != nil } == [true, true, false, false, true])
+        #expect(items[0] == items[4])
+    }
+
     @Test func noCapturesShowsTheSymbol() throws {
         let model = try model(try CaptureStore(directory: TestFiles.directory()))
         model.loadLastCapture()

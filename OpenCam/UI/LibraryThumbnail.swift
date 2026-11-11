@@ -34,16 +34,15 @@ struct LibraryThumbnail: View {
             model.loadLastCapture()
             var images: [CGImage] = []
             var kept: [String: CGImage] = [:]
-            for url in model.recentCaptures {
-                let key = key(for: url)
+            for capture in captures() {
                 let image: CGImage?
-                if let cached = drawn[key] {
+                if let cached = drawn[capture.key] {
                     image = cached
                 } else {
-                    image = await makeThumbnail(for: url)
+                    image = await makeThumbnail(for: capture.url, item: capture.item)
                 }
                 guard let image else { continue }
-                kept[key] = image
+                kept[capture.key] = image
                 images.append(image)
             }
             guard !Task.isCancelled else { return }
@@ -52,15 +51,21 @@ struct LibraryThumbnail: View {
         }
     }
 
-    /// The recent captures and, for photos the Library knows, their thumbnail keys, so an edit made in the Library draws again.
-    private var request: [String] { model.recentCaptures.map(key(for:)) }
+    /// The recent captures' keys, so an edit made in the Library draws again.
+    private var request: [String] { captures().map(\.key) }
 
-    private func key(for url: URL) -> String {
-        "\(url.lastPathComponent)|\(library?.captureThumbnailKey(for: url) ?? "")"
+    /// Each recent capture with its Library item, found in one pass over the Library's items, and its key: the file name and,
+    /// for a photo the Library knows, its thumbnail key, which carries its edit.
+    private func captures() -> [(url: URL, item: LibraryItem?, key: String)] {
+        let urls = model.recentCaptures
+        let items = library?.captureItems(for: urls) ?? urls.map { _ in nil }
+        return zip(urls, items).map { url, item in
+            (url, item, "\(url.lastPathComponent)|\(item.flatMap { library?.thumbnailKey(for: $0) } ?? "")")
+        }
     }
 
-    private func makeThumbnail(for url: URL) async -> CGImage? {
-        if let image = await library?.captureThumbnail(for: url) { return image }
+    private func makeThumbnail(for url: URL, item: LibraryItem?) async -> CGImage? {
+        if let image = await library?.captureThumbnail(for: url, item: item) { return image }
         let side = ThumbnailStack.side * 2
         let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: side, height: side),
                                                    scale: displayScale, representationTypes: .thumbnail)
