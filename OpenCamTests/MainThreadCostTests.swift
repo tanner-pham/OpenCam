@@ -120,6 +120,27 @@ import Testing
         await model.waitForQueuedConfigures()
     }
 
+    /// A lens's first visit builds its resolver (cold); a later visit reuses it (warm). Each run starts from a fresh model.
+    @Test func lensFirstVisit() throws {
+        let capabilities = try Fixture.loadDuo()
+        let clock = ContinuousClock()
+        var coldRead: [Duration] = [], coldSwitch: [Duration] = [], warmSwitch: [Duration] = []
+        for _ in 0..<7 {
+            let model = CameraModel(config: LaunchConfig(), capabilities: capabilities, isSimulator: true, defaults: try Fixture.freshDefaults())
+            model.phase = .ready
+            coldRead.append(clock.measure { _ = model.currentVideoOption })
+            coldSwitch.append(clock.measure { model.selectLens(Self.ultraWide); _ = model.summaryParts })
+            model.selectLens(Self.wide)
+            warmSwitch.append(clock.measure { model.selectLens(Self.ultraWide); _ = model.summaryParts })
+        }
+        for (name, samples) in [("lens: first read of the launch lens (cold)", coldRead), ("change: lens, first visit (cold)", coldSwitch),
+                                ("change: lens, later visit (warm)", warmSwitch)] {
+            let median = samples.sorted()[samples.count / 2]
+            print("[perf] \(name): \(PerfClock.milliseconds(median)) ms")
+            #expect(median < Self.bound)
+        }
+    }
+
     @Test func settingsSheetRender() throws {
         let model = try readyModel()
         #expect(PerfClock.report("sheet: video rows, one render", runs: 7) {
