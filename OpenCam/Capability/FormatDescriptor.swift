@@ -13,4 +13,8 @@ nonisolated struct FormatDescriptor: Sendable, Equatable {
     let allowsCompressionProperties: Bool
     let maxPhotoDimensions: [PhotoSize]
     let hasBayerRAW: Bool
+    /// The one size Bayer RAW is delivered at, when it is known: under the photo preset RAW comes at the preset format's own
+    /// dimensions, and the processed half of a RAW + HEIF pair follows it (measured on the Duo, 2026-11-11). Nil offers RAW
+    /// at every photo size, as the formats' own fields do without a preset reading.
+    var rawPhotoSize: PhotoSize? = nil
 }

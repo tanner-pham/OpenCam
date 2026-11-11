@@ -63,8 +63,10 @@ nonisolated enum CapabilityMapper {
             var seen = Set<PhotoOption>()
             var options: [PhotoOption] = []
             for format in descriptors(for: lens, lenses: lenses, in: formats) {
-                let photoFormats = format.hasBayerRAW && lens.zoomFactor == 1 ? PhotoFormat.allCases : [.heif]
+                let hasRAW = format.hasBayerRAW && lens.zoomFactor == 1
                 for size in format.maxPhotoDimensions {
+                    // RAW only at its one known size, when the format names one (`rawPhotoSize`).
+                    let photoFormats: [PhotoFormat] = hasRAW && (format.rawPhotoSize.map { $0 == size } ?? true) ? PhotoFormat.allCases : [.heif]
                     for photoFormat in photoFormats {
                         let option = PhotoOption(lensID: lens.id, format: photoFormat, width: size.width, height: size.height)
                         if seen.insert(option).inserted { options.append(option) }

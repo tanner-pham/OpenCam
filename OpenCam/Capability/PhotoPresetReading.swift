@@ -9,7 +9,8 @@ nonisolated struct PhotoPresetReading: Sendable, Equatable {
 
     /// The descriptors of one lens with their photo fields replaced by the reading: every descriptor loses its photo
     /// sizes and RAW flag, except one carrier (the first whose dimensions equal the reading's, else the first), which
-    /// takes the reading's sizes and RAW flag. With a nil reading, or no descriptors, they come back unchanged.
+    /// takes the reading's sizes and RAW flag, with RAW limited to the reading's own format dimensions (`rawPhotoSize`), the
+    /// only size the preset delivers it at. With a nil reading, or no descriptors, they come back unchanged.
     static func assign(_ reading: PhotoPresetReading?, to descriptors: [FormatDescriptor]) -> [FormatDescriptor] {
         guard let reading, !descriptors.isEmpty else { return descriptors }
         let carrier = descriptors.firstIndex { $0.width == reading.width && $0.height == reading.height } ?? 0
@@ -24,7 +25,8 @@ nonisolated struct PhotoPresetReading: Sendable, Equatable {
                 codecTypesByColourSpace: descriptor.codecTypesByColourSpace,
                 allowsCompressionProperties: descriptor.allowsCompressionProperties,
                 maxPhotoDimensions: isCarrier ? reading.sizes : [],
-                hasBayerRAW: isCarrier && reading.hasBayerRAW
+                hasBayerRAW: isCarrier && reading.hasBayerRAW,
+                rawPhotoSize: isCarrier ? PhotoSize(width: reading.width, height: reading.height) : nil
             )
         }
     }
