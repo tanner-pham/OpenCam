@@ -115,7 +115,7 @@ extension CameraModel {
             resumeDeferredRecovery()
             return
         }
-        if result.outcome.isPlayable { lastCapture = result.url }
+        if result.outcome.isPlayable { captureSaved(result.url) }
         let clipName = result.url.deletingPathExtension().lastPathComponent
         // An unknown dropped-frame count gives no notice.
         let recordingNotice = result.outcome.notice ?? result.sidecar?.actual?.droppedFrames.flatMap {

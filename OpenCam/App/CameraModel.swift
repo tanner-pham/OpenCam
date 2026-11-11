@@ -22,6 +22,8 @@ final class CameraModel {
     private(set) var notice: String?
     private(set) var meterLevels: [Double] = []
     var lastCapture: URL?
+    /// The newest captures, newest first, at most three. Updated when a capture finishes and when the Library closes.
+    private(set) var recentCaptures: [URL] = []
     private(set) var capabilities: CaptureCapabilities { didSet { recordResolvers = [:] } }
     private(set) var lensID: String { didSet { selectionChanged() } }
     /// Each lens's record resolver, made on first use and kept until the capabilities change, so a view reading the current
@@ -409,7 +411,18 @@ final class CameraModel {
                 return
             }
         }
-        lastCapture = captureStore?.latestCapture()
+        recentCaptures = captureStore?.recentCaptures(limit: Self.recentCaptureLimit) ?? []
+        lastCapture = recentCaptures.first
+    }
+
+    static let recentCaptureLimit = 3
+
+    /// A capture just saved becomes the newest: pushed onto the list from its own URL, with no folder listing and no
+    /// Library reload; the same file is never listed twice.
+    func captureSaved(_ url: URL) {
+        lastCapture = url
+        let key = CaptureStore.clipKey(for: url)
+        recentCaptures = Array(([url] + recentCaptures.filter { CaptureStore.clipKey(for: $0) != key }).prefix(Self.recentCaptureLimit))
     }
 
     /// The captures folder, created on first use; nil, with `failureNotice` shown, when it cannot be.
@@ -476,7 +489,7 @@ final class CameraModel {
             ErrorJournal.record(error.description)
         }
         let report = PhotoSaveReport.make(requested: requested, saved: result.saved, error: result.error)
-        if let saved = report.lastCapture { lastCapture = saved }
+        if let saved = report.lastCapture { captureSaved(saved) }
         // A full save replaces an earlier capture notice with none.
         if let notice = report.notice ?? lookNotice {
             show(notice, from: .capture)
