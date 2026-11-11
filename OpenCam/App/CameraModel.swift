@@ -385,6 +385,7 @@ final class CameraModel {
                 captureStore = try CaptureStore.appDefault()
             } catch {
                 Self.logger.error("\(error.description, privacy: .public)")
+                ErrorJournal.record(error.description)
                 return
             }
         }
@@ -400,6 +401,7 @@ final class CameraModel {
             return store
         } catch {
             Self.logger.error("\(error.description, privacy: .public)")
+            ErrorJournal.record(error.description)
             show(failureNotice, from: .capture)
             return nil
         }
@@ -451,6 +453,7 @@ final class CameraModel {
     func photoFinished(requested: [URL], result: PhotoCaptureResult, lookNotice: String? = nil) {
         if let error = result.error {
             Self.logger.error("\(error.description, privacy: .public)")
+            ErrorJournal.record(error.description)
         }
         let report = PhotoSaveReport.make(requested: requested, saved: result.saved, error: result.error)
         if let saved = report.lastCapture { lastCapture = saved }
@@ -572,6 +575,7 @@ final class CameraModel {
     /// unless a newer selection is queued, which then stands.
     private func configureFailed(_ error: CameraSessionError, generation: Int) {
         Self.logger.error("\(error.description, privacy: .public)")
+        ErrorJournal.record(error.description)
         guard let lastWorking else {
             phase = .failed(Self.formatSetupFailed)
             return
@@ -680,6 +684,7 @@ extension CameraModel {
             try await session.configure(configuration)
         } catch {
             Self.logger.error("\(error.description, privacy: .public)")
+            ErrorJournal.record(error.description)
             phase = .failed(Self.formatSetupFailed)
             return
         }
@@ -764,6 +769,7 @@ extension CameraModel {
             // Sets no notice; the phase says the camera stopped. The session restarts itself and `.restarted` follows, so no
             // pending confirmation may mark the camera ready and nothing here starts it meanwhile.
             Self.logger.error("\(message, privacy: .public)")
+            ErrorJournal.record(message)
             runtimeErrorCount += 1
             confirmation?.cancel()
             confirmation = nil
@@ -793,6 +799,7 @@ extension CameraModel {
         case .microphoneUnavailable(let message):
             // Reads the same as microphone denied: video still records, without sound.
             Self.logger.error("\(message, privacy: .public)")
+            ErrorJournal.record(message)
             access.microphone = .denied
         case .pressure(let level, let isThermal):
             pressureLevel = level
