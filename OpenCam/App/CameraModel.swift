@@ -24,6 +24,10 @@ final class CameraModel {
     var lastCapture: URL?
     /// The newest captures, newest first, at most three. Updated when a capture finishes and when the Library closes.
     private(set) var recentCaptures: [URL] = []
+    /// Counts photos taken and recordings started and stopped, for the shutter blink and the haptics.
+    private(set) var feedback = CaptureFeedback()
+    /// True from the moment the user's recording began until it ends, so its stop counts once and only after its start.
+    @ObservationIgnored var isRecordingStartCounted = false
     private(set) var capabilities: CaptureCapabilities { didSet { recordResolvers = [:] } }
     private(set) var lensID: String { didSet { selectionChanged() } }
     /// Each lens's record resolver, made on first use and kept until the capabilities change, so a view reading the current
@@ -387,6 +391,7 @@ final class CameraModel {
             stopRecording()
         case .takePhoto:
             guard canCapture else { return }
+            feedback.photosTaken += 1
             capturePhoto()
         case .startRecording:
             guard canCapture else { return }
@@ -795,6 +800,25 @@ extension CameraModel {
                 return
             }
         }
+    }
+
+    /// A recording the user started has begun; a sweep's clip is not one.
+    func recordingBegan(isSweepClip: Bool) {
+        guard !isSweepClip else { return }
+        isRecordingStartCounted = true
+        feedback.recordingsStarted += 1
+    }
+
+    /// The recording whose start was counted has ended, however it ended.
+    func recordingEnded() {
+        guard isRecordingStartCounted else { return }
+        isRecordingStartCounted = false
+        feedback.recordingsStopped += 1
+    }
+
+    /// `-shutterDemo on` in the Simulator, which has no camera: the blink runs once a second so it can be seen.
+    func demoShutter() {
+        feedback.photosTaken += 1
     }
 
     func show(_ text: String, from source: NoticeSource) {

@@ -194,6 +194,7 @@ actor CameraSession: SessionConfigurator {
         }
         guard !session.isRunning else { return }
         session.startRunning()
+        allowHapticsWhileRecording()
     }
 
     /// After `AVError.Code.mediaServicesWereReset` the session is restarted once, if it is meant to run; `.restarted`
@@ -271,6 +272,23 @@ actor CameraSession: SessionConfigurator {
         }
         session.addInput(input)
         audioInput = input
+    }
+
+    /// While the microphone is live, iOS plays no haptics or system sounds unless the app's audio session allows them
+    /// (AVAudioSession.h: `setAllowHapticsAndSystemSoundsDuringRecording`, default NO), so the record start and stop haptics
+    /// would be silent in video mode. This app never sets up its audio session itself: the capture session does it
+    /// (`automaticallyConfiguresApplicationAudioSession`, default YES) once it runs with a microphone. So the setting is applied
+    /// after that, when the session starts and again just before each recording, and only when it is not already on.
+    /// A failure is logged and the recording goes on without haptics.
+    private func allowHapticsWhileRecording() {
+        guard audioInput != nil else { return }
+        let audio = AVAudioSession.sharedInstance()
+        guard !audio.allowHapticsAndSystemSoundsDuringRecording else { return }
+        do {
+            try audio.setAllowHapticsAndSystemSoundsDuringRecording(true)
+        } catch {
+            Self.logger.error("[CameraSession:allowHapticsWhileRecording] Haptics stay muted while recording — {category: \(audio.category.rawValue, privacy: .public), reason: \(error.localizedDescription, privacy: .public)}")
+        }
     }
 
     // MARK: Outputs
@@ -542,6 +560,7 @@ extension CameraSession {
         if option.codec.family == .raw {
             try lockWhiteBalance(on: device)
         }
+        allowHapticsWhileRecording()
         do throws(RecordingError) {
             try recorder.start(option: option, url: url, minFreeBytes: minFreeBytes, device: device) { [weak self] in
                 guard let self else { return }

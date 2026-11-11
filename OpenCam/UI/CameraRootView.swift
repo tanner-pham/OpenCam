@@ -18,6 +18,7 @@ struct CameraRootView: View {
     var body: some View {
         NavigationStack {
             CameraLayout(model: model, isLandscape: isLandscape)
+                .modifier(CaptureFeedbackModifier(model: model))
                 .background(Color.black.ignoresSafeArea())
                 .persistentSystemOverlays(.hidden)
                 .toolbar { StripToolbar(model: model, library: library, isLandscape: isLandscape) }

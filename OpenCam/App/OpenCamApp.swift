@@ -83,7 +83,23 @@ struct OpenCamApp: App {
                 guard let model, let session else { return }
                 await model.start(session: session)
             }
+            .task { await runShutterDemo() }
         }
+    }
+
+    /// `-shutterDemo on` in the Simulator, which has no camera to take a photo: blinks the viewfinder once a second.
+    private func runShutterDemo() async {
+        #if targetEnvironment(simulator)
+        guard config.showsShutterDemo, let model else { return }
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: .seconds(1))
+            } catch {
+                return
+            }
+            model.demoShutter()
+        }
+        #endif
     }
 
     private func loadLibraryOnce() {

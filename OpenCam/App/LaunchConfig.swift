@@ -13,9 +13,10 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
     var seedsSamples = false                // -seedSamples on (honoured in the Simulator only)
     var seedsLook = false                   // -seedLook on (honoured in the Simulator only)
     var startsInSelectMode = false          // -librarySelect on
+    var showsShutterDemo = false            // -shutterDemo on: the shutter blink runs once a second (honoured in the Simulator only)
     var cameraLookName: String?             // -cameraLook <name>: the look of that name is selected, or None when there is none
     /// True when -orientation, -mode, -screen, -recording, -state, -editorGroup, -cameraLook or an "on" flag among -seedSamples,
-    /// -seedLook and -librarySelect parsed to a valid value; such launches never restore or save selections.
+    /// -seedLook, -librarySelect and -shutterDemo parsed to a valid value; such launches never restore or save selections.
     var isScripted = false
 
     static func parse(_ args: [String]) -> LaunchConfig {
@@ -58,6 +59,10 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
         }
         if value("-librarySelect") == "on" {
             config.startsInSelectMode = true
+            config.isScripted = true
+        }
+        if value("-shutterDemo") == "on" {
+            config.showsShutterDemo = true
             config.isScripted = true
         }
         if let name = value("-cameraLook") {

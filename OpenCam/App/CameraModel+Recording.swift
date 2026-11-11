@@ -9,7 +9,8 @@ extension CameraModel {
         guard let configurator, let option = currentVideoOption,
               let store = store(failureNotice: RecordingOutcome.failedNotice) else { return nil }
         let url = store.url(sequence: store.reserveSequence(), kind: .mov)
-        if isSweeping { recordSweepClip(url) }
+        let isSweepClip = isSweeping
+        if isSweepClip { recordSweepClip(url) }
         let minFreeBytes = recordingReserveBytes()
         let pendingConfigure = configureTask
         isRecording = true
@@ -25,6 +26,7 @@ extension CameraModel {
                 // A clip that ended as it started has already reported; the idle timecode must not keep a start time.
                 guard isRecording, let recordingClip, CaptureStore.clipKey(for: recordingClip.url) == CaptureStore.clipKey(for: url) else { return }
                 recordingStart = Date()
+                recordingBegan(isSweepClip: isSweepClip)
             } catch {
                 recordingDidFinish(RecordingResult(url: url, option: option, outcome: .failed(error.description), sidecar: nil))
             }
@@ -98,6 +100,7 @@ extension CameraModel {
             recordingStart = nil
             recordingStartTask = nil
             recordingClip = nil
+            recordingEnded()
         }
         if case .failed(let message) = result.outcome {
             Self.logger.error("\(message, privacy: .public)")
