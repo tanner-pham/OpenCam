@@ -14,8 +14,8 @@ import UIKit
         let crop = LensBadge.make(for: lens(.wide, zoom: 2, label: "2x"))
         #expect(ultraWide.shortText == "0.5x"); #expect(wide.shortText == "1x"); #expect(crop.shortText == "2x")
         #expect([ultraWide, wide, crop].allSatisfy { $0.symbol == nil })
-        #expect(ultraWide.menuTitle == "Ultra wide"); #expect(wide.menuTitle == "Wide"); #expect(crop.menuTitle == "Wide, 2x crop")
-        #expect(ultraWide.rowTitle == "0.5x Ultra wide")
+        #expect(ultraWide.menuTitle == "Ultra wide"); #expect(wide.menuTitle == "Wide"); #expect(crop.menuTitle == "Wide, cropped")
+        #expect([ultraWide, wide, crop].map(\.rowTitle) == ["0.5x Ultra wide", "1x Wide", "2x Wide, cropped"])
     }
 
     /// The device names them by their long localized names; the strip shows a symbol of the phone instead.
@@ -28,8 +28,8 @@ import UIKit
             #expect(UIImage(systemName: symbol) != nil)
         }
         #expect(outer.symbol != inner.symbol)
-        #expect(outer.menuTitle == "Front, outer display"); #expect(inner.menuTitle == "Front, inner display")
-        #expect(outer.rowTitle == "Front, outer display")
+        #expect(outer.menuTitle == "Front, outer"); #expect(inner.menuTitle == "Front, inner")
+        #expect(outer.rowTitle == "Front, outer"); #expect(inner.rowTitle == "Front, inner")
         #expect(UIImage(systemName: LensBadge.backLensSymbol) != nil)
     }
 
@@ -46,7 +46,10 @@ import UIKit
         #expect(Set(lenses.map(\.kind)) == [.ultraWide, .wide, .outerUltraWide, .innerUltraWide])
         try #require(lenses.count == 5)
         let titles = lenses.map { LensBadge.make(for: $0).rowTitle }
+        #expect(titles == ["0.5x Ultra wide", "1x Wide", "2x Wide, cropped", "Front, outer", "Front, inner"])
         #expect(Set(titles).count == 5)
-        #expect(titles.allSatisfy { $0.count <= 24 })
+        // Short enough for one line in the folded display's menu, and each zoom named once in its row.
+        #expect(titles.allSatisfy { $0.count <= 16 })
+        #expect(titles.allSatisfy { title in ["0.5x", "1x", "2x"].allSatisfy { title.components(separatedBy: $0).count <= 2 } })
     }
 }
