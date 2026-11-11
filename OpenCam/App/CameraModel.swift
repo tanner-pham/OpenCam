@@ -337,6 +337,12 @@ final class CameraModel {
     /// The strip's Lens and Mode items follow this; `isScanningFormats` also keeps configures from queuing.
     var canChangeLensOrMode: Bool { !isRecording && !isScanningFormats && !isSweeping }
 
+    /// Photo becomes video and video becomes photo. Does nothing while `canChangeLensOrMode` is false.
+    func toggleMode() {
+        guard canChangeLensOrMode else { return }
+        mode = mode == .video ? .photo : .video
+    }
+
     func selectLens(_ id: String) {
         guard id != lensID, !isSweeping, capabilities.lenses.contains(where: { $0.id == id }) else { return }
         // Lens, record and photo change as one: saved and queued once, with the settled selections.

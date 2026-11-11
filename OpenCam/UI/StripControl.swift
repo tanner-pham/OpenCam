@@ -4,21 +4,19 @@ import SwiftUI
 /// change of mode, lens and availability.
 struct StripControl: View {
     let item: StripToolbar.Item
-    @Bindable var model: CameraModel
+    let model: CameraModel
     let library: LibraryStore?
 
     var body: some View {
         switch item {
         case .mode:
-            Menu {
-                Picker("Mode", selection: $model.mode) {
-                    Text("Photo").tag(CaptureMode.photo)
-                    Text("Video").tag(CaptureMode.video)
-                }
-            } label: {
+            // Two modes, so one tap switches between them; the symbol is the mode in use.
+            Button { model.toggleMode() } label: {
                 Image(systemName: model.mode == .video ? "video.fill" : "camera.fill")
             }
             .accessibilityLabel("Mode")
+            .accessibilityValue(model.mode == .video ? "Video" : "Photo")
+            .accessibilityHint(model.mode == .video ? "Switches to photo." : "Switches to video.")
             .disabled(!model.canChangeLensOrMode)
         case .lens:
             Menu {
@@ -30,10 +28,6 @@ struct StripControl: View {
             }
             .accessibilityLabel("Lens, \(model.currentLens?.label ?? "none")")
             .disabled(!model.canChangeLensOrMode)
-        case .record:
-            // `canOpenRecordSettings` is false while recording and until the formats are known.
-            Button("Record settings", systemImage: "slider.horizontal.3") { model.openRecordSettings() }
-                .disabled(!model.canOpenRecordSettings)
         case .library:
             LibraryThumbnail(model: model, library: library)
         }
