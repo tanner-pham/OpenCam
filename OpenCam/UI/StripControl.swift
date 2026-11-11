@@ -19,14 +19,23 @@ struct StripControl: View {
             .accessibilityHint(model.mode == .video ? "Switches to photo." : "Switches to video.")
             .disabled(!model.canChangeLensOrMode)
         case .lens:
+            // Every lens the scan found, in its order, each with a short title and a symbol.
+            let current = model.currentLens.map(LensBadge.make(for:))
             Menu {
                 Picker("Lens", selection: Binding(get: { model.lensID }, set: { model.selectLens($0) })) {
-                    ForEach(model.lenses) { Text($0.label).tag($0.id) }
+                    ForEach(model.lenses) { lens in
+                        let badge = LensBadge.make(for: lens)
+                        Label(badge.rowTitle, systemImage: badge.symbol ?? LensBadge.backLensSymbol).tag(lens.id)
+                    }
                 }
             } label: {
-                Text(model.currentLens?.label ?? "Lens")
+                if let symbol = current?.symbol {
+                    Image(systemName: symbol)
+                } else {
+                    Text(current?.shortText ?? "Lens")
+                }
             }
-            .accessibilityLabel("Lens, \(model.currentLens?.label ?? "none")")
+            .accessibilityLabel("Lens, \(current?.rowTitle ?? "none")")
             .disabled(!model.canChangeLensOrMode)
         case .library:
             LibraryThumbnail(model: model, library: library)
