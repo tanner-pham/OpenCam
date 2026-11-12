@@ -163,7 +163,7 @@ nonisolated final class RecorderCheckSink: NSObject, AVCaptureVideoDataOutputSam
 
     /// The drop-reason attachment (CMSampleBuffer.h, `kCMSampleBufferAttachmentKey_DroppedFrameReason`) with the extra
     /// info attachment when there is one.
-    private static func dropReason(of sampleBuffer: CMSampleBuffer) -> String {
+    static func dropReason(of sampleBuffer: CMSampleBuffer) -> String {
         guard let reason = CMGetAttachment(sampleBuffer, key: kCMSampleBufferAttachmentKey_DroppedFrameReason, attachmentModeOut: nil) else {
             return "none given"
         }
@@ -174,7 +174,7 @@ nonisolated final class RecorderCheckSink: NSObject, AVCaptureVideoDataOutputSam
         return "\(text) / \(String(describing: info))"
     }
 
-    private static func facts(of sampleBuffer: CMSampleBuffer) -> RecorderCheckFrameFacts {
+    static func facts(of sampleBuffer: CMSampleBuffer) -> RecorderCheckFrameFacts {
         var facts = RecorderCheckFrameFacts()
         guard let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             facts.note = "The first sample buffer has no image buffer"

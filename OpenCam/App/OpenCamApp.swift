@@ -21,6 +21,8 @@ struct OpenCamApp: App {
     /// `-recorderCheck`: the hidden diagnostic launch.
     private static let isRecorderCheck = ProcessInfo.processInfo.arguments.contains("-recorderCheck")
     @State private var isRecorderCheckFinished = false
+    /// `-recorderCheck2`: the second diagnostic, with a live preview. Nil on every other launch.
+    @State private var recorderCheck2: RecorderCheck2Progress?
 
     init() {
         let config = LaunchConfig.parse(ProcessInfo.processInfo.arguments)
@@ -32,6 +34,7 @@ struct OpenCamApp: App {
         let looks = Self.makeLookStore(config: config)
         let library = captureStore.flatMap { captures in looks.flatMap { Self.makeLibrary(captures: captures, looks: $0, config: config) } }
         _library = State(initialValue: library)
+        if ProcessInfo.processInfo.arguments.contains("-recorderCheck2") { _recorderCheck2 = State(initialValue: RecorderCheck2Progress()) }
         #if targetEnvironment(simulator)
         // The fixture stands in for the scan in the Simulator only.
         do {
@@ -57,6 +60,8 @@ struct OpenCamApp: App {
             Group {
                 if Self.isRecorderCheck {
                     RecorderCheckView(isFinished: isRecorderCheckFinished)
+                } else if let recorderCheck2 {
+                    RecorderCheck2View(progress: recorderCheck2)
                 } else if let model {
                     CameraRootView(model: model, library: library, launch: config)
                 } else {
@@ -91,6 +96,11 @@ struct OpenCamApp: App {
                 if Self.isRecorderCheck {
                     await RecorderCheck.runAndWrite()
                     isRecorderCheckFinished = true
+                    return
+                }
+                // Second diagnostic launch: same rule, and its own session carries the preview.
+                if let recorderCheck2 {
+                    await RecorderCheck2.runAndWrite(progress: recorderCheck2)
                     return
                 }
                 // The preview layer joins the session before it starts. Photo and file outputs defer their start by default
