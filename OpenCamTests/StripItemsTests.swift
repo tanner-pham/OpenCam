@@ -20,6 +20,23 @@ import Testing
         #expect(StripToolbar.items(open: model.openControl, isLandscape: false) == [.mode, .lens, .library])
     }
 
+    @Test func closingASliderReturnsTheStripToModeLensAndLibrary() throws {
+        let model = try model()
+        for control in ManualControl.allCases {
+            model.toggleControl(control)
+            #expect(model.openControl == control)
+            #expect(StripToolbar.items(open: model.openControl, isLandscape: false) != [.mode, .lens, .library])
+            model.closeControl()
+            #expect(model.openControl == nil)
+            #expect(StripToolbar.items(open: model.openControl, isLandscape: false) == [.mode, .lens, .library])
+            #expect(StripToolbar.items(open: model.openControl, isLandscape: true) == [.library, .lens, .mode])
+        }
+        // Tapping the open readout again closes it too.
+        model.toggleControl(.iso)
+        model.toggleControl(.iso)
+        #expect(StripToolbar.items(open: model.openControl, isLandscape: false) == [.mode, .lens, .library])
+    }
+
     @Test func anOpenControlSwapsInSliderAutoAndClose() {
         for control in ManualControl.allCases where control != .bias {
             #expect(StripToolbar.items(open: control, isLandscape: false) == [.slider, .auto, .close])
