@@ -23,6 +23,29 @@ import Testing
         #expect(removed.message == "Look removed from 2 photos. 1 video was skipped.")
         #expect(try edits.load(stem: "OC_0001") == PhotoEdit()); #expect(try edits.load(stem: "OC_0003").adjustments.exposure == 1)
     }
+    @Test func applyingALookKeepsEachPhotosMasks() throws {
+        let (store, dir) = try setUp()
+        let masks = [LocalMask(shape: .subject), LocalMask(shape: MaskKind.radial.defaultShape)]
+        try EditStore(directory: dir).save(PhotoEdit(adjustments: Adjustments().setting(.exposure, to: 1), masks: masks), stem: "OC_0001")
+        store.reload()
+        let look = try store.lookStore.save(name: "Warm fade", adjustments: LookSeeder.warmFade)
+        _ = try store.applyLook(look, to: store.items.filter { $0.stem == "OC_0001" || $0.stem == "OC_0002" })
+        let edits = EditStore(directory: dir)
+        #expect(try edits.load(stem: "OC_0001") == PhotoEdit(adjustments: LookSeeder.warmFade, lookName: "Warm fade", masks: masks))
+        #expect(try edits.load(stem: "OC_0002") == PhotoEdit(adjustments: LookSeeder.warmFade, lookName: "Warm fade"))
+    }
+    @Test func removingALookKeepsMasksAndClearsTheRest() throws {
+        let (store, dir) = try setUp()
+        let masks = [LocalMask(shape: .subject)]
+        let edits = EditStore(directory: dir)
+        try edits.save(PhotoEdit(adjustments: LookSeeder.warmFade, lookName: "Warm fade", masks: masks), stem: "OC_0001")
+        try edits.save(PhotoEdit(adjustments: LookSeeder.warmFade, lookName: "Warm fade"), stem: "OC_0002")
+        store.reload()
+        _ = try store.removeLook(from: store.items)
+        #expect(try edits.load(stem: "OC_0001") == PhotoEdit(masks: masks))
+        #expect(try edits.load(stem: "OC_0002") == PhotoEdit())
+        #expect(!FileManager.default.fileExists(atPath: dir.appending(path: "OC_0002.edit.json").path(percentEncoded: false)))
+    }
     @Test func messagesForEveryCount() {
         func message(_ action: LookChange.Action, _ photos: Int, _ clips: Int, _ newer: Int) -> String {
             LookChange(action: action, photosChanged: photos, clipsSkipped: clips, newerSkipped: newer).message
@@ -67,8 +90,8 @@ import Testing
         #expect(LookChange.editsToReplace(in: [clip, unedited, edited, newer]) == 1); #expect(LookChange.editsToReplace(in: [edited, looked, unedited, clip, newer]) == 2)
         #expect(LibraryCopy.removeLookTitle(count: 1) == "Remove look from 1 photo?"); #expect(LibraryCopy.removeLookTitle(count: 4) == "Remove look from 4 photos?")
         #expect(LibraryCopy.replaceEditsTitle(count: 1) == "Replace edits on 1 photo?"); #expect(LibraryCopy.replaceEditsTitle(count: 3) == "Replace edits on 3 photos?")
-        #expect(LibraryCopy.removeLookMessage == "Their edits are cleared. The original photos are not changed.")
-        #expect(LibraryCopy.replaceEditsMessage == "Their current edits are replaced by this look.")
+        #expect(LibraryCopy.removeLookMessage == "Their looks and adjustments are cleared. Masks stay.")
+        #expect(LibraryCopy.replaceEditsMessage == "Their adjustments are replaced by this look. Masks stay.")
     }
     @Test func storeGivesEachItemsEditForTheCounts() throws {
         let (store, _) = try setUp()   // OC_0004.MOV, OC_0003 (edited), OC_0002, OC_0001

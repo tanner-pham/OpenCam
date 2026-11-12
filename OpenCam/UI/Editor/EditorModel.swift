@@ -7,7 +7,7 @@ import OSLog
 /// One photo being edited: its saved edit, a screen-sized proxy of the original, and the preview rendered from that proxy.
 /// The original file is never rendered here and never rewritten; Done writes the edit beside it.
 @MainActor @Observable final class EditorModel {
-    static let proxyLongSide = 2048
+    nonisolated static let proxyLongSide = 2048
     private static let logger = Logger(subsystem: "local.opencam.app", category: "EditorModel")
 
     let item: LibraryItem
@@ -28,7 +28,7 @@ import OSLog
     /// The preview render; `renderer.renderedCGImage` unless a test replaces it.
     private let renderPreview: @Sendable (CIImage, PhotoEdit, CIImage?) async -> CGImage?
     /// Finds the photo's subject on the proxy; `SubjectMasker.mask(for:)` unless a test replaces it.
-    private let findSubject: @Sendable (CIImage) async -> CIImage?
+    private let findSubject: @Sendable (CIImage) async -> SubjectSearch
     /// The histogram count; `PictureHistogram.make(from:)` unless a test replaces it.
     private let makeHistogram: @Sendable (CGImage) async -> PictureHistogram?
     /// The name of a look to apply, unsaved, once the photo has loaded (`-editorLook` for screenshots); nil for a tap.
@@ -61,9 +61,14 @@ import OSLog
     var isErasing = false
     /// The brush's radius as a fraction of the picture's shorter side, 0.01...0.15.
     var brushRadius: Double { 0.01 + (min(max(brushSize, 1), 100) - 1) / 99 * 0.14 }
-    /// The mask the Masks group shows; never saved, so an edit opens with none chosen.
+    /// The mask the Masks group shows; never saved. An edit opens with its last mask chosen, as does an undo or redo that
+    /// leaves none chosen.
     var selectedMaskID: UUID? {
-        didSet { if selectedMaskID != oldValue { requestMaskOverlay() } }
+        didSet {
+            guard selectedMaskID != oldValue else { return }
+            endStroke()
+            requestMaskOverlay()
+        }
     }
     /// Whether the selected mask is tinted red on the picture while the Masks group is open.
     var isShowingMaskOverlay = true {
@@ -107,6 +112,8 @@ import OSLog
     private var hasRecordedStroke = false
     private var strokeBuilder: BrushStrokeBuilder?
     private var strokeMaskID: UUID?
+    /// Where the open stroke sits in its mask's strokes, recorded by `beginStroke`.
+    private var strokeIndex = 0
     private let now: @Sendable () -> Date
     private var proxy: CIImage?
     private var subject: CIImage?
@@ -134,7 +141,7 @@ import OSLog
     init(item: LibraryItem, edits: EditStore, looks: LookStore, group: EditorGroup = .light, renderer: LookRenderer = .shared,
          exporter: PhotoExporter = .appDefault(), renderPreview: (@Sendable (CIImage, PhotoEdit, CIImage?) async -> CGImage?)? = nil,
          makeHistogram: (@Sendable (CGImage) async -> PictureHistogram?)? = nil, launchLook: String? = nil,
-         findSubject: (@Sendable (CIImage) async -> CIImage?)? = nil, now: (@Sendable () -> Date)? = nil) {
+         findSubject: (@Sendable (CIImage) async -> SubjectSearch)? = nil, now: (@Sendable () -> Date)? = nil) {
         self.now = now ?? { Date() }
         self.item = item
         self.edits = edits
@@ -152,6 +159,7 @@ import OSLog
     var currentEdit: PhotoEdit { PhotoEdit(adjustments: adjustments, lookName: lookName, masks: masks) }
 
     private func restore(_ edit: PhotoEdit) {
+        closeStroke()
         isRestoring = true
         defer { isRestoring = false }
         adjustments = edit.adjustments
@@ -174,10 +182,12 @@ import OSLog
     var canRedo: Bool { history.canRedo }
 
     func undo() {
+        closeStroke()
         if let previous = history.undo(from: currentEdit) { restore(previous) }
     }
 
     func redo() {
+        closeStroke()
         if let next = history.redo(from: currentEdit) { restore(next) }
     }
 
@@ -400,6 +410,7 @@ extension EditorModel {
     /// Adds a mask of `kind` with its default shape and no adjustments, and selects it. One undo step.
     func addMask(_ kind: MaskKind) {
         let mask = LocalMask(shape: kind.defaultShape)
+        endStroke()
         history.breakStep()
         masks.append(mask)
         selectedMaskID = mask.id
@@ -409,9 +420,17 @@ extension EditorModel {
     /// Removes the selected mask and selects the one before it, or none. One undo step.
     func deleteSelectedMask() {
         guard let index = masks.firstIndex(where: { $0.id == selectedMaskID }) else { return }
+        endStroke()
         history.breakStep()
         masks.remove(at: index)
         selectedMaskID = masks.indices.contains(index - 1) ? masks[index - 1].id : masks.first?.id
+        history.breakStep()
+    }
+
+    /// Flips the selected mask's Invert as a step of its own, so it never merges into a slider move just before or after it.
+    func toggleSelectedMaskInverted() {
+        history.breakStep()
+        updateSelectedMask { $0.isInverted.toggle() }
         history.breakStep()
     }
 
@@ -439,6 +458,7 @@ extension EditorModel {
         strokeBuilder = builder
         strokeMaskID = mask.id
         let stroke = builder.stroke
+        if case let .brush(strokes) = mask.shape { strokeIndex = strokes.count }
         writeStroke { (strokes: inout [BrushStroke]) in strokes.append(stroke) }
     }
 
@@ -446,22 +466,33 @@ extension EditorModel {
         guard isStroking, var builder = strokeBuilder, builder.add(point, pressure: pressure) else { return }
         strokeBuilder = builder
         let stroke = builder.stroke
+        let at = strokeIndex
         writeStroke { (strokes: inout [BrushStroke]) in
-            if strokes.isEmpty { strokes.append(stroke) } else { strokes[strokes.count - 1] = stroke }
+            if at == strokes.count { strokes.append(stroke) } else { strokes[at] = stroke }
         }
     }
 
     func endStroke() {
         guard isStroking else { return }
-        isStroking = false
-        strokeBuilder = nil
-        strokeMaskID = nil
+        closeStroke()
         history.breakStep()
     }
 
-    /// One write to `masks` per sample, so the picture renders once per sample.
+    /// Drops the open stroke's state without touching the history, for an undo, redo or restore that replaces the edit.
+    private func closeStroke() {
+        isStroking = false
+        strokeBuilder = nil
+        strokeMaskID = nil
+    }
+
+    /// One write to `masks` per sample, so the picture renders once per sample. The stroke goes back to the index `beginStroke`
+    /// recorded; when its mask or that place no longer exists the stroke ends and nothing is written.
     private func writeStroke(_ change: (inout [BrushStroke]) -> Void) {
-        guard let index = masks.firstIndex(where: { $0.id == strokeMaskID }), case var .brush(strokes) = masks[index].shape else { return }
+        guard let index = masks.firstIndex(where: { $0.id == strokeMaskID }), case var .brush(strokes) = masks[index].shape,
+              strokeIndex <= strokes.count else {
+            closeStroke()
+            return
+        }
         change(&strokes)
         var edited = masks
         edited[index].shape = .brush(strokes: strokes)
@@ -487,7 +518,8 @@ extension EditorModel {
     /// Saves the current values as a new look, which the edit then names as its look.
     func saveAsLook(named name: String) throws(LookStoreError) -> Look {
         let look = try lookStore.save(name: name, adjustments: adjustments)
-        // Naming the edit changes no picture, so it is not an undo step.
+        // Naming the edit changes no picture, so it is not an undo step, but it does end the redo steps.
+        history.clearRedo()
         isRestoring = true
         lookName = look.name
         isRestoring = false
@@ -642,21 +674,36 @@ extension EditorModel {
 
 /// Where the search for the photo's subject stands.
 nonisolated enum SubjectState: Equatable, Sendable {
-    case notNeeded, finding, found, notFound
+    case notNeeded, finding, found, notFound, failed
 }
 
 extension EditorModel {
+    /// Ends the search for the subject, for when the editor closes; whatever Vision returns is then dropped.
+    func cancelSubjectSearch() {
+        subjectTask?.cancel()
+    }
+
     /// Looks for the subject on the proxy, off the main actor, the first time any subject mask exists. Once per open: a photo
     /// where nothing was found is not searched again. A found subject brings the preview and the overlay up to date.
     fileprivate func requestSubject() {
         guard subjectState == .notNeeded, let proxy, masks.contains(where: { $0.shape.kind == .subject }) else { return }
         subjectState = .finding
         let find = findSubject
-        subjectTask = Task {
-            let found = await find(proxy)
-            subject = found
-            subjectState = found == nil ? .notFound : .found
-            guard found != nil else { return }
+        // Weak, so a search still running in Vision does not keep the model alive after the editor closes.
+        subjectTask = Task { [weak self] in
+            let search = await find(proxy)
+            guard !Task.isCancelled, let self else { return }
+            switch search {
+            case .found(let mask):
+                subject = mask
+                subjectState = .found
+            case .notFound:
+                subjectState = .notFound
+                return
+            case .failed:
+                subjectState = .failed
+                return
+            }
             requestRender()
             requestMaskOverlay()
         }

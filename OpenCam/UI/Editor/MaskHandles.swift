@@ -7,6 +7,9 @@ struct MaskHandles: View {
 
     private static let space = "maskHandles"
 
+    /// The radius the size handle's drag started from, less what the first touch measured; nil between drags.
+    @State private var radiusGrabOffset: Double?
+
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
@@ -73,11 +76,16 @@ struct MaskHandles: View {
             }
         }
         // On the right of the circle, held inside the picture so a large circle's handle can still be reached.
-        MaskHandle(position: CGPoint(x: min(max(middle.x + outer, 0), size.width), y: middle.y), label: "Mask size", space: Self.space) { location in
+        MaskHandle(position: CGPoint(x: min(max(middle.x + outer, 0), size.width), y: middle.y), label: "Mask size", space: Self.space,
+                   onEnd: { radiusGrabOffset = nil }) { location in
             let point = MaskGeometry.point(location, in: size)
+            // A circle past the picture has its handle held on the edge; the first touch keeps the offset so it does not shrink.
+            let grab = radiusGrabOffset ?? MaskGeometry.radiusGrabOffset(trueRadius: radius, centre: centre, touch: point, in: size)
+            radiusGrabOffset = grab
             model.updateSelectedMask { mask in
                 if case let .radial(centre, _, feather) = mask.shape {
-                    mask.shape = .radial(centre: centre, radius: max(MaskGeometry.radius(from: centre, to: point, in: size), 0.01), feather: feather)
+                    let dragged = MaskGeometry.radius(dragging: point, from: centre, grabOffset: grab, in: size)
+                    mask.shape = .radial(centre: centre, radius: max(dragged, 0.01), feather: feather)
                 }
             }
         }
@@ -112,6 +120,7 @@ private struct MaskHandle: View {
     let position: CGPoint
     let label: String
     let space: String
+    var onEnd: () -> Void = {}
     let onMove: (CGPoint) -> Void
 
     @State private var grab: CGSize?
@@ -135,7 +144,10 @@ private struct MaskHandle: View {
                     grab = offset
                     onMove(CGPoint(x: value.location.x + offset.width, y: value.location.y + offset.height))
                 }
-                .onEnded { _ in grab = nil }
+                .onEnded { _ in
+                    grab = nil
+                    onEnd()
+                }
         )
         .position(position)
         .accessibilityLabel(label)

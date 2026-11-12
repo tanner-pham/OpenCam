@@ -10,6 +10,9 @@ nonisolated enum Theme {
 
     enum Size {
         static let minTarget: CGFloat = 44
+        /// The label height that makes a bordered or bordered-prominent button `minTarget` tall: those styles add about 6.5 pt
+        /// above and below the label (measured, iOS 27.2).
+        static let borderedLabel: CGFloat = minTarget - 13
         static let topBar: CGFloat = 56
         static let captureButton: CGFloat = 40
         static let histogramWidth: CGFloat = 64

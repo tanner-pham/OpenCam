@@ -38,6 +38,7 @@ struct EditorView: View {
             .alert(model.alertMessage ?? "", isPresented: Binding(get: { model.alertMessage != nil }, set: { if !$0 { model.alertMessage = nil } })) {
                 Button("OK") {}
             }
+            .onDisappear(perform: model.cancelSubjectSearch)
             .task {
                 guard model.phase == .loading else { return }
                 await model.load()

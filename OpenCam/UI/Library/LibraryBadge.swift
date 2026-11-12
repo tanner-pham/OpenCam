@@ -7,6 +7,7 @@ struct LibraryBadge<Content: View>: View {
     var body: some View {
         content
             .font(.caption)
+            .lineLimit(1)
             .padding(.horizontal, Theme.Space.s)
             .padding(.vertical, Theme.Space.xs)
             .glassEffect(.regular, in: .capsule)

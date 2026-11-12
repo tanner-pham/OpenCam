@@ -18,4 +18,16 @@ nonisolated enum MaskGeometry {
         guard short > 0 else { return 0 }
         return hypot((point.x - centre.x) * size.width, (point.y - centre.y) * size.height) / short
     }
+
+    /// How far a radial mask's true radius is from the radius a touch measures, taken when a drag of its size handle starts.
+    /// A circle larger than the picture has its handle held on the picture's edge, so the first touch measures less than the
+    /// true radius; adding this offset to every later touch keeps the circle from shrinking to the edge.
+    static func radiusGrabOffset(trueRadius: Double, centre: MaskPoint, touch: MaskPoint, in size: CGSize) -> Double {
+        trueRadius - radius(from: centre, to: touch, in: size)
+    }
+
+    /// The radius for a size-handle drag at `touch`, keeping the offset taken at the start of the drag.
+    static func radius(dragging touch: MaskPoint, from centre: MaskPoint, grabOffset: Double, in size: CGSize) -> Double {
+        radius(from: centre, to: touch, in: size) + grabOffset
+    }
 }

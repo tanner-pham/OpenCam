@@ -203,6 +203,25 @@ import Testing
         let look = try model.saveAsLook(named: "Mine")
         #expect(look.adjustments == model.adjustments); #expect(look.adjustments.exposure == 1); #expect(model.masks.count == 1)
     }
+    @Test func invertRightAfterASliderMoveIsItsOwnStep() async throws {
+        let clock = TestClock()
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })
+        model.addMask(.linear); clock.advance(0.1)
+        model.updateSelectedMask { $0.adjustments[.exposure] = 1 }; clock.advance(0.1)
+        model.toggleSelectedMaskInverted()
+        #expect(model.selectedMask?.isInverted == true)
+        model.undo()
+        #expect(model.selectedMask?.isInverted == false); #expect(model.selectedMask?.adjustments[.exposure] == 1)
+        model.undo(); #expect(model.selectedMask?.adjustments[.exposure] == 0)
+    }
+    @Test func savingALookClearsRedo() async throws {
+        let clock = TestClock()
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })
+        model.adjustments.exposure = 1; clock.advance(1)
+        model.undo(); #expect(model.canRedo)
+        _ = try model.saveAsLook(named: "Mine")
+        #expect(!model.canRedo); #expect(model.canUndo == false)
+    }
     @Test func deletingAMaskIsOneUndoStep() async throws {
         let clock = TestClock()
         let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })
@@ -244,6 +263,30 @@ import Testing
         guard case let .brush(strokes)? = model.selectedMask?.shape else { Issue.record("not a brush"); return }
         #expect(strokes.count == 1); #expect(!strokes[0].isErasing)
     }
+    @Test func undoDuringAStrokeEndsItAndKeepsEarlierStrokes() async throws {
+        let clock = TestClock()
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })
+        model.addMask(.brush); clock.advance(0.1)
+        model.beginStroke(at: MaskPoint(x: 0.2, y: 0.2), pressure: nil)
+        model.continueStroke(at: MaskPoint(x: 0.4, y: 0.2), pressure: nil); model.endStroke(); clock.advance(0.1)
+        guard case let .brush(strokeA)? = model.selectedMask?.shape else { Issue.record("not a brush"); return }
+        model.beginStroke(at: MaskPoint(x: 0.2, y: 0.8), pressure: nil)
+        model.continueStroke(at: MaskPoint(x: 0.4, y: 0.8), pressure: nil)
+        model.undo()
+        model.continueStroke(at: MaskPoint(x: 0.9, y: 0.8), pressure: nil)
+        guard case let .brush(strokes)? = model.selectedMask?.shape else { Issue.record("not a brush"); return }
+        #expect(strokes == strokeA); #expect(strokes.count == 1)
+    }
+    @Test func deletingTheMaskDuringAStrokeEndsIt() async throws {
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300)
+        model.addMask(.brush)
+        model.beginStroke(at: MaskPoint(x: 0.2, y: 0.2), pressure: nil)
+        model.deleteSelectedMask()
+        model.addMask(.brush)
+        model.beginStroke(at: MaskPoint(x: 0.5, y: 0.5), pressure: nil)   // ignored if the first stroke were still open
+        guard case let .brush(strokes)? = model.selectedMask?.shape else { Issue.record("not a brush"); return }
+        #expect(strokes.count == 1)
+    }
     @Test func paintingNeedsABrushMaskSelected() async throws {
         let (model, _, _) = try await EditorFixture.make(width: 400, height: 300)
         model.addMask(.linear)
@@ -263,7 +306,7 @@ import Testing
     // MARK: Subject masks
 
     private func pixel(_ image: CGImage, x: Int, y: Int) throws -> Float { try PixelReader.rgb(CIImage(cgImage: image), x: x, y: y).x }
-    private func subjectModel(find: @escaping @Sendable (CIImage) async -> CIImage?) async throws -> EditorModel {
+    private func subjectModel(find: @escaping @Sendable (CIImage) async -> SubjectSearch) async throws -> EditorModel {
         let captures = try TestFiles.directory()
         _ = try TestFiles.writeJPEG(width: 400, height: 300, rgb: SIMD3(0.5, 0.5, 0.5), to: captures.appending(path: "OC_0001.JPG"))
         let item = try #require(LibraryScanner.items(in: captures).first)
@@ -275,7 +318,7 @@ import Testing
     @Test func aSubjectMaskRendersWithTheFoundSubject() async throws {
         let model = try await subjectModel { image in
             let half = CGRect(x: image.extent.minX, y: image.extent.minY, width: image.extent.width / 2, height: image.extent.height)
-            return CIImage(color: .white).cropped(to: half).composited(over: CIImage(color: .black).cropped(to: image.extent))
+            return .found(CIImage(color: .white).cropped(to: half).composited(over: CIImage(color: .black).cropped(to: image.extent)))
         }
         model.addMask(.subject); model.updateSelectedMask { $0.adjustments[.exposure] = 1.5 }
         await model.waitForSubject()
@@ -285,7 +328,7 @@ import Testing
     }
 
     @Test func noSubjectFoundLeavesThePhotoUnchanged() async throws {
-        let model = try await subjectModel { _ in nil }
+        let model = try await subjectModel { _ in .notFound }
         let before = try pixel(try #require(model.preview), x: 50, y: 150)
         model.addMask(.subject); model.updateSelectedMask { $0.adjustments[.exposure] = 1.5 }
         await model.waitForSubject()
@@ -294,9 +337,29 @@ import Testing
         #expect(abs(try pixel(preview, x: 50, y: 150) - before) < 0.01); #expect(abs(try pixel(preview, x: 350, y: 150) - before) < 0.01)
     }
 
+    @Test func aFailedSubjectSearchSaysSo() async throws {
+        let model = try await subjectModel { _ in .failed }
+        let before = try pixel(try #require(model.preview), x: 50, y: 150)
+        model.addMask(.subject); model.updateSelectedMask { $0.adjustments[.exposure] = 1.5 }
+        await model.waitForSubject()
+        #expect(model.subjectState == .failed)
+        #expect(try pixel(try #require(model.preview), x: 50, y: 150) == before)
+    }
+
+    @Test func closingTheEditorCancelsTheSubjectSearch() async throws {
+        let model = try await subjectModel { image in
+            try? await Task.sleep(for: .milliseconds(200))
+            return .found(CIImage(color: .white).cropped(to: image.extent))
+        }
+        model.addMask(.subject)
+        model.cancelSubjectSearch()
+        await model.waitForSubject()
+        #expect(model.subjectState == .finding)   // the late result was dropped
+    }
+
     @Test func theSubjectIsFoundOncePerOpen() async throws {
-        let calls = Counter()
-        let model = try await subjectModel { _ in calls.increment(); return nil }
+        let calls = CallCounter()
+        let model = try await subjectModel { _ in calls.increment(); return .notFound }
         #expect(model.subjectState == .notNeeded); #expect(calls.value == 0)
         model.addMask(.subject); model.addMask(.subject)
         await model.waitForSubject()
@@ -309,20 +372,13 @@ import Testing
         let captures = try TestFiles.directory()
         _ = try TestFiles.writeJPEG(width: 400, height: 300, rgb: SIMD3(0.5, 0.5, 0.5), to: captures.appending(path: "OC_0001.JPG"))
         try EditStore(directory: captures).save(PhotoEdit(masks: [LocalMask(shape: .subject)]), stem: "OC_0001")
-        let calls = Counter()
+        let calls = CallCounter()
         let item = try #require(LibraryScanner.items(in: captures).first)
         let model = EditorModel(item: item, edits: EditStore(directory: captures), looks: try LookStore(directory: TestFiles.directory()),
-                                findSubject: { _ in calls.increment(); return nil })
+                                findSubject: { _ in calls.increment(); return .notFound })
         await model.load(); await model.waitForSubject()
         #expect(calls.value == 1); #expect(model.subjectState == .notFound)
     }
-}
-
-nonisolated final class Counter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var count = 0
-    var value: Int { lock.withLock { count } }
-    func increment() { lock.withLock { count += 1 } }
 }
 
 nonisolated final class TestClock: @unchecked Sendable {

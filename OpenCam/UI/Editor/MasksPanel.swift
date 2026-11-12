@@ -9,30 +9,35 @@ struct MasksPanel: View {
     var body: some View {
         ScrollView {
             VStack(spacing: Self.rowGap) {
+                // The masks scroll to the panel's edge, as the groups above do, so the row pads only its leading side.
                 topRow
-                if model.masks.isEmpty {
-                    Text("Add a mask to change one part of the photo.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    actions
-                    if model.selectedMask?.shape.kind == .subject { subjectNote }
-                    if case let .radial(_, _, feather)? = model.selectedMask?.shape { featherSlider(feather) }
-                    if model.selectedMask?.shape.kind == .brush { brushControls }
-                    ForEach(LocalMask.keys, id: \.self) { key in
-                        AdjustmentSlider(key: key, value: sliderBinding(key)) { model.updateSelectedMask { $0.adjustments[key] = 0 } }
+                    .padding(.leading, Theme.Space.l)
+                VStack(spacing: Self.rowGap) {
+                    if model.masks.isEmpty {
+                        Text("Add a mask to change one part of the photo.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        actions
+                        if model.selectedMask?.shape.kind == .subject { subjectNote }
+                        if case let .radial(_, _, feather)? = model.selectedMask?.shape { featherSlider(feather) }
+                        if model.selectedMask?.shape.kind == .brush { brushControls }
+                        ForEach(LocalMask.keys, id: \.self) { key in
+                            AdjustmentSlider(key: key, value: sliderBinding(key)) { model.updateSelectedMask { $0.adjustments[key] = 0 } }
+                        }
                     }
                 }
+                .padding(.horizontal, Theme.Space.l)
             }
-            .padding(.horizontal, Theme.Space.l)
             .padding(.top, Theme.Space.m)
             .padding(.bottom, Theme.Space.l)
         }
         .scrollBounceBehavior(.basedOnSize)
     }
 
-    /// The Add menu and, once a mask exists, the masks by position in the rest of the row.
+    /// The Add menu and, once a mask exists, the masks by position in the rest of the row, the first as far from the menu as the
+    /// masks are from each other.
     private var topRow: some View {
         HStack(spacing: Theme.Space.s) {
             addMenu
@@ -48,15 +53,12 @@ struct MasksPanel: View {
             }
         } label: {
             Label("Add", systemImage: "plus")
-                .frame(minHeight: Theme.Size.minTarget - Self.borderedInset)
+                .frame(minHeight: Theme.Size.borderedLabel)
         }
         .buttonStyle(.bordered)
         .fixedSize()
         .accessibilityLabel("Add mask")
     }
-
-    /// The bordered styles add about 6.5 pt above and below the label (measured, as in `ScrollingPicker`).
-    private static let borderedInset: CGFloat = 13
 
     /// The masks by position, bound through the selected id (the picker's selection is not optional).
     private var maskRow: some View {
@@ -64,7 +66,7 @@ struct MasksPanel: View {
             get: { model.selectedMaskID ?? model.masks.first?.id ?? UUID() },
             set: { model.selectedMaskID = $0 }
         )
-        return ScrollingPicker(title: "Mask", selection: selection, options: model.masks.map(\.id), label: title(of:))
+        return ScrollingPicker(title: "Mask", selection: selection, options: model.masks.map(\.id), leadingInset: 0, label: title(of:))
     }
 
     private func title(of id: UUID) -> String {
@@ -72,20 +74,36 @@ struct MasksPanel: View {
         return "\(model.masks[index].shape.kind.title) \(index + 1)"
     }
 
+    /// Invert, Show mask and Delete in one row while their titles fit it at full size, each button its title's width plus an even
+    /// share of the rest; otherwise (the largest text sizes) one above another, each the panel's width. No title is shrunk, cut
+    /// or broken.
     private var actions: some View {
-        HStack(spacing: Theme.Space.s) {
-            toggleButton("Invert", isOn: model.selectedMask?.isInverted ?? false) { model.updateSelectedMask { $0.isInverted.toggle() } }
-            toggleButton("Show mask", isOn: model.isShowingMaskOverlay) { model.isShowingMaskOverlay.toggle() }
-            Button(role: .destructive) { model.deleteSelectedMask() } label: {
-                Text("Delete")
-                    .font(.subheadline)
-                    .frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget - Self.borderedInset)
-            }
-            .buttonStyle(.bordered)
-            .tint(.red)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: Theme.Space.s) { actionButtons }
+            VStack(spacing: Theme.Space.s) { actionButtons }
         }
         // The first slider's reset target reaches up over the gap above its name row; the padding keeps it off the buttons.
         .padding(.bottom, AdjustmentSlider.reachUp - Self.rowGap)
+    }
+
+    @ViewBuilder
+    private var actionButtons: some View {
+        toggleButton("Invert", isOn: model.selectedMask?.isInverted ?? false) { model.toggleSelectedMaskInverted() }
+        toggleButton("Show mask", isOn: model.isShowingMaskOverlay) { model.isShowingMaskOverlay.toggle() }
+        Button(role: .destructive) { model.deleteSelectedMask() } label: {
+            actionLabel("Delete")
+        }
+        .buttonStyle(.bordered)
+        .tint(.red)
+    }
+
+    /// The title on one line at its full width, which the button never goes below; the button grows from there to share the row.
+    private func actionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline)
+            .lineLimit(1)
+            .fixedSize()
+            .frame(maxWidth: .infinity, minHeight: Theme.Size.borderedLabel)
     }
 
     /// What the search for the subject is doing, while it has nothing to show.
@@ -94,6 +112,7 @@ struct MasksPanel: View {
         switch model.subjectState {
         case .finding: note("Finding the subject…")
         case .notFound: note("No subject was found in this photo.")
+        case .failed: note("Subject masks are not available on this device.")
         case .notNeeded, .found: EmptyView()
         }
     }
@@ -108,12 +127,8 @@ struct MasksPanel: View {
     /// Filled in the accent with dark text when on, the faint neutral fill when off, as the picker's buttons are.
     private func toggleButton(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title)
-                .font(.subheadline)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+            actionLabel(title)
                 .foregroundStyle(isOn ? Color.black : Color.primary)
-                .frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget - Self.borderedInset)
         }
         .buttonStyle(.borderedProminent)
         .tint(isOn ? Theme.accent : Color.primary.opacity(0.18))
