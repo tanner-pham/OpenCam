@@ -866,6 +866,18 @@ Pass when the stand-in is visibly matte, cooler in the shadows and warmer in the
 - [ ] By hand, folded, from a fresh install: open a photo; Curve: lift the black point and add an S; Mix: darken Blue luminance; Grading: cool the shadows; Done, reopen, all as left; "Save as look" "Test"; pick "Test" in the camera's Look row: the stand-in shows it; Reset all returns the original.
 - [ ] **On the device** (Tanner): a look made with all three tools looks the same in the viewfinder, a captured HEIF and the editor; on a 48 MP photo the curve points, wheel pucks and mixer sliders keep up with the finger; the curve and wheels work with Apple Pencil; the RAW, RAW + HEIF badges and the lens line are right for real captures and real DNGs.
 
+## Deviations ruled during the build (2026-11-11/12)
+
+What was built differs from the text above in these places; each was a controller ruling, recorded with its reason in the PR.
+
+- **Photo info** opens a full-height sheet with "Done", not a popover: a popover opens below the info line and the folded display leaves it about 250 pt, too little for the title and seven rows (checked by tapping). The ISO row's value is "100" (the summary keeps "ISO 100"). Shutter below 1 s prints "1/n s" only when 1/t is within 5% of a whole n ≥ 2, else one decimal ("0.8 s"). Exif facts outside sane ranges are dropped.
+- **Group picker** is a sideways-scrolling row of system buttons, not a segmented control: inside a scroll view a segmented control takes every drag that starts on it, so the last groups could not be reached on the folded display. Nothing of it draws past the panel edge into the system strip.
+- **Panel heights**: stacked, Curve, Mix and Grading keep 340 pt (Mix added: at 240 pt only 1.5 sliders showed).
+- **Curve canvas**: about 223 pt folded portrait and 233 pt folded landscape (height-limited), not 230 and 288; 288 is the open-display expectation.
+- **Grading wheels**: at the plan's sizes the triangle and its sliders need about 470 pt and the panel has about 290, so Shadows and Highlights are whole after one scroll, not at rest. Each readout sits next to its own title.
+- **Table cost**: mixer and grading values are held as derived lanes in `Adjustments` (not encoded) so stages 8 and 9 read no dictionary per lattice point; stage 8 mixes and stage 9 grades the clamped colour. Debug Simulator table build: about 50 ms for an E1 look, about 140 ms for "Colour study".
+- **Colour study** reads punchier rather than matte in the viewfinder: its mixer saturation boosts outweigh its black lift.
+
 ## Later work (not in this plan)
 
 - RAW development from DNG (white balance and exposure in the RAW filter): needs DNG files from the phone to build and check against; the Simulator cannot write one.
