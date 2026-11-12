@@ -20,5 +20,13 @@ import Testing
         #expect(LaunchConfig.parse(["app", "-cameraLook", "Warm fade"]).isScripted)   // the flag alone makes the launch scripted
         #expect(LaunchConfig.parse(["app"]).cameraLookName == nil)
     }
+    @Test func parsesControlFlag() {
+        let c = LaunchConfig.parse(["app", "-control", "wb"])
+        #expect(c.openControl == .temperature); #expect(c.isScripted)
+        #expect(LaunchConfig.parse(["app", "-control", "shutter"]).openControl == .shutter)
+        #expect(LaunchConfig.parse(["app", "-control", "ev"]).openControl == .bias)
+        #expect(LaunchConfig.parse(["app", "-control", "aperture"]) == LaunchConfig())
+        #expect(LaunchConfig.parse(["app"]).openControl == nil)
+    }
     @Test func unknownValuesFallBack() { #expect(LaunchConfig.parse(["app", "-mode", "cinema", "-screen", "monitor"]) == LaunchConfig()) }
 }

@@ -46,6 +46,22 @@ final class CameraModel {
     var isScanningFormats = false
     /// The camera's live values, polled while the session runs; shown only through `shownReadouts`.
     private(set) var readouts = LiveReadouts()
+    /// What the user has set by hand; automatic at launch and never saved.
+    var manual = ManualSettings.automatic
+    /// The control whose slider is open. Apart from `manual` so the strip's modifier does not re-run on every drag step.
+    var openControl: ManualControl?
+    /// What the current camera allows by hand, as the session last said; nil when it cannot be adjusted now. The Simulator's are simulated.
+    var manualRanges: ManualRanges?
+    /// Sends `manual` to the session one at a time; a newer snapshot replaces the one waiting.
+    @ObservationIgnored var manualApplies = RenderCoalescer<ManualSettings>()
+    /// The task running the applies, until the last waiting snapshot has been sent.
+    @ObservationIgnored var manualApplyTask: Task<Void, Never>?
+    /// What the session last said it set, which a failed apply returns to.
+    @ObservationIgnored var appliedManual = ManualSettings.automatic
+    /// Bumped when the camera changes, so an apply that began earlier changes nothing on return.
+    @ObservationIgnored var manualGeneration = 0
+    /// True when the next apply must set every group, not only those that changed.
+    @ObservationIgnored var reappliesAllManual = false
     /// The latest format sweep, kept after it ends so its result stays on screen.
     var sweep: FormatSweep?
     /// The saved looks, read at launch and whenever the Library closes.
@@ -214,6 +230,11 @@ final class CameraModel {
         // A look the launch mode cannot take is None, with no notice.
         if !isLookOffered { self.cameraLook = nil }
         if isSimulator { simulate(config.simulatedState) }
+        if isSimulator, hasCamera {
+            readouts = SimulatedCamera.readouts(mode: mode, frameRate: record.frameRate)
+            manualRanges = SimulatedCamera.ranges(mode: mode, frameRate: record.frameRate)
+            if let control = config.openControl, scale(for: control) != nil { openControl = control }
+        }
         if isSimulator { simulatedConfiguration = sessionConfiguration }
         launchTimeline.mark("model")
     }
@@ -295,14 +316,15 @@ final class CameraModel {
     /// The timecode counts frames at the rate the FPS readout shows, 30 when none is shown.
     var timecodeFrameRate: Int { shownVideoOption?.frameRate ?? 30 }
 
-    /// Live values only while the camera is ready; otherwise (Simulator, scanning, no camera) every readout reads `--`.
-    var shownReadouts: LiveReadouts { phase == .ready ? readouts : LiveReadouts() }
-    var shutterText: String { ReadoutFormatter.shutter(shownReadouts.shutterSeconds) }
-    var isoText: String { ReadoutFormatter.iso(shownReadouts.iso) }
-    var whiteBalanceText: String { ReadoutFormatter.kelvin(shownReadouts.kelvin) }
-    var tintText: String { ReadoutFormatter.tint(shownReadouts.tint) }
-    var exposureBiasText: String { ReadoutFormatter.bias(shownReadouts.exposureBias) }
-    var focusText: String { ReadoutFormatter.focus(shownReadouts.lensPosition) }
+    /// Live values while there is a camera (the Simulator's are simulated); otherwise every readout reads `--`.
+    var shownReadouts: LiveReadouts { hasCamera ? readouts : LiveReadouts() }
+    // Kept until the views read `readout(for:)` (the readout buttons task).
+    var shutterText: String { readoutText(for: .shutter) }
+    var isoText: String { readoutText(for: .iso) }
+    var whiteBalanceText: String { readoutText(for: .temperature) }
+    var tintText: String { readoutText(for: .tint) }
+    var exposureBiasText: String { readoutText(for: .bias) }
+    var focusText: String { readoutText(for: .focus) }
 
     private var minutesRemaining: Int {
         currentVideoOption.map { DataRateEstimator.minutesRemaining(freeBytes: freeBytes, option: $0) } ?? 0
@@ -824,14 +846,32 @@ extension CameraModel {
     /// and reports nothing while stopped.
     private func pollReadouts(of session: CameraSession) async {
         while !Task.isCancelled {
-            let latest = phase == .ready ? await session.currentReadouts() : LiveReadouts()
-            if latest != readouts { readouts = latest }
+            await refreshReadouts(from: session)
             do {
                 try await Task.sleep(for: .milliseconds(250))
             } catch {
                 return
             }
         }
+    }
+
+    /// One poll: the readouts, then what the camera allows by hand. The ranges stay nil while a configure is pending, since
+    /// the session may still hold the camera before it; the open control closes when it loses its scale.
+    func refreshReadouts(from configurator: any SessionConfigurator) async {
+        guard phase == .ready else {
+            if readouts != LiveReadouts() { readouts = LiveReadouts() }
+            adoptRanges(nil)
+            return
+        }
+        let latest = await configurator.currentReadouts()
+        let ranges = await configurator.manualRanges()
+        if latest != readouts { readouts = latest }
+        adoptRanges(isConfigurePending ? nil : ranges)
+    }
+
+    /// The open slider's thumb crossed a detent; `feedback` is `private(set)`, so the count is made here.
+    func controlStepped() {
+        feedback.controlSteps += 1
     }
 
     /// A recording the user started has begun; a sweep's clip is not one.

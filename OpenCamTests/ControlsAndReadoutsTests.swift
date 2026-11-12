@@ -31,7 +31,10 @@ import Testing
     @MainActor @Test func withoutACameraReadoutsReadPlaceholdersAndPressesDoNothing() throws {
         let model = CameraModel(config: .parse(["app", "-mode", "video"]), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
         #expect(model.frameRateText == "30")
-        #expect([model.shutterText, model.isoText, model.whiteBalanceText, model.tintText, model.exposureBiasText, model.focusText] == Array(repeating: "--", count: 6))
+        // The Simulator shows simulated values; only a launch with no camera reads placeholders.
+        #expect([model.shutterText, model.isoText, model.whiteBalanceText, model.tintText, model.exposureBiasText, model.focusText].allSatisfy { $0 != "--" })
+        let scanning = CameraModel(config: .parse(["app", "-state", "scanning"]), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
+        #expect([scanning.shutterText, scanning.isoText, scanning.whiteBalanceText, scanning.tintText, scanning.exposureBiasText, scanning.focusText] == Array(repeating: "--", count: 6))
         model.handleCaptureEvent(phase: .ended)
         #expect(!model.isRecording)
     }

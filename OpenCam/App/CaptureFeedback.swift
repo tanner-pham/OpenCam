@@ -6,4 +6,5 @@ nonisolated struct CaptureFeedback: Sendable, Equatable {
     var photosTaken = 0        // a photo request was made (not: the press was refused)
     var recordingsStarted = 0  // a recording actually began
     var recordingsStopped = 0  // a recording ended, for any reason
+    var controlSteps = 0       // the open manual slider's thumb crossed a detent
 }
