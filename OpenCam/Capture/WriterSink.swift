@@ -33,6 +33,11 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
         case finishing
     }
 
+    /// Says that one writer's completion handler has run.
+    private nonisolated final class Completion: Sendable {
+        let isDone = Mutex(false)
+    }
+
     /// Counts clips, so a finish reported late for an earlier clip is not taken for the current one.
     private nonisolated final class Generation: Sendable {
         let value = Mutex(0)
@@ -54,6 +59,12 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
     private var frameDuration = CMTime(value: 1, timescale: 30)
     private var state: WriterClipState?
     private var errorText: String?
+    private var completion = Completion()
+    /// Writers whose clip was reported as timed out before their completion handler ran. They stay alive until it has, and their
+    /// file is not read before then.
+    private var lingering: [(writer: AVAssetWriter, completion: Completion)] = []
+    /// Why the sound input was left out of the clip just opened (the writer refused its settings); nil when it was added or not asked for.
+    private(set) var soundRefusal: String?
     private var recommendedVideo: [String: Any]?
     private var recommendedAudio: [String: Any]?
 
@@ -96,6 +107,8 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
     @available(iOS, deprecated: 27.0, message: "Uses the writer calls iOS 27 deprecates on purpose; see the type's comment")
     func open(_ plan: WriterClipPlan, recordsSound: Bool) throws(RecordingError) {
         guard phase == .idle else { throw .alreadyRecording }
+        lingering.removeAll { $0.completion.isDone.withLock { $0 } }
+        soundRefusal = nil
         let recommendedVideo = recommendedVideo, recommendedAudio = recommendedAudio
         self.recommendedVideo = nil
         self.recommendedAudio = nil
@@ -120,12 +133,19 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
         var audio: AVAssetWriterInput?
         if recordsSound {
             let settings = recommendedAudio ?? Self.fallbackAudioSettings
-            guard writer.canApply(outputSettings: settings, forMediaType: .audio) else { throw refusal("the writer refused the sound settings") }
-            let input = AVAssetWriterInput(mediaType: .audio, outputSettings: settings)
-            input.expectsMediaDataInRealTime = true
-            guard writer.canAdd(input) else { throw refusal("the writer cannot take the sound input") }
-            writer.add(input)
-            audio = input
+            // Sound the writer will not take never fails the recording: the clip is made without it and the caller says so.
+            if !writer.canApply(outputSettings: settings, forMediaType: .audio) {
+                soundRefusal = "[WriterSink:open] The writer refused the sound settings — {codec: \(plan.codecType)}"
+            } else {
+                let input = AVAssetWriterInput(mediaType: .audio, outputSettings: settings)
+                input.expectsMediaDataInRealTime = true
+                if writer.canAdd(input) {
+                    writer.add(input)
+                    audio = input
+                } else {
+                    soundRefusal = "[WriterSink:open] The writer cannot take the sound input — {codec: \(plan.codecType)}"
+                }
+            }
         }
         do {
             try writer.start()
@@ -236,6 +256,8 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
             Self.logger.error("\(failure, privacy: .public)")
             text = [text, failure].compactMap { $0 }.joined(separator: " ")
         }
+        lingering.removeAll { $0.completion.isDone.withLock { $0 } }
+        if timedOut, let writer, !completion.isDone.withLock({ $0 }) { lingering.append((writer, completion)) }
         let report = WriterReport(end: timedOut ? .timedOut : end, facts: state.facts, hasFrames: state.facts.framesWritten > 0, errorText: text)
         phase = .idle
         self.state = nil
@@ -248,6 +270,12 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
 
     /// True from `open` until the report is taken.
     var isInFlight: Bool { phase != .idle }
+
+    /// True once the clip has ended and its file is being finished.
+    var isFinishing: Bool { phase == .finishing }
+
+    /// Whether the clip just opened has a sound input.
+    var hasSoundInput: Bool { audioInput != nil }
 
     // MARK: Private
 
@@ -304,7 +332,10 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
         let token = generation.value.withLock { $0 }
         let generation = generation
         let notify = onFinished
+        let done = Completion()
+        completion = done
         writer.finishWriting {
+            done.isDone.withLock { $0 = true }
             if generation.value.withLock({ $0 }) == token { notify() }
         }
     }

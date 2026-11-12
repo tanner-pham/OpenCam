@@ -33,7 +33,7 @@ import Testing
         #expect(outcome(.timedOut, isReadable: false) == .stopped(.noResult, isPlayable: false))
     }
     @Test func aWriterClipWithNoFramesFailsAndAnUnreadableFileIsNotPlayable() {
-        for end in [WriterEnd.user, .droppedFrames, .storageFull, .interrupted, .cameraStopped, .writerFailed, .timedOut] {
+        for end in [WriterEnd.droppedFrames, .storageFull, .interrupted, .cameraStopped, .writerFailed, .timedOut] {
             let none = RecordingOutcome(writerEnd: end, hasFrames: false, isReadable: false)
             guard case .failed = none else { Issue.record("\(end) with no frames gave \(none)"); continue }
             #expect(!none.isPlayable); #expect(none.notice == RecordingOutcome.failedNotice)
@@ -42,6 +42,11 @@ import Testing
         }
         #expect(RecordingOutcome(writerEnd: .storageFull, hasFrames: true, isReadable: false) == .stopped(.storageFull, isPlayable: false))
         #expect(RecordingOutcome(writerEnd: .storageFull, hasFrames: true, isReadable: false).notice == RecordingOutcome.failedNotice)
+    }
+    @Test func aStopBeforeAnyFrameIsNothingRecordedAndSaysNothing() {
+        let outcome = RecordingOutcome(writerEnd: .user, hasFrames: false, isReadable: false)
+        #expect(outcome == .nothingRecorded)
+        #expect(!outcome.isPlayable); #expect(outcome.notice == nil); #expect(outcome.summary == "nothing recorded")
     }
     @Test func theWriterNoticesSayWhatHappenedAndHaveNoEmDash() {
         #expect(RecordingOutcome.droppedFramesStopNotice == "Recording stopped. A frame was dropped. Clip saved.")

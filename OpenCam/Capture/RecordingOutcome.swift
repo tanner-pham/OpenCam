@@ -7,6 +7,8 @@ nonisolated enum RecordingOutcome: Sendable, Equatable {
     case stopped(StopReason, isPlayable: Bool)
     /// The recording could not start; carries a log message only.
     case failed(String)
+    /// Stopped before the first frame arrived: there is no clip and nothing to report.
+    case nothingRecorded
 
     static let storageFullNotice = "Recording stopped. Storage is full. Clip saved."
     static let interruptedNotice = "Recording stopped. The camera was interrupted. Clip saved."
@@ -29,6 +31,11 @@ nonisolated enum RecordingOutcome: Sendable, Equatable {
     /// saved up to its last frame. A clip whose finish never came back is the same as one the camera never reported.
     init(writerEnd: WriterEnd, hasFrames: Bool, isReadable: Bool) {
         guard hasFrames else {
+            // A stop before any frame is not a failure; any other end with no frame is.
+            if writerEnd == .user {
+                self = .nothingRecorded
+                return
+            }
             self = .failed("[RecordingOutcome:init] The writer clip has no frames — {end: \(writerEnd)}")
             return
         }
@@ -51,14 +58,14 @@ nonisolated enum RecordingOutcome: Sendable, Equatable {
         switch self {
         case .completed: true
         case .stopped(_, let isPlayable): isPlayable
-        case .failed: false
+        case .failed, .nothingRecorded: false
         }
     }
 
     /// Nil when the clip saved with nothing to report.
     var notice: String? {
         switch self {
-        case .completed: nil
+        case .completed, .nothingRecorded: nil
         case .stopped(.noResult, _): Self.incompleteNotice
         case .stopped(_, false), .failed: Self.failedNotice
         case .stopped(.storageFull, true): Self.storageFullNotice
@@ -75,6 +82,7 @@ nonisolated enum RecordingOutcome: Sendable, Equatable {
         case .completed: "completed"
         case .stopped(let reason, let isPlayable): "stopped: \(reason), \(isPlayable ? "playable" : "not playable")"
         case .failed: "failed"
+        case .nothingRecorded: "nothing recorded"
         }
     }
 

@@ -41,14 +41,17 @@ final class SinkRig {
 
     /// Opens the writer. Returns the option the clip was opened for; throws what the last attempt threw.
     @discardableResult
-    func open(policy: DropPolicy = .keepRecording, recordsSound: Bool = false, minFreeBytes: Int64 = 0) throws -> VideoOption {
+    func open(policy: DropPolicy = .keepRecording, recordsSound: Bool = false, minFreeBytes: Int64 = 0, audioSettings: [String: Any]? = nil) throws -> VideoOption {
         var lastError: RecordingError?
         for option in [Self.proResProxy(), Self.h264()] {
             let plan = WriterClipPlan.make(option: option, url: url, bufferWidth: SyntheticFrames.width, bufferHeight: SyntheticFrames.height,
                                            rotationDegrees: 0, policy: policy, minFreeBytes: minFreeBytes)
             do {
                 let opening: any WriterOpening = sink
-                try queue.sync { try opening.open(plan, recordsSound: recordsSound) }
+                try queue.sync {
+                    sink.recommend(video: nil, audio: audioSettings)
+                    try opening.open(plan, recordsSound: recordsSound)
+                }
                 codecType = plan.codecType
                 return option
             } catch let error as RecordingError {
@@ -66,6 +69,18 @@ final class SinkRig {
             let buffer = try SyntheticFrames.frame(index)
             let arrival = Duration.seconds(Double(index) / Double(SyntheticFrames.framesPerSecond))
             queue.sync { sink.receiveVideo(buffer, arrival: arrival) }
+            try await Task.sleep(for: .milliseconds(33))
+        }
+    }
+
+    /// Frame `index` then the sound that starts with it, one pair every 1/30 s, as the two outputs would interleave.
+    func deliverInterleaved(frames range: Range<Int>) async throws {
+        for index in range {
+            let frame = try SyntheticFrames.frame(index)
+            let sound = try SyntheticFrames.sound(startingAtFrame: index)
+            let arrival = Duration.seconds(Double(index) / Double(SyntheticFrames.framesPerSecond))
+            queue.sync { sink.receiveVideo(frame, arrival: arrival) }
+            queue.sync { sink.receiveAudio(sound) }
             try await Task.sleep(for: .milliseconds(33))
         }
     }

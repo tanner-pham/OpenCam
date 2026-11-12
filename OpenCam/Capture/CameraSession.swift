@@ -912,5 +912,7 @@ extension CameraSession {
 
     private func checkStorage() {
         writerRecorderStorage?.storage(freeBytes: FreeSpace.readBytes())
+        // A clip the sink ended by itself (a drop under "Stop recording", storage, a stopped writer) is waited for too.
+        if writerRecorderStorage?.isFinishing == true { armFinishTimeout() }
     }
 }

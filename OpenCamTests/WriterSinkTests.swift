@@ -81,10 +81,8 @@ import Testing
         let report = try #require(rig.takeReport())
         #expect(!report.hasFrames)
         #expect(!path.fileExists(atPath: rig.url.path(percentEncoded: false)))
-        guard case .failed = RecordingOutcome(writerEnd: report.end, hasFrames: report.hasFrames, isReadable: false) else {
-            Issue.record("A clip with no frame should be a failure")
-            return
-        }
+        // A stop before any frame is not a failure: there is simply no clip, and nothing to say.
+        #expect(RecordingOutcome(writerEnd: report.end, hasFrames: report.hasFrames, isReadable: false) == .nothingRecorded)
     }
 
     @Test func stopRecordingPolicyFinishesTheFileAtTheFirstDrop() async throws {
@@ -207,13 +205,39 @@ import Testing
         try rig.open()
         try await rig.deliver(frames: 0..<6)
         #expect(rig.end(.user))
-        let report = try #require(rig.takeReport(timedOut: true))
+        // Ended and reported inside one turn of the writer queue, so the writer's own finish can only come after the report.
+        let report = try #require(rig.queue.sync { () -> WriterReport? in
+            _ = rig.sink.end(.user)
+            return rig.sink.takeReport(timedOut: true)
+        })
         #expect(report.end == .timedOut)
         #expect(report.facts.framesWritten == 6)
-        // The file stays whatever the writer does next.
-        _ = await rig.waitForFinishes(1)
-        try await Task.sleep(for: .milliseconds(300))
+        // The late finish changed nothing: the clip was not reported again, and the sink is idle and takes a new clip.
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(rig.finished.value == 0)
+        #expect(rig.takeReport() == nil)
+        #expect(!rig.end(.user))
         #expect(path.fileExists(atPath: rig.url.path(percentEncoded: false)))
+        // The writer finished in the end, so the file reads as a clip (it was never read before).
+        let facts = try await ClipInspector.inspect(url: rig.url, requestedFrameRate: 30)
+        #expect(facts.frameCount == 6)
+    }
+
+    @Test func soundTheWriterRefusesLeavesAClipWithoutSoundNotAFailure() async throws {
+        let rig = try SinkRig()
+        try rig.open(recordsSound: true, audioSettings: [AVFormatIDKey: kAudioFormatMPEGLayer3, AVSampleRateKey: -1])
+        let refusal = rig.queue.sync { rig.sink.soundRefusal }
+        #expect(refusal?.contains("refused the sound settings") == true)
+        #expect(!rig.queue.sync { rig.sink.hasSoundInput })
+        try await rig.deliverInterleaved(frames: 0..<10)
+        #expect(rig.end(.user))
+        #expect(await rig.waitForFinishes())
+        let report = try #require(rig.takeReport())
+        #expect(report.end == .user)
+        #expect(report.facts.framesWritten == 10)
+        let facts = try await ClipInspector.inspect(url: rig.url, requestedFrameRate: 30)
+        #expect(!facts.hasAudio)
+        #expect(facts.frameCount == 10)
     }
 
     @Test func soundIsWrittenOnceVideoHasStarted() async throws {
@@ -221,8 +245,8 @@ import Testing
         try rig.open(recordsSound: true)
         // Sound before the first frame is not written and is not a drop.
         try await rig.deliverSound(frames: 0..<1)
-        try await rig.deliver(frames: 0..<30)
-        try await rig.deliverSound(frames: 0..<30)
+        // Then frames and sound interleaved, as the two outputs deliver them.
+        try await rig.deliverInterleaved(frames: 0..<30)
         #expect(rig.end(.user))
         #expect(await rig.waitForFinishes())
         let report = try #require(rig.takeReport())

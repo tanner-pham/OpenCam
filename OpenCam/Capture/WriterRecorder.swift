@@ -18,6 +18,7 @@ nonisolated final class WriterRecorder {
     private let writerQueue = DispatchSerialQueue(label: "opencam.record.writer", qos: .userInitiated)
     private let sink: WriterSink
     private let results: AsyncStream<RecordingResult>.Continuation
+    private let events: AsyncStream<SessionEvent>.Continuation
     private let shared: Shared
     /// The clip recording, until its report is collected. Actor-confined.
     private var pending: PendingRecording?
@@ -37,6 +38,7 @@ nonisolated final class WriterRecorder {
         let shared = Shared()
         self.shared = shared
         self.results = results
+        self.events = events
         sink = WriterSink(writerQueue: writerQueue, onDrops: { total in
             events.yield(.framesDropped(clip: shared.clipKey.withLock { $0 }, total: total))
         }, onFinished: onFinished)
@@ -87,11 +89,15 @@ nonisolated final class WriterRecorder {
         }
         let audio = recordsSound ? audioOutput.recommendedAudioSettingsForAssetWriter(writingTo: .mov) : nil
         shared.clipKey.withLock { $0 = CaptureStore.clipKey(for: url) }
+        var soundRefusal: String?
+        var hasSound = false
         do {
             try writerQueue.sync {
                 sink.recommend(video: video, audio: audio)
                 let opening: any WriterOpening = sink
                 try opening.open(plan, recordsSound: recordsSound)
+                soundRefusal = sink.soundRefusal
+                hasSound = sink.hasSoundInput
             }
         } catch let error as RecordingError {
             throw error
@@ -101,7 +107,9 @@ nonisolated final class WriterRecorder {
         pending = PendingRecording(url: url, option: option, recordedAt: Date(), onFinish: {})
         // Set only while a clip records.
         videoOutput.setSampleBufferDelegate(sink, queue: videoQueue)
-        if recordsSound { audioOutput.setSampleBufferDelegate(sink, queue: audioQueue) }
+        if hasSound { audioOutput.setSampleBufferDelegate(sink, queue: audioQueue) }
+        // Sound the writer refused: the clip records without it and the microphone is reported as unavailable, as when it cannot attach.
+        if let soundRefusal { events.yield(.microphoneUnavailable(soundRefusal)) }
     }
 
     /// Ends the clip for `end`; the first end stands. Returns whether a result will follow: a clip was recording, or ended with
@@ -120,6 +128,11 @@ nonisolated final class WriterRecorder {
         writerQueue.sync { sink.isInFlight }
     }
 
+    /// True once the clip has ended and its file is being finished.
+    var isFinishing: Bool {
+        writerQueue.sync { sink.isFinishing }
+    }
+
     /// True while the result of a collected clip is still being made.
     var hasResultPending: Bool {
         shared.finishing.withLock { $0 > 0 }
@@ -136,6 +149,14 @@ nonisolated final class WriterRecorder {
         audioOutput.setSampleBufferDelegate(nil, queue: nil)
         shared.finishing.withLock { $0 += 1 }
         let results = results, shared = shared
+        if report.end == .timedOut {
+            // The writer never said it finished, so the file may still be written to: it is neither read nor reported as a clip.
+            // The sink keeps the writer alive until its completion handler has run.
+            let outcome = RecordingOutcome(writerEnd: .timedOut, hasFrames: report.hasFrames, isReadable: false)
+            results.yield(RecordingResult(url: recording.url, option: recording.option, outcome: outcome, sidecar: nil))
+            shared.finishing.withLock { $0 -= 1 }
+            return
+        }
         Task {
             let result = await ClipFinisher.finish(recording, recorder: .writer, drops: report.facts, errorMessage: report.errorText) { isReadable in
                 RecordingOutcome(writerEnd: report.end, hasFrames: report.hasFrames, isReadable: isReadable)
