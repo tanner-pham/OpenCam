@@ -6,7 +6,7 @@ nonisolated struct Resolution: Codable, Sendable, Hashable {
     let label: String
 
     var id: String { "\(width)x\(height)" }
-    var detail: String { "\(width) x \(height)" }
+    var detail: String { "\(width) × \(height)" }
     var pixelCount: Int { width * height }
 
     static func named(width: Int, height: Int) -> Resolution {
@@ -18,7 +18,7 @@ nonisolated struct Resolution: Codable, Sendable, Hashable {
         case (1920, 1080): label = "1080p"
         case (1280, 720): label = "720p"
         case _ where width * 3 == height * 4: label = "Open gate"
-        default: label = "\(width) x \(height)"
+        default: label = "\(width) × \(height)"
         }
         return Resolution(width: width, height: height, label: label)
     }

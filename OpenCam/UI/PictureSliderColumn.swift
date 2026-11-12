@@ -10,9 +10,10 @@ struct PictureSliderColumn: View {
         if let control = model.openControl {
             GlassEffectContainer(spacing: Theme.Space.s) {
                 VStack(spacing: Theme.Space.s) {
-                    if control.hasAutomatic { ControlAutoButton(model: model) }
+                    // Top to bottom as in the portrait strip: slider, Auto, close.
                     ControlSlider(model: model)
                         .padding(.vertical, Theme.Space.xs)
+                    if control.hasAutomatic { ControlAutoButton(model: model) }
                     ControlCloseButton(model: model)
                 }
                 .buttonStyle(.plain)

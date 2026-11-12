@@ -21,7 +21,7 @@ import Testing
         #expect(abs(DataRateEstimator.gigabytesPerMinute(for: hq) - 6.6066) < 0.001)
         #expect(DataRateEstimator.minutesRemaining(freeBytes: 141_000_000_000, option: hq) == 21)
         #expect(DataRateEstimator.minutesRemaining(freeBytes: 1_500_000_000, option: hq) == 0)
-        #expect(DataRateEstimator.footer(for: hq, freeBytes: 141_000_000_000) == "About 881 Mb/s, 6.6 GB per minute. 21 min left.")
+        #expect(DataRateEstimator.footer(for: hq, freeBytes: 141_000_000_000) == "About 881 Mb/s, 6.6 GB per minute. 21m left.")
         #expect(DataRateEstimator.isLowStorage(minutes: 4)); #expect(!DataRateEstimator.isLowStorage(minutes: 5))
     }
 
@@ -44,6 +44,17 @@ import Testing
         #expect(DataRateEstimator.chipTimeText(minutes: 677).hasPrefix("~11"))
         #expect(DataRateEstimator.chipTimeText(minutes: 677).contains("17"))
     }
+    /// One fact, one wording: the chips, the footer and the camera's time-left slot all use this text.
+    @Test func durationTextIsTheSystemNarrowDurationWithoutATilde() {
+        #expect(DataRateEstimator.durationText(minutes: 677) == "11h 17m")
+        #expect(DataRateEstimator.durationText(minutes: 21) == "21m")
+        #expect(DataRateEstimator.durationText(minutes: 45) == "45m")
+        #expect(DataRateEstimator.chipTimeText(minutes: 677) == "~" + DataRateEstimator.durationText(minutes: 677))
+    }
+    @Test func footerSaysNoRecordingTimeLeftAtZero() {
+        let hevc = opt(.hevc, "Max", .max, 3840, 2160, 30)
+        #expect(DataRateEstimator.footer(for: hevc, freeBytes: 0) == "About 45 Mb/s, 0.3 GB per minute. No recording time left.")
+    }
     @Test func estimateCarriesTheTwoLinesAndTheSpokenForm() {
         let hevc = opt(.hevc, "Max", .max, 3840, 2160, 30)
         let free = DataRateEstimator.reserveBytes + 677 * 336_000_000
@@ -63,6 +74,6 @@ import Testing
         let hevc = opt(.hevc, "Max", .max, 3840, 2160, 30)
         let free = DataRateEstimator.reserveBytes + 100 * 336_000_000
         let minutes = DataRateEstimator.minutesRemaining(freeBytes: free, option: hevc)
-        #expect(DataRateEstimator.footer(for: hevc, freeBytes: free) == "About 45 Mb/s, 0.3 GB per minute. \(minutes) min left.")
+        #expect(DataRateEstimator.footer(for: hevc, freeBytes: free) == "About 45 Mb/s, 0.3 GB per minute. \(DataRateEstimator.durationText(minutes: minutes)) left.")
     }
 }

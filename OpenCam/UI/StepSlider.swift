@@ -13,6 +13,8 @@ struct StepSlider: View {
     let isAutomatic: Bool
     let label: String
     let valueText: String
+    /// The step the fill starts from: 0 (the bottom) except where the scale has a natural zero in the middle, as EV does.
+    var originStep = 0
     var length = Theme.Size.sliderLength
     let onChange: (Int) -> Void
 
@@ -48,6 +50,22 @@ struct StepSlider: View {
         next != (lastSent ?? start)
     }
 
+    /// The accent fill's span, from `bottom` points above the track's bottom, `height` tall: from the origin step to the thumb. From
+    /// step 0 it is the track's bottom to the thumb's centre; from any other origin (EV's zero) it runs between the two centres,
+    /// and is empty while the thumb is on the origin. Pure.
+    nonisolated static func fill(originStep: Int, step: Int, stepCount: Int, length: CGFloat, thumb: CGFloat) -> (bottom: CGFloat, height: CGFloat) {
+        let travel = max(length - thumb, 0)
+        func centre(_ step: Int) -> CGFloat {
+            guard stepCount > 1 else { return thumb / 2 }
+            return thumb / 2 + travel * CGFloat(clamped(step, stepCount: stepCount)) / CGFloat(stepCount - 1)
+        }
+        let origin = clamped(originStep, stepCount: stepCount)
+        guard stepCount > 0 else { return (bottom: 0, height: 0) }
+        if origin == 0 { return (bottom: 0, height: centre(step)) }
+        let low = min(centre(origin), centre(step)), high = max(centre(origin), centre(step))
+        return (bottom: low, height: high - low)
+    }
+
     nonisolated private static func clamped(_ step: Int, stepCount: Int) -> Int {
         min(max(step, 0), max(stepCount - 1, 0))
     }
@@ -57,9 +75,11 @@ struct StepSlider: View {
             Capsule()
                 .fill(.secondary.opacity(0.35))
                 .frame(width: trackWidth, height: length)
+            let span = Self.fill(originStep: originStep, step: shownStep, stepCount: stepCount, length: length, thumb: Theme.Size.sliderThumb)
             Capsule()
                 .fill(isAutomatic ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.accent))
-                .frame(width: trackWidth, height: Theme.Size.sliderThumb / 2 + travel * fraction)
+                .frame(width: trackWidth, height: span.height)
+                .offset(y: -span.bottom)
             Circle()
                 .fill(.white)
                 .opacity(isAutomatic || step == nil ? 0.6 : 1)

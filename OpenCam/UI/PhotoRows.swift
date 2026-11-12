@@ -9,12 +9,13 @@ struct PhotoRows: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.s) {
+                // The same columns as Record settings' Quality, Resolution and Colour rows, so a chip is one size in both sheets.
                 ForEach(PhotoRow.allCases, id: \.self) { row in
                     ChipRow(title: row.title,
                             chips: resolver.chips(row, for: selection),
                             selectedID: selectedID(row),
                             reason: resolver.reasonLine(row, for: selection),
-                            columns: row == .format ? 3 : 2) { chipID in
+                            columns: verticalSizeClass == .compact ? 5 : 3) { chipID in
                         if let changed = resolver.select(row, chipID: chipID, in: selection) { selection = changed }
                     }
                 }
