@@ -12,10 +12,11 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
     var editorGroup: EditorGroup = .light   // -editorGroup light|colour|detail|effects|looks
     var seedsSamples = false                // -seedSamples on (honoured in the Simulator only)
     var seedsLook = false                   // -seedLook on (honoured in the Simulator only)
+    var seedsFormats = false                // -seedFormats on (honoured in the Simulator only)
     var startsInSelectMode = false          // -librarySelect on
     var cameraLookName: String?             // -cameraLook <name>: the look of that name is selected, or None when there is none
     /// True when -orientation, -mode, -screen, -recording, -state, -editorGroup, -cameraLook or an "on" flag among -seedSamples,
-    /// -seedLook and -librarySelect parsed to a valid value; such launches never restore or save selections.
+    /// -seedLook, -seedFormats and -librarySelect parsed to a valid value; such launches never restore or save selections.
     var isScripted = false
 
     static func parse(_ args: [String]) -> LaunchConfig {
@@ -54,6 +55,10 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
         }
         if value("-seedLook") == "on" {
             config.seedsLook = true
+            config.isScripted = true
+        }
+        if value("-seedFormats") == "on" {
+            config.seedsFormats = true
             config.isScripted = true
         }
         if value("-librarySelect") == "on" {

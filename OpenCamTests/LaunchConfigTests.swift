@@ -21,4 +21,8 @@ import Testing
         #expect(LaunchConfig.parse(["app"]).cameraLookName == nil)
     }
     @Test func unknownValuesFallBack() { #expect(LaunchConfig.parse(["app", "-mode", "cinema", "-screen", "monitor"]) == LaunchConfig()) }
+    @Test func parsesSeedFormatsFlag() {
+        #expect(LaunchConfig.parse(["app", "-seedFormats", "on"]).seedsFormats); #expect(LaunchConfig.parse(["app", "-seedFormats", "on"]).isScripted)
+        #expect(!LaunchConfig.parse(["app"]).seedsFormats)
+    }
 }
