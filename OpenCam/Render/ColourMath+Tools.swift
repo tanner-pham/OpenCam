@@ -1,7 +1,7 @@
 import Foundation
 
 /// The maths of the colour mixer and colour grading, on Display P3-encoded values.
-extension ColourMath {
+nonisolated extension ColourMath {
     /// Degrees of hue a full mixer hue slider moves a colour.
     static let mixHueReach: Float = 30
     /// How far a full mixer luminance slider scales the value of a fully saturated colour.
@@ -33,7 +33,7 @@ extension ColourMath {
         } else {
             hue = 60 * ((rgb.x - rgb.y) / chroma + 4)
         }
-        return SIMD3(hue, saturation, maximum)
+        return SIMD3(hue >= 360 ? 0 : hue, saturation, maximum)
     }
 
     /// (hue, saturation, value) to RGB, the inverse of `hsv`. Hue wraps into 0..<360.
@@ -65,20 +65,21 @@ extension ColourMath {
     /// Linear tents between neighbouring centres, with `c_8 = 360` wrapping back to red: for `H` in
     /// `[c_i, c_{i+1})`, `t = (H - c_i) / (c_{i+1} - c_i)`, `w_i = 1 - t`, `w_{(i+1) mod 8} = t`.
     static func bandWeights(hue: Float) -> SIMD8<Float> {
-        let bands = ColourBand.allCases
         var weights = SIMD8<Float>(repeating: 0)
-        for band in bands {
-            let lower = band.centre
-            let next = (band.index + 1) % bands.count
-            let upper = band.index == bands.count - 1 ? 360 : bands[next].centre
+        for index in 0..<8 {
+            let lower = bandCentres[index]
+            let upper: Float = index == 7 ? 360 : bandCentres[index + 1]
             guard hue >= lower, hue < upper else { continue }
             let t = (hue - lower) / (upper - lower)
-            weights[band.index] = 1 - t
-            weights[next] = t
+            weights[index] = 1 - t
+            weights[(index + 1) % 8] = t
             break
         }
         return weights
     }
+
+    /// `ColourBand.centre` of each band in order, as a table the per-colour maths reads without a call.
+    private static let bandCentres = SIMD8<Float>(0, 30, 60, 120, 180, 240, 270, 300)
 
     /// The colour mixer: moves hue, saturation and luminance of colours by the bands they sit in.
     ///
@@ -116,15 +117,18 @@ extension ColourMath {
     static func grade(_ rgb: SIMD3<Float>, shadows: ColourTint, midtones: ColourTint, highlights: ColourTint,
                       balance: Float, blending: Float) -> SIMD3<Float> {
         let weights = regionWeights(luma: luma(rgb), balance: balance, blending: blending)
-        let regions = [shadows, midtones, highlights]
         var tint = SIMD3<Float>(repeating: 0)
         var lift: Float = 0
-        for (index, region) in regions.enumerated() {
-            let colour = Self.rgb(hue: region.hue, saturation: 1, value: 1)
-            let offset = colour - SIMD3(repeating: luma(colour))
-            tint += weights[index] * region.saturation * offset
-            lift += weights[index] * region.luminance
-        }
+        accumulate(shadows, weight: weights.x, tint: &tint, lift: &lift)
+        accumulate(midtones, weight: weights.y, tint: &tint, lift: &lift)
+        accumulate(highlights, weight: weights.z, tint: &tint, lift: &lift)
         return clamp01(rgb + gradingStrength * tint + gradingLuminanceReach * lift)
+    }
+
+    private static func accumulate(_ region: ColourTint, weight: Float, tint: inout SIMD3<Float>, lift: inout Float) {
+        let colour = rgb(hue: region.hue, saturation: 1, value: 1)
+        let offset = colour - SIMD3(repeating: luma(colour))
+        tint += weight * region.saturation * offset
+        lift += weight * region.luminance
     }
 }

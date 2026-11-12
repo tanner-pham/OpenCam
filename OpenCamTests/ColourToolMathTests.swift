@@ -39,4 +39,18 @@ import Testing
         #expect(maxDiff(ColourMath.regionWeights(luma: 0.25, balance: 0, blending: 0), SIMD3(0.25, 0.75, 0)) < 1e-6)
         #expect(maxDiff(ColourMath.regionWeights(luma: 0.25, balance: 0, blending: 1), SIMD3(0.5, 0.5, 0)) < 1e-6)
         #expect(maxDiff(ColourMath.regionWeights(luma: 0.25, balance: 0, blending: -1), SIMD3(0.0625, 0.9375, 0)) < 1e-6)
-        #expect(abs(grade(grey, h: ColourTint(hue: 0, saturation: 1), balance: -1).x - 0.52187) < 1e-4) } }
+        #expect(abs(grade(grey, h: ColourTint(hue: 0, saturation: 1), balance: -1).x - 0.52187) < 1e-4) }
+    @Test func hueNeverReaches360AndNearRedStillMixes() {
+        let nearRed = SIMD3<Float>(1, 0, 1e-9)
+        #expect(ColourMath.hsv(nearRed).x < 360)
+        #expect(abs(ColourMath.bandWeights(hue: ColourMath.hsv(nearRed).x).sum() - 1) < 1e-5)
+        #expect(maxDiff(mix(nearRed, sat: only(.red, -1)), SIMD3(1, 1, 1)) < 1e-5) }
+    @Test func mathRunsOffTheMainActor() async {
+        let result = await Self.offMainActor()
+        #expect(result.x.isFinite) }
+    @concurrent static func offMainActor() async -> SIMD3<Float> {
+        let weights = ColourMath.bandWeights(hue: 15)
+        let mixed = ColourMath.mix(SIMD3(0.75, 0.25, 0.25), hue: weights, saturation: weights, luminance: weights)
+        let hsv = ColourMath.hsv(mixed), back = ColourMath.rgb(hue: hsv.x, saturation: hsv.y, value: hsv.z)
+        let regions = ColourMath.regionWeights(luma: 0.5, balance: 0, blending: 0)
+        return ColourMath.grade(back, shadows: .none, midtones: .none, highlights: .none, balance: regions.x, blending: ColourMath.gradingStrength) } }
