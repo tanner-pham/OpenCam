@@ -151,7 +151,8 @@ extension CameraModel {
                 let applied = try await configurator.applyManual(current.value, reapplyingAll: reapplyingAll)
                 if generation == manualGeneration { manualApplied(applied, sent: current.value) }
             } catch {
-                if reapplyingAll { reappliesAllManual = true }
+                // Only for the same camera: a configure meanwhile has reset what the camera has, and with it this flag.
+                if reapplyingAll, generation == manualGeneration { reappliesAllManual = true }
                 manualApplyFailed(error, sent: current.value, generation: generation)
             }
             job = manualApplies.finish()

@@ -352,6 +352,28 @@ import Testing
         #expect(rig.model.manual == held)
     }
 
+    @Test func aFailedResendDoesNotCarryOverToANewCamera() async throws {
+        let rig = try await rig()
+        try await setByHand(rig)
+        rig.model.apply(.interrupted(.cameraInUse))
+        await rig.fake.holdManual()
+        rig.model.apply(.interruptionEnded)
+        let before = await rig.fake.manualApplies.count
+        #expect(await until { await rig.fake.manualApplies.count == before + 1 })
+        #expect(await rig.fake.manualApplies.last?.reapplyingAll == true)
+        // The camera changes while the re-send is in flight, and the re-send fails.
+        rig.model.selectLens("ultraWide")
+        await rig.fake.setManualError(.lockFailed(reason: "busy"))
+        await rig.fake.resumeManual()
+        await rig.model.manualApplyTask?.value
+        await rig.model.waitForQueuedConfigures()
+        #expect(!rig.model.reappliesAllManual)
+        await rig.fake.setManualError(nil)
+        rig.model.setControl(.focus, step: 30)
+        await rig.model.manualApplyTask?.value
+        #expect(await rig.fake.manualApplies.last?.reapplyingAll == false)
+    }
+
     @Test func anInterruptionEndingWithNothingSetSendsNothing() async throws {
         let rig = try await rig()
         rig.model.apply(.interrupted(.background))
