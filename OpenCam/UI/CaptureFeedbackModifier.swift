@@ -15,5 +15,6 @@ struct CaptureFeedbackModifier: ViewModifier {
             .sensoryFeedback(.impact(weight: .light), trigger: feedback.photosTaken)
             .sensoryFeedback(.start, trigger: feedback.recordingsStarted)
             .sensoryFeedback(.stop, trigger: feedback.recordingsStopped)
+            .sensoryFeedback(.selection, trigger: feedback.controlSteps)
     }
 }
