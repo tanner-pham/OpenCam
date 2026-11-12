@@ -6,6 +6,7 @@ struct CameraRootView: View {
     let library: LibraryStore?
     let launch: LaunchConfig
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.scenePhase) private var scenePhase
 
     private var isLandscape: Bool { verticalSizeClass == .compact }
 
@@ -40,6 +41,7 @@ struct CameraRootView: View {
                 .onCameraCaptureEvent { model.handleCaptureEvent(phase: $0.phase) }
         }
         .environment(\.isSliderForcedIntoPicture, isSliderForcedIntoPicture)
+        .onChange(of: scenePhase) { if scenePhase != .active { model.appStoppedBeingActive() } }
         // An import still running when the Library closed lands after the close read the last capture.
         .onChange(of: library?.importsFinished) { model.libraryImportFinished() }
         .fullScreenCover(isPresented: Binding(get: { model.isLibraryPresented && library != nil }, set: { model.isLibraryPresented = $0 }),
@@ -57,7 +59,8 @@ struct CameraRootView: View {
                                     freeBytes: model.freeBytes,
                                     sweepCaption: model.sweepCaption,
                                     look: LookChoice(chips: model.lookChips, selectedID: model.lookChipID, reason: model.lookReason,
-                                                     scrollsIntoView: model.scrollsToLookRow) { model.selectLook(chipID: $0) })
+                                                     scrollsIntoView: model.scrollsToLookRow) { model.selectLook(chipID: $0) },
+                                    drop: model.dropChoice)
             case .sweep:
                 SweepView(model: model)
             }

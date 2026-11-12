@@ -102,7 +102,7 @@ nonisolated enum CapabilityMapper {
     }
 
     /// Codec, quality, resolution (largest first), frame rate, colour.
-    private static func rowKey(_ option: VideoOption) -> [Int] {
+    static func rowKey(_ option: VideoOption) -> [Int] {
         [
             CodecFamily.allCases.firstIndex(of: option.codec.family) ?? CodecFamily.allCases.count,
             qualityRank(option.codec),

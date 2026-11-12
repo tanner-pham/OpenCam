@@ -54,6 +54,35 @@ import Testing
         #expect(compared > 1_000)
     }
 
+    /// With the writer options merged in, the indexed resolver still answers as the reference does on `scanned + derived`.
+    @Test func theMergedListMatchesTheReference() throws {
+        let capabilities = try Fixture.loadDuo().withWriterOptions(.all)
+        let all = capabilities.videoOptions + capabilities.writerOptions
+        let selections = Self.sampleSelections(CaptureCapabilities(lenses: capabilities.lenses, videoOptions: all, photoOptions: [],
+                                                                    osBuild: "", modelIdentifier: ""))
+        var compared = 0
+        for lens in capabilities.lenses {
+            let new = RecordSelectionResolver(options: capabilities.videoOptions, writerOptions: capabilities.writerOptions, lens: lens)
+            let old = ReferenceRecordSelectionResolver(options: all, lens: lens)
+            #expect(new.defaultSelection() == old.defaultSelection())
+            for (index, selection) in selections.enumerated() {
+                #expect(new.option(for: selection) == old.option(for: selection))
+                #expect(new.settled(selection) == old.settled(selection))
+                for row in RecordRow.allCases {
+                    let chips = new.chips(row, for: selection)
+                    #expect(chips == old.chips(row, for: selection))
+                    #expect(new.reasonLine(row, for: selection) == old.reasonLine(row, for: selection))
+                    guard index % 8 == 0 else { continue }
+                    for chip in chips {
+                        #expect(new.select(row, chipID: chip.id, in: selection) == old.select(row, chipID: chip.id, in: selection))
+                    }
+                }
+                compared += 1
+            }
+        }
+        #expect(compared > 1_000)
+    }
+
     @Test func modelResolversMatchTheReferenceOnEveryLens() throws {
         let capabilities = try Fixture.loadDuo()
         let model = CameraModel(config: LaunchConfig(), capabilities: capabilities, isSimulator: true, defaults: try Fixture.freshDefaults())

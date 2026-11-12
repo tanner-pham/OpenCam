@@ -7,10 +7,13 @@ nonisolated enum RecordingOutcome: Sendable, Equatable {
     case stopped(StopReason, isPlayable: Bool)
     /// The recording could not start; carries a log message only.
     case failed(String)
+    /// Stopped before the first frame arrived: there is no clip and nothing to report.
+    case nothingRecorded
 
     static let storageFullNotice = "Recording stopped. Storage is full. Clip saved."
     static let interruptedNotice = "Recording stopped. The camera was interrupted. Clip saved."
     static let failedNotice = "Recording failed. The clip could not be saved."
+    static let droppedFramesStopNotice = "Recording stopped. A frame was dropped. Clip saved."
     /// A clip whose end the camera never reported but whose file is on disk: it is never called lost.
     static let incompleteNotice = "Recording stopped. The clip may be incomplete."
 
@@ -24,22 +27,51 @@ nonisolated enum RecordingOutcome: Sendable, Equatable {
         self = .stopped(Self.reason(error), isPlayable: isPlayable)
     }
 
+    /// A writer clip's end. No frames written is a failure; a file that cannot be read is not playable; otherwise the clip is
+    /// saved up to its last frame. A clip whose finish never came back is the same as one the camera never reported.
+    init(writerEnd: WriterEnd, hasFrames: Bool, isReadable: Bool) {
+        guard hasFrames else {
+            // A stop before any frame is not a failure; any other end with no frame is.
+            if writerEnd == .user {
+                self = .nothingRecorded
+                return
+            }
+            self = .failed("[RecordingOutcome:init] The writer clip has no frames — {end: \(writerEnd)}")
+            return
+        }
+        let reason: StopReason? = switch writerEnd {
+        case .user: nil
+        case .droppedFrames: .droppedFrames
+        case .storageFull: .storageFull
+        case .interrupted: .interrupted
+        case .cameraStopped, .writerFailed: .writerFailed
+        case .timedOut: .noResult
+        }
+        guard let reason else {
+            self = isReadable ? .completed : .stopped(.writerFailed, isPlayable: false)
+            return
+        }
+        self = .stopped(reason, isPlayable: isReadable && writerEnd != .timedOut)
+    }
+
     var isPlayable: Bool {
         switch self {
         case .completed: true
         case .stopped(_, let isPlayable): isPlayable
-        case .failed: false
+        case .failed, .nothingRecorded: false
         }
     }
 
     /// Nil when the clip saved with nothing to report.
     var notice: String? {
         switch self {
-        case .completed: nil
+        case .completed, .nothingRecorded: nil
         case .stopped(.noResult, _): Self.incompleteNotice
         case .stopped(_, false), .failed: Self.failedNotice
         case .stopped(.storageFull, true): Self.storageFullNotice
         case .stopped(.interrupted, true): Self.interruptedNotice
+        case .stopped(.droppedFrames, true): Self.droppedFramesStopNotice
+        case .stopped(.writerFailed, true): Self.incompleteNotice
         case .stopped(.maximumFileSize, true), .stopped(.maximumDuration, true), .stopped(.other, true): nil
         }
     }
@@ -50,6 +82,7 @@ nonisolated enum RecordingOutcome: Sendable, Equatable {
         case .completed: "completed"
         case .stopped(let reason, let isPlayable): "stopped: \(reason), \(isPlayable ? "playable" : "not playable")"
         case .failed: "failed"
+        case .nothingRecorded: "nothing recorded"
         }
     }
 

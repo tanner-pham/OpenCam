@@ -32,7 +32,8 @@ struct OpenCamApp: App {
         #if targetEnvironment(simulator)
         // The fixture stands in for the scan in the Simulator only.
         do {
-            let capabilities = try CaptureCapabilities.bundledFixture()
+            let fixture = try CaptureCapabilities.bundledFixture()
+            let capabilities = (config.usesPhoneFormats ? fixture.asThePhoneScans() : fixture).withWriterOptions(.shipped(isSimulator: true))
             _model = State(initialValue: CameraModel(config: config, capabilities: capabilities, isSimulator: true, captureStore: captureStore,
                                                      isLibraryAvailable: library != nil, lookStore: looks))
         } catch {

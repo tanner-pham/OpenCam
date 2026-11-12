@@ -118,6 +118,34 @@ Tap SHUTTER, ISO, EV, WB, TINT or FOCUS to open its slider. The folded phone sho
 - [ ] On the open phone, tapping Lens or Mode with the column open closes it.
 - [ ] Whether `supportsExposureModeCustom(lensAperture:duration:iso:)` accepts a shutter with automatic ISO. Note the result for each lens.
 
+## 10. The recorder
+
+ProRes and Log are recorded by the writer path. HEVC and H.264 in Rec. 709, P3 and HLG stay on the system recorder. Do the first item before anything else.
+
+- [ ] Build `diag/recorder-check` in Release, grant the microphone, and launch it with `-recorderCheck2` pointed at a busy, moving scene. Pull `Documents/recorder-check-2.json` into `docs/research`. Read it against "To confirm on the phone" in the recorder plan before the rest.
+- [ ] ProRes 422 HQ 4K 30 HLG for 60 s on 1x: `OC_000n.MOV` plays in Files and in the editor. The `.json` shows `recorder: writer`, `apch`, 3840 x 2160, about 30 fps, `hasAudio` true, `drops.total` 0, and `megabitsPerSecond` beside the chip's figure. Repeat for Proxy, LT and 422.
+- [ ] 4K ProRes is offered up to 30 fps until the second on-device check has run. Confirm 4K 60 ProRes is not listed, and note what check 2 says about lifting it.
+- [ ] ProRes 422 HQ 4K 30 Rec. 709 (8-bit frames): it records, plays and is tagged Rec. 709. If it fails, note the journal line.
+- [ ] ProRes 422 HQ 4K 60 HLG for 60 s, if it is offered after check 2: note `drops`, heat and the count on screen.
+- [ ] Log with ProRes and with HEVC at 4K 30, then at 4K 60: the viewfinder shows the normal picture, the clip is flat, a grey card reads near 45 percent, the `.json` colour is Log, and Photos and Files show no HDR badge.
+- [ ] Log with HEVC at 4K 30 for 60 s: `drops.renderFailed` is 0 in the `.json`.
+- [ ] Log highlights: film a bright window or a lamp. The clip keeps detail in the highlights and does not clip to a flat white patch.
+- [ ] A clip in each of the four orientations, and on each camera, is upright. Sound stays in sync over 5 minutes (clap at the start and at the end).
+- [ ] Switch HEVC with a look to ProRes and back to HEVC: no "That format could not be used." notice appears.
+- [ ] Switch from HEVC in Rec. 709 straight to ProRes in HLG: one blur, the controls return to automatic, and the clip records.
+- [ ] HEVC to ProRes and back to HEVC: one blur each way, and HEVC clips are as before (`recorder: system`).
+- [ ] Record ProRes on a front camera and an HEVC clip on the same camera: compare their mirroring and orientation. Note any difference.
+- [ ] Launch with ProRes saved as the start: the launch line shows the saved start was adopted.
+- [ ] Start a recording and stop it the instant it starts: no failure notice appears, and no empty file is left.
+- [ ] During a writer clip, one at a time: lock the phone, take a call, fill storage with `-freeSpaceMarginMB`, cover the lens and force heat. Each time the clip is saved, plays whole, and the notice is the right one.
+- [ ] Start a writer clip and press the home button within a second: the clip is saved and plays past its first 10 seconds of fragments.
+- [ ] "Stop recording" chosen under "When frames drop": provoke a drop (4K 60 Log while the phone is hot). The clip stops, is saved, and the notice reads "Recording stopped. A frame was dropped. Clip saved."
+- [ ] Read a ProRes clip's `.json` for its drop counts by reason (`late`, `outOfBuffers`, `discontinuity`, `writerNotReady`, `behind`, `renderFailed`, `other`). Note which reasons appear.
+- [ ] The count on the open display, in portrait and landscape, with a slider open: it covers no readout, the format button, the shutter or the slider column.
+- [ ] Meters move on the writer path, and the record haptics are felt.
+- [ ] Idle with ProRes selected for 5 minutes: note the heat against HEVC.
+- [ ] Not covered by either check: sizes other than 1080p and 4K, rates other than 30 and 60, the other four lenses, the writer's HEVC with a tier's bit rate, the effect of the 10 s fragment interval on the finished file and on editors, how Photos, Files and the editor read Log's BT.2020 tags with the Rec. 709 curve, the time a path switch takes, and memory when the writer stalls with late frames kept.
+
 ## 9. Things to decide after holding it
 
 - [ ] Where should the look's name live? The summary grows a line: a four-line pill in vertical video, and the open phone's photo picture shrinks a few points.

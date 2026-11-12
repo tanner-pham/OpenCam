@@ -54,6 +54,9 @@ nonisolated enum ClipInspector {
         if log == kCMFormatDescriptionLogTransferFunction_AppleLog2 as String { return .appleLog2 }
         if log == kCMFormatDescriptionLogTransferFunction_AppleLog as String { return .appleLog }
         if transfer == kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG as String { return .hlg }
+        // The baked Log profile: BT.2020 primaries with the Rec. 709 transfer.
+        if primaries == kCMFormatDescriptionColorPrimaries_ITU_R_2020 as String,
+           transfer == kCMFormatDescriptionTransferFunction_ITU_R_709_2 as String { return .log }
         if primaries == kCMFormatDescriptionColorPrimaries_P3_D65 as String { return .p3 }
         if primaries == kCMFormatDescriptionColorPrimaries_ITU_R_709_2 as String,
            transfer == kCMFormatDescriptionTransferFunction_ITU_R_709_2 as String { return .rec709 }

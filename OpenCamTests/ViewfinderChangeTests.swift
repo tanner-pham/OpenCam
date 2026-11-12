@@ -60,6 +60,17 @@ import Testing
         #expect(model.lensID == lensID); #expect(model.mode == mode)
     }
 
+    @Test func aRecorderSwitchPausesThePicture() async throws {
+        let model = try deviceModel(FakeSessionConfigurator(failingLensIDs: []))
+        let system = try configuration(of: model)
+        model.record = RecordSelection(family: .proRes, quality: "422 HQ", resolution: .named(width: 3840, height: 2160), frameRate: 30, colour: .hlg)
+        var writer = try configuration(of: model)
+        writer.recorder = .writer
+        #expect(system.recorder == .system)
+        #expect(ViewfinderChange.pausesPicture(from: system, to: writer))
+        #expect(ViewfinderChange.pausesPicture(from: writer, to: system))
+    }
+
     @Test func aZoomOnlyChangeDoesNotBlur() async throws {
         let model = try deviceModel(FakeSessionConfigurator(failingLensIDs: []))
         let base = try configuration(of: model)

@@ -6,6 +6,7 @@ struct VideoRecordRows: View {
     @Binding var selection: RecordSelection
     let freeBytes: Int64
     let look: LookChoice
+    let drop: DropChoice
     var sweepCaption: String? = nil
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
@@ -14,17 +15,19 @@ struct VideoRecordRows: View {
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 ForEach(RecordRow.allCases, id: \.self) { row in
                     // Worked out once per row; the reason line is the first dimmed chip's reason (`reasonLine`).
-                    let chips = resolver.chips(row, for: selection, freeBytes: freeBytes)
+                    let chips = RecordRowText.chips(row, from: resolver.chips(row, for: selection, freeBytes: freeBytes))
                     ChipRow(title: row.title,
                             chips: chips,
                             selectedID: selectedID(row),
-                            reason: chips.first { !$0.isAvailable }?.reason,
+                            reason: RecordRowText.line(row, chips: chips, selection: selection),
                             columns: row.columns(isWide: verticalSizeClass == .compact)) { chipID in
                         if let changed = resolver.select(row, chipID: chipID, in: selection) { selection = changed }
                     }
                 }
                 ChipRow(title: "Look", chips: look.chips, selectedID: look.selectedID, reason: look.reason, columns: 1,
                         isSingleLine: true, onSelect: look.onSelect)
+                ChipRow(title: DropPolicy.rowTitle, chips: drop.chips, selectedID: drop.selectedID, reason: drop.reason, columns: 2,
+                        onSelect: drop.onSelect)
                 if let option = resolver.option(for: selection) {
                     Text(DataRateEstimator.footer(for: option, freeBytes: freeBytes))
                         .font(.footnote.monospacedDigit())

@@ -158,6 +158,16 @@ final class CameraModel {
     @ObservationIgnored var recordingStartTask: Task<Void, Never>?
     /// The clip being recorded, from the press until its result; a stop or restart that finds no result coming ends it.
     @ObservationIgnored var recordingClip: (url: URL, option: VideoOption)?
+    /// Frames missing from the clip being recorded on the writer path; 0 at each start. Follows `.framesDropped` for that clip only.
+    private(set) var droppedFrames = 0
+    /// What the writer recorder does when a frame is missing. Saved, except in a scripted launch, which neither loads nor saves it.
+    var dropPolicy = DropPolicy.keepRecording {
+        didSet { if !isScripted { dropPolicy.save(to: defaults) } }
+    }
+    /// Begins a claim on background time, named for the work; the system's, unless a test supplies one.
+    @ObservationIgnored var beginBackgroundWork: @MainActor (String) -> any BackgroundWork = { SystemBackgroundWork(name: $0) }
+    /// The claim held while a writer clip records in the background; ended with the clip's result.
+    @ObservationIgnored var backgroundWork: (any BackgroundWork)?
     /// Clips the model ended without their result, by `CaptureStore.clipKey`; a result that still arrives changes no
     /// recording state.
     @ObservationIgnored var unreportedClips: Set<String> = []
@@ -209,6 +219,9 @@ final class CameraModel {
         self.freeBytes = Self.simulatorFreeBytes
         self.isRecording = config.isRecording
         self.recordingStart = config.isRecording ? Date().addingTimeInterval(-42) : nil
+        // The simulated recording's drop count, for screenshots; a scripted launch never loads the saved policy.
+        if isSimulator, config.isRecording { self.droppedFrames = config.droppedFrames }
+        if !config.isScripted { self.dropPolicy = DropPolicy.load(from: defaults) }
         switch config.screen {
         case .main: self.sheet = nil
         case .record: self.sheet = .record
@@ -270,7 +283,7 @@ final class CameraModel {
     var recordResolver: RecordSelectionResolver {
         guard let lens = currentLens else { return RecordSelectionResolver(lensOptions: []) }
         if let cached = recordResolvers[lens.id] { return cached }
-        let resolver = RecordSelectionResolver(options: capabilities.videoOptions, lens: lens)
+        let resolver = RecordSelectionResolver(options: capabilities.videoOptions, writerOptions: capabilities.writerOptions, lens: lens)
         recordResolvers[lens.id] = resolver
         return resolver
     }
@@ -286,8 +299,13 @@ final class CameraModel {
     var sessionConfiguration: SessionConfiguration? {
         guard let currentLens else { return nil }
         return SessionConfiguration.make(lens: currentLens, mode: mode, video: currentVideoOption, photo: currentPhotoOption, access: access,
-                                         needsFrames: needsFrames)
+                                         needsFrames: needsFrames, recorder: recorderPath)
     }
+
+    func resetDroppedFrames() { droppedFrames = 0 }
+
+    /// The recorder the selection needs: the system's outside video mode, else the one that records the selected option.
+    var recorderPath: RecorderPath { mode == .video ? recordResolver.recorder(for: record) : .system }
 
     /// The current options as the screen may name them: none while formats are being read, and none the device has not reported.
     /// Only a working camera, or the Simulator's labelled stand-in, names a format or a measurement.
@@ -790,7 +808,7 @@ final class CameraModel {
         -> (lensID: String, record: RecordSelection?, photo: PhotoSelection?) {
         let lensID = lensID.flatMap { id in capabilities.lenses.contains { $0.id == id } ? id : nil } ?? defaultLens(in: capabilities)?.id ?? ""
         let lens = capabilities.lenses.first { $0.id == lensID }
-        let recordResolver = RecordSelectionResolver(options: capabilities.videoOptions, lens: lens)
+        let recordResolver = RecordSelectionResolver(options: capabilities.videoOptions, writerOptions: capabilities.writerOptions, lens: lens)
         let photoResolver = PhotoSelectionResolver(options: capabilities.photoOptions, lenses: capabilities.lenses, lensID: lensID)
         return (lensID, settle(record, with: recordResolver), settle(photo, with: photoResolver))
     }
@@ -982,6 +1000,11 @@ extension CameraModel {
             Self.logger.error("\(message, privacy: .public)")
             ErrorJournal.record(message)
             access.microphone = .denied
+        case .soundNotRecorded(let message):
+            // This clip only: microphone access is untouched, so the next configure keeps the microphone input.
+            Self.logger.error("\(message, privacy: .public)")
+            ErrorJournal.record(message)
+            show("This clip has no sound.", from: .capture)
         case .pressure(let level, let isThermal):
             pressureLevel = level
             isThermalPressure = isThermal
@@ -992,6 +1015,11 @@ extension CameraModel {
         case .systemControlsFullscreen:
             // The Camera Control's sliders have the screen; the app's own go, and the values stay.
             closeControl()
+        case .framesDropped(let clip, let total):
+            // Only the clip being recorded, and never a sweep clip.
+            guard isRecording, let recordingClip, !sweepClips.contains(clip),
+                  CaptureStore.clipKey(for: recordingClip.url) == clip else { break }
+            droppedFrames = total
         }
     }
 }

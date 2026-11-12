@@ -78,7 +78,8 @@ extension CameraSession {
 
     // MARK: Device. Reads only.
 
-    /// Video mode is what the session has attached: the movie output.
+    /// Video mode is what the session has attached: the movie output, or on the writer path its video data output (the movie
+    /// output is detached there).
     private func deviceLimits(of device: AVCaptureDevice) -> DeviceLimits {
         let format = device.activeFormat
         return DeviceLimits(
@@ -86,7 +87,7 @@ extension CameraSession {
             frameDuration: device.activeVideoMaxFrameDuration, minISO: format.minISO, maxISO: format.maxISO,
             minBias: device.minExposureTargetBias, maxBias: device.maxExposureTargetBias,
             recommendedBias: format.systemRecommendedExposureBiasRange, maxWhiteBalanceGain: device.maxWhiteBalanceGain,
-            isVideo: session.outputs.contains(recorder.output), isAutoFrameRateEnabled: device.isAutoVideoFrameRateEnabled,
+            isVideo: isVideoAttached, isAutoFrameRateEnabled: device.isAutoVideoFrameRateEnabled,
             supportsContinuousExposure: device.isExposureModeSupported(.continuousAutoExposure),
             supportsCustomExposure: device.isExposureModeSupported(.custom),
             supportsContinuousWhiteBalance: device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance),
@@ -95,6 +96,11 @@ extension CameraSession {
             supportsContinuousFocus: device.isFocusModeSupported(.continuousAutoFocus),
             supportsLockedFocus: device.isFocusModeSupported(.locked),
             supportsCustomLensPosition: device.isLockingFocusWithCustomLensPositionSupported)
+    }
+
+    /// Read from the outputs rather than the applied configuration, which is not to be trusted after a failed restore.
+    private var isVideoAttached: Bool {
+        session.outputs.contains(recorder.output) || writerRecorderStorage.map { session.outputs.contains($0.videoOutput) } == true
     }
 
     // MARK: Device. Forwards a request; the caller holds the configuration lock.

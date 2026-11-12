@@ -22,18 +22,25 @@ nonisolated struct RecordSelectionResolver: Sendable {
     /// The first option, in the device's order, for each set of values.
     private let firstByKey: [RecordOptionKey: VideoOption]
 
+    /// The keys only the writer records: those no scanned option has.
+    private let writerKeys: Set<RecordOptionKey>
+
     /// Keeps the options for `lens?.id` only; no lens means no options.
-    init(options: [VideoOption], lens: Lens?) {
-        self.init(lensOptions: lens.map { lens in options.filter { $0.lensID == lens.id } } ?? [])
+    init(options: [VideoOption], writerOptions: [VideoOption] = [], lens: Lens?) {
+        self.init(lensOptions: lens.map { lens in options.filter { $0.lensID == lens.id } } ?? [],
+                  writerOptions: lens.map { lens in writerOptions.filter { $0.lensID == lens.id } } ?? [])
     }
 
-    /// `lensOptions` are already one lens's, in the device's order.
-    init(lensOptions: [VideoOption]) {
+    /// `scanned` is already one lens's, in the device's order; its writer options follow, so a tie on the five values
+    /// settles on a scanned option.
+    init(lensOptions scanned: [VideoOption], writerOptions: [VideoOption] = []) {
+        let lensOptions = scanned + writerOptions
+        var writer: Set<RecordOptionKey> = []
         var tables = Array(repeating: [String: Int](), count: Self.columnCount)
         var codes: [Int] = []
         codes.reserveCapacity(lensOptions.count * Self.columnCount)
         var first: [RecordOptionKey: VideoOption] = [:]
-        for option in lensOptions {
+        for (index, option) in lensOptions.enumerated() {
             for (column, row) in RecordRow.allCases.enumerated() {
                 let id = Self.id(row, of: option)
                 if let code = tables[column][id] {
@@ -45,8 +52,12 @@ nonisolated struct RecordSelectionResolver: Sendable {
                 }
             }
             let key = RecordOptionKey(option)
-            if first[key] == nil { first[key] = option }
+            if first[key] == nil {
+                first[key] = option
+                if index >= scanned.count { writer.insert(key) }
+            }
         }
+        writerKeys = writer
         options = lensOptions
         self.codes = codes
         codeByID = tables
@@ -95,6 +106,11 @@ nonisolated struct RecordSelectionResolver: Sendable {
 
     func option(for selection: RecordSelection) -> VideoOption? {
         firstByKey[RecordOptionKey(selection)]
+    }
+
+    /// Which recorder records `selection`: the writer only for an option no scanned option shares.
+    func recorder(for selection: RecordSelection) -> RecorderPath {
+        writerKeys.contains(RecordOptionKey(selection)) ? .writer : .system
     }
 
     func defaultSelection() -> RecordSelection? {

@@ -11,6 +11,11 @@ nonisolated enum LookCompiler {
         build(dimension: dimension) { $0 }
     }
 
+    /// A table that applies `perChannel` to red, green and blue on their own.
+    static func cube(dimension: Int = ColourCube.standardDimension, perChannel: (Float) -> Float) -> ColourCube {
+        build(dimension: dimension) { SIMD3(perChannel($0.x), perChannel($0.y), perChannel($0.z)) }
+    }
+
     private static func build(dimension: Int, transform: (SIMD3<Float>) -> SIMD3<Float>) -> ColourCube {
         let count = max(dimension, 0)
         let scale = Float(max(count - 1, 1))

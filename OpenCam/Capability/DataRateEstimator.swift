@@ -17,7 +17,7 @@ nonisolated enum DataRateEstimator {
         case .raw:
             return scaledProRes(rawMbps, pixels: pixels, fps: fps)
         case .proRes:
-            return scaledProRes(proResMbps(quality: option.codec.quality), pixels: pixels, fps: fps)
+            return proResMbps(option, pixels: pixels, fps: fps)
         case .hevc:
             return hevcMbps(option, pixels: pixels, fps: fps)
         case .h264:
@@ -92,6 +92,19 @@ nonisolated enum DataRateEstimator {
 
     private static func scaledProRes(_ mbps: Double, pixels: Double, fps: Double) -> Double {
         mbps * (pixels / referencePixels) * (fps / referenceFrameRate)
+    }
+
+    /// Apple's cell; else the same size's 30 fps cell scaled to the rate; else the linear estimate (other sizes, 4444 kinds).
+    private static func proResMbps(_ option: VideoOption, pixels: Double, fps: Double) -> Double {
+        let quality = option.codec.quality
+        let size = option.resolution
+        if let cell = ProResRateTable.megabitsPerSecond(quality: quality, width: size.width, height: size.height, frameRate: option.frameRate) {
+            return cell
+        }
+        if let base = ProResRateTable.megabitsPerSecond(quality: quality, width: size.width, height: size.height, frameRate: 30) {
+            return base * fps / 30
+        }
+        return scaledProRes(proResMbps(quality: quality), pixels: pixels, fps: fps)
     }
 
     private static func proResMbps(quality: String) -> Double {

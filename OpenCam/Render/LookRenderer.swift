@@ -13,6 +13,8 @@ nonisolated final class LookRenderer: Sendable {
     /// Metal-backed when a device exists; the default working space (extended linear sRGB).
     let context: CIContext
     let displayP3: CGColorSpace
+    /// ITU-R BT.2100 HLG, the space the writer path's frames arrive in.
+    let hlg: CGColorSpace
     private let cubes: ColourCubeCache
 
     /// Long side at which spatial effects are tuned; larger images scale them so proxy and export look alike.
@@ -28,6 +30,7 @@ nonisolated final class LookRenderer: Sendable {
             context = CIContext()
         }
         displayP3 = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
+        hlg = CGColorSpace(name: CGColorSpace.itur_2100_HLG) ?? CGColorSpaceCreateDeviceRGB()
         self.cubes = cubes
     }
 
@@ -81,13 +84,19 @@ nonisolated final class LookRenderer: Sendable {
 
     /// Core Image converts the image from the working space into Display P3 for the lookup and back afterwards.
     func applyCube(_ image: CIImage, cube: ColourCube) -> CIImage {
+        applyTable(image, cube: cube, in: displayP3)
+    }
+
+    /// The same lookup with the table read in `colourSpace`: Core Image converts the image from the working space into it
+    /// and back. A table meant for HLG values is applied in HLG, so a highlight is not pushed out of 0...1 by the conversion.
+    func applyTable(_ image: CIImage, cube: ColourCube, in colourSpace: CGColorSpace) -> CIImage {
         let filter = CIFilter.colorCubeWithColorSpace()
         filter.inputImage = image
         filter.cubeDimension = Float(cube.dimension)
         filter.cubeData = cube.cubeData
-        filter.colorSpace = displayP3
+        filter.colorSpace = colourSpace
         filter.extrapolate = false
-        return output(of: filter, stage: "colour table", function: "applyCube") ?? image
+        return output(of: filter, stage: "colour table", function: "applyTable") ?? image
     }
 
     /// Display P3, 8 bits per channel, over the image's extent.
