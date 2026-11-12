@@ -15,6 +15,7 @@ struct EditorPanel: View {
             case .curve: CurvePanel(model: model)
             case .mix: MixPanel(model: model)
             case .grading: GradingPanel(model: model)
+            case .masks: MasksPanel(model: model)
             case .light, .colour, .detail, .effects: sliders
             }
         }

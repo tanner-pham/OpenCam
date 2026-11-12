@@ -103,7 +103,7 @@ struct EditorView: View {
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button("Reset all", action: model.resetAll)
-                .disabled(isFailed || (model.adjustments.isIdentity && model.lookName == nil))
+                .disabled(isFailed || model.currentEdit.isIdentity)
         }
         ToolbarItem(placement: .confirmationAction) {
             // Leaving waits for an export to finish, so its file is shared and then removed rather than left behind.

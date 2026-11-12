@@ -138,6 +138,69 @@ import Testing
         #expect(model.lookName == "Mine")
         model.undo(); #expect(model.adjustments.exposure == 0); #expect(!model.canUndo)
     }
+    @Test func addingAMaskSelectsIt() async throws {
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300)
+        #expect(model.masks.isEmpty); #expect(model.selectedMask == nil)
+        model.addMask(.linear); model.addMask(.radial)
+        #expect(model.masks.map(\.shape) == [MaskKind.linear.defaultShape, MaskKind.radial.defaultShape])
+        #expect(model.selectedMaskID == model.masks[1].id); #expect(model.selectedMask == model.masks[1])
+    }
+    @Test func deletingAMaskSelectsTheOneBefore() async throws {
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300)
+        model.addMask(.linear); model.addMask(.radial); model.addMask(.brush)
+        let ids = model.masks.map(\.id)
+        model.deleteSelectedMask(); #expect(model.masks.map(\.id) == [ids[0], ids[1]]); #expect(model.selectedMaskID == ids[1])
+        model.selectedMaskID = ids[0]; model.deleteSelectedMask()
+        #expect(model.masks.map(\.id) == [ids[1]]); #expect(model.selectedMaskID == ids[1])
+        model.deleteSelectedMask(); #expect(model.masks.isEmpty); #expect(model.selectedMaskID == nil)
+        model.deleteSelectedMask(); #expect(model.masks.isEmpty)
+    }
+    @Test func aMaskSliderChangesOnlyTheSelectedMask() async throws {
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300)
+        model.addMask(.linear); model.addMask(.radial)
+        let first = model.masks[0]
+        model.updateSelectedMask { $0.adjustments[.exposure] = 1.5 }
+        #expect(model.masks[0] == first); #expect(model.masks[1].adjustments[.exposure] == 1.5); #expect(model.adjustments.isIdentity)
+        model.updateSelectedMask { $0.isInverted = true }
+        #expect(model.masks[1].isInverted); #expect(!model.masks[0].isInverted)
+    }
+    @Test func masksAreSavedAndReadBack() async throws {
+        let (model, dir, _) = try await EditorFixture.make(width: 400, height: 300)
+        model.addMask(.radial); model.updateSelectedMask { $0.adjustments[.saturation] = -30; $0.isInverted = true }
+        #expect(model.hasChanges); #expect(model.save()); #expect(!model.hasChanges)
+        let item = try #require(LibraryScanner.items(in: dir).first)
+        let reopened = EditorModel(item: item, edits: EditStore(directory: dir), looks: try LookStore(directory: TestFiles.directory()))
+        await reopened.load()
+        #expect(reopened.masks == model.masks); #expect(!reopened.hasChanges)
+    }
+    @Test func resetAllClearsMasks() async throws {
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300)
+        model.addMask(.linear); model.resetAll()
+        #expect(model.masks.isEmpty); #expect(model.selectedMaskID == nil); #expect(model.currentEdit.isIdentity)
+    }
+    @Test func applyingALookKeepsMasks() async throws {
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300)
+        model.addMask(.linear)
+        model.applyLook(Look(id: UUID(), name: "Warm", adjustments: Adjustments().setting(.contrast, to: 20), createdAt: Date()))
+        #expect(model.masks.count == 1); #expect(model.adjustments.contrast == 20)
+        model.applyLook(nil); #expect(model.masks.count == 1)
+    }
+    @Test func savingALookLeavesMasksOut() async throws {
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300)
+        model.adjustments.exposure = 1; model.addMask(.linear); model.updateSelectedMask { $0.adjustments[.exposure] = 2 }
+        let look = try model.saveAsLook(named: "Mine")
+        #expect(look.adjustments == model.adjustments); #expect(look.adjustments.exposure == 1); #expect(model.masks.count == 1)
+    }
+    @Test func deletingAMaskIsOneUndoStep() async throws {
+        let clock = TestClock()
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })
+        model.addMask(.linear); clock.advance(0.1)
+        model.deleteSelectedMask(); clock.advance(0.1)
+        #expect(model.masks.isEmpty)
+        model.undo(); #expect(model.masks.count == 1); #expect(model.selectedMask != nil)
+        model.undo(); #expect(model.masks.isEmpty); #expect(model.selectedMaskID == nil); #expect(!model.canUndo)
+        model.redo(); #expect(model.masks.count == 1)
+    }
 }
 
 nonisolated final class TestClock: @unchecked Sendable {

@@ -33,13 +33,24 @@ import OSLog
     var adjustments = Adjustments() {
         didSet {
             guard adjustments != oldValue else { return }
-            record(PhotoEdit(adjustments: oldValue, lookName: lookName))
+            record(PhotoEdit(adjustments: oldValue, lookName: lookName, masks: masks))
             requestRender()
         }
     }
     private(set) var lookName: String? {
-        didSet { if lookName != oldValue { record(PhotoEdit(adjustments: adjustments, lookName: oldValue)) } }
+        didSet { if lookName != oldValue { record(PhotoEdit(adjustments: adjustments, lookName: oldValue, masks: masks)) } }
     }
+    /// The local masks, in the order they are drawn; edited through `addMask`, `deleteSelectedMask` and `updateSelectedMask`.
+    private(set) var masks: [LocalMask] = [] {
+        didSet {
+            guard masks != oldValue else { return }
+            record(PhotoEdit(adjustments: adjustments, lookName: lookName, masks: oldValue))
+            requestRender()
+        }
+    }
+    /// The mask the Masks group shows; never saved, so an edit opens with none chosen.
+    var selectedMaskID: UUID?
+    var selectedMask: LocalMask? { masks.first { $0.id == selectedMaskID } }
     /// The lens and exposure facts of the original file; none until the read finishes or when the file carries none.
     private(set) var facts = PhotoFacts.none
     var designation: FormatDesignation? { FormatDesignation.of(item) }
@@ -106,13 +117,15 @@ import OSLog
     }
 
     /// The edit as shown; with `restore(_:)`, the one place the model's edit state is read and written.
-    var currentEdit: PhotoEdit { PhotoEdit(adjustments: adjustments, lookName: lookName) }
+    var currentEdit: PhotoEdit { PhotoEdit(adjustments: adjustments, lookName: lookName, masks: masks) }
 
     private func restore(_ edit: PhotoEdit) {
         isRestoring = true
         defer { isRestoring = false }
         adjustments = edit.adjustments
         lookName = edit.lookName
+        masks = edit.masks
+        if selectedMask == nil { selectedMaskID = masks.last?.id }
     }
 
     private func record(_ before: PhotoEdit) {
@@ -131,7 +144,7 @@ import OSLog
         if let next = history.redo(from: currentEdit) { restore(next) }
     }
 
-    var hasChanges: Bool { !adjustments.matches(savedEdit.adjustments) || lookName != savedEdit.lookName }
+    var hasChanges: Bool { !adjustments.matches(savedEdit.adjustments) || lookName != savedEdit.lookName || masks != savedEdit.masks }
 
     /// Changes that leaving without Done would lose. A photo that cannot be edited (any failed phase) has none to lose.
     var hasUnsavedChanges: Bool {
@@ -244,6 +257,8 @@ import OSLog
         history.breakStep()
         adjustments = Adjustments()
         lookName = nil
+        masks = []
+        selectedMaskID = nil
         history.breakStep()
     }
 
@@ -323,6 +338,36 @@ import OSLog
             }
             job = histograms.finish()
         }
+    }
+}
+
+// MARK: - Masks
+
+extension EditorModel {
+    /// Adds a mask of `kind` with its default shape and no adjustments, and selects it. One undo step.
+    func addMask(_ kind: MaskKind) {
+        let mask = LocalMask(shape: kind.defaultShape)
+        history.breakStep()
+        masks.append(mask)
+        selectedMaskID = mask.id
+        history.breakStep()
+    }
+
+    /// Removes the selected mask and selects the one before it, or none. One undo step.
+    func deleteSelectedMask() {
+        guard let index = masks.firstIndex(where: { $0.id == selectedMaskID }) else { return }
+        history.breakStep()
+        masks.remove(at: index)
+        selectedMaskID = masks.indices.contains(index - 1) ? masks[index - 1].id : masks.first?.id
+        history.breakStep()
+    }
+
+    /// Changes the selected mask in one write to `masks`, so a drag renders once per move and coalesces like any slider.
+    func updateSelectedMask(_ change: (inout LocalMask) -> Void) {
+        guard let index = masks.firstIndex(where: { $0.id == selectedMaskID }) else { return }
+        var edited = masks
+        change(&edited[index])
+        masks = edited
     }
 }
 
