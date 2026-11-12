@@ -53,6 +53,12 @@ final class BrushTouchView: UIView {
         finish()
     }
 
+    /// A touch cannot end on a view that left the screen, so it ends here instead of leaving a stroke open.
+    override func willMove(toWindow newWindow: UIWindow?) {
+        super.willMove(toWindow: newWindow)
+        if newWindow == nil, activeTouch != nil { finish() }
+    }
+
     private func finish() {
         activeTouch = nil
         onEnd()

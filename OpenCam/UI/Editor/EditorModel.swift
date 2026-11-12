@@ -61,9 +61,14 @@ import OSLog
     var isErasing = false
     /// The brush's radius as a fraction of the picture's shorter side, 0.01...0.15.
     var brushRadius: Double { 0.01 + (min(max(brushSize, 1), 100) - 1) / 99 * 0.14 }
-    /// The mask the Masks group shows; never saved, so an edit opens with none chosen.
+    /// The mask the Masks group shows; never saved. An edit opens with its last mask chosen, as does an undo or redo that
+    /// leaves none chosen.
     var selectedMaskID: UUID? {
-        didSet { if selectedMaskID != oldValue { requestMaskOverlay() } }
+        didSet {
+            guard selectedMaskID != oldValue else { return }
+            endStroke()
+            requestMaskOverlay()
+        }
     }
     /// Whether the selected mask is tinted red on the picture while the Masks group is open.
     var isShowingMaskOverlay = true {
@@ -107,6 +112,8 @@ import OSLog
     private var hasRecordedStroke = false
     private var strokeBuilder: BrushStrokeBuilder?
     private var strokeMaskID: UUID?
+    /// Where the open stroke sits in its mask's strokes, recorded by `beginStroke`.
+    private var strokeIndex = 0
     private let now: @Sendable () -> Date
     private var proxy: CIImage?
     private var subject: CIImage?
@@ -152,6 +159,7 @@ import OSLog
     var currentEdit: PhotoEdit { PhotoEdit(adjustments: adjustments, lookName: lookName, masks: masks) }
 
     private func restore(_ edit: PhotoEdit) {
+        closeStroke()
         isRestoring = true
         defer { isRestoring = false }
         adjustments = edit.adjustments
@@ -174,10 +182,12 @@ import OSLog
     var canRedo: Bool { history.canRedo }
 
     func undo() {
+        closeStroke()
         if let previous = history.undo(from: currentEdit) { restore(previous) }
     }
 
     func redo() {
+        closeStroke()
         if let next = history.redo(from: currentEdit) { restore(next) }
     }
 
@@ -400,6 +410,7 @@ extension EditorModel {
     /// Adds a mask of `kind` with its default shape and no adjustments, and selects it. One undo step.
     func addMask(_ kind: MaskKind) {
         let mask = LocalMask(shape: kind.defaultShape)
+        endStroke()
         history.breakStep()
         masks.append(mask)
         selectedMaskID = mask.id
@@ -409,6 +420,7 @@ extension EditorModel {
     /// Removes the selected mask and selects the one before it, or none. One undo step.
     func deleteSelectedMask() {
         guard let index = masks.firstIndex(where: { $0.id == selectedMaskID }) else { return }
+        endStroke()
         history.breakStep()
         masks.remove(at: index)
         selectedMaskID = masks.indices.contains(index - 1) ? masks[index - 1].id : masks.first?.id
@@ -439,6 +451,7 @@ extension EditorModel {
         strokeBuilder = builder
         strokeMaskID = mask.id
         let stroke = builder.stroke
+        if case let .brush(strokes) = mask.shape { strokeIndex = strokes.count }
         writeStroke { (strokes: inout [BrushStroke]) in strokes.append(stroke) }
     }
 
@@ -446,22 +459,33 @@ extension EditorModel {
         guard isStroking, var builder = strokeBuilder, builder.add(point, pressure: pressure) else { return }
         strokeBuilder = builder
         let stroke = builder.stroke
+        let at = strokeIndex
         writeStroke { (strokes: inout [BrushStroke]) in
-            if strokes.isEmpty { strokes.append(stroke) } else { strokes[strokes.count - 1] = stroke }
+            if at == strokes.count { strokes.append(stroke) } else { strokes[at] = stroke }
         }
     }
 
     func endStroke() {
         guard isStroking else { return }
-        isStroking = false
-        strokeBuilder = nil
-        strokeMaskID = nil
+        closeStroke()
         history.breakStep()
     }
 
-    /// One write to `masks` per sample, so the picture renders once per sample.
+    /// Drops the open stroke's state without touching the history, for an undo, redo or restore that replaces the edit.
+    private func closeStroke() {
+        isStroking = false
+        strokeBuilder = nil
+        strokeMaskID = nil
+    }
+
+    /// One write to `masks` per sample, so the picture renders once per sample. The stroke goes back to the index `beginStroke`
+    /// recorded; when its mask or that place no longer exists the stroke ends and nothing is written.
     private func writeStroke(_ change: (inout [BrushStroke]) -> Void) {
-        guard let index = masks.firstIndex(where: { $0.id == strokeMaskID }), case var .brush(strokes) = masks[index].shape else { return }
+        guard let index = masks.firstIndex(where: { $0.id == strokeMaskID }), case var .brush(strokes) = masks[index].shape,
+              strokeIndex <= strokes.count else {
+            closeStroke()
+            return
+        }
         change(&strokes)
         var edited = masks
         edited[index].shape = .brush(strokes: strokes)

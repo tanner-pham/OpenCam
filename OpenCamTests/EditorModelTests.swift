@@ -244,6 +244,30 @@ import Testing
         guard case let .brush(strokes)? = model.selectedMask?.shape else { Issue.record("not a brush"); return }
         #expect(strokes.count == 1); #expect(!strokes[0].isErasing)
     }
+    @Test func undoDuringAStrokeEndsItAndKeepsEarlierStrokes() async throws {
+        let clock = TestClock()
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })
+        model.addMask(.brush); clock.advance(0.1)
+        model.beginStroke(at: MaskPoint(x: 0.2, y: 0.2), pressure: nil)
+        model.continueStroke(at: MaskPoint(x: 0.4, y: 0.2), pressure: nil); model.endStroke(); clock.advance(0.1)
+        guard case let .brush(strokeA)? = model.selectedMask?.shape else { Issue.record("not a brush"); return }
+        model.beginStroke(at: MaskPoint(x: 0.2, y: 0.8), pressure: nil)
+        model.continueStroke(at: MaskPoint(x: 0.4, y: 0.8), pressure: nil)
+        model.undo()
+        model.continueStroke(at: MaskPoint(x: 0.9, y: 0.8), pressure: nil)
+        guard case let .brush(strokes)? = model.selectedMask?.shape else { Issue.record("not a brush"); return }
+        #expect(strokes == strokeA); #expect(strokes.count == 1)
+    }
+    @Test func deletingTheMaskDuringAStrokeEndsIt() async throws {
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300)
+        model.addMask(.brush)
+        model.beginStroke(at: MaskPoint(x: 0.2, y: 0.2), pressure: nil)
+        model.deleteSelectedMask()
+        model.addMask(.brush)
+        model.beginStroke(at: MaskPoint(x: 0.5, y: 0.5), pressure: nil)   // ignored while a stroke is open
+        guard case let .brush(strokes)? = model.selectedMask?.shape else { Issue.record("not a brush"); return }
+        #expect(strokes.count == 1)
+    }
     @Test func paintingNeedsABrushMaskSelected() async throws {
         let (model, _, _) = try await EditorFixture.make(width: 400, height: 300)
         model.addMask(.linear)
