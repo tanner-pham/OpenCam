@@ -53,6 +53,21 @@ A failed check is information, not an emergency: note what happened and move on.
 - [ ] Pick a failed combination: Record settings reads "This combination did not record in the last format sweep." and the summary takes the warning style.
 - [ ] With ProRes 4K chosen on 1x, switch to a front lens: no crash.
 
+## 4a. Audio source and monitoring
+
+- [ ] After the first source choice, copy the journal line (`opencam-errors.log`, "Audio session at the first take-over"): category, mode, options.
+- [ ] Automatic, nothing touched: a clip sounds as it did on the previous build (channels, level).
+- [ ] Each source records: Built-in Front, Back, Bottom, a wired headset microphone, a USB microphone. Tap each microphone during a 10 s clip.
+- [ ] The source survives a recording start and stop, a lens switch, photo mode and back, the Library, backgrounding.
+- [ ] Unplug the chosen microphone: the row reads Automatic, the notice shows, the next clip has sound.
+- [ ] Back to Automatic by hand: note whether the next clip matches the first one at once or only after a lens switch.
+- [ ] Bluetooth: is a headset listed as a source; are Bluetooth headphones offered for monitoring. Note both.
+- [ ] Monitoring in wired headphones is heard with no noticeable delay; in Bluetooth with a delay.
+- [ ] A clip recorded with monitoring on has the sound once, clean, and the meters move.
+- [ ] Unplug headphones while monitoring and recording: nothing comes from the speaker, the notice shows, the clip keeps its sound.
+- [ ] A call or Siri stops monitoring and it returns afterwards.
+- [ ] Record start and stop haptics still fire with a source chosen and with monitoring on.
+
 ## 5. The open phone
 
 - [ ] In photo and video mode, in both orientations, every control sits fully on screen, none cut off.

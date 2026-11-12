@@ -9,6 +9,8 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
     var simulatedState: SimulatedState?
     var freeSpaceMarginMB: Int?
     var keepsSweepClips = false
+    var hasWiredMicrophone = false          // -wiredMic on: the Simulator's audio route lists a wired headset microphone (does not make the launch scripted)
+    var hasHeadphones = false               // -headphones on: the Simulator's audio route plays to wired headphones (does not make the launch scripted)
     var editorGroup: EditorGroup = .light   // -editorGroup light|colour|detail|effects|looks
     var seedsSamples = false                // -seedSamples on (honoured in the Simulator only)
     var seedsLook = false                   // -seedLook on (honoured in the Simulator only)
@@ -81,6 +83,8 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
         }
         config.freeSpaceMarginMB = value("-freeSpaceMarginMB").flatMap { Int($0) }
         config.keepsSweepClips = value("-keepSweepClips") == "on"
+        config.hasWiredMicrophone = value("-wiredMic") == "on"
+        config.hasHeadphones = value("-headphones") == "on"
         return config
     }
 }

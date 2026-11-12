@@ -17,4 +17,7 @@ nonisolated enum NoticeSource: Sendable, Equatable {
     case look
     /// A manual setting the session could not apply. Cleared by the next apply that works; a newer notice replaces it.
     case control
+    /// A microphone or headphones the Audio section lost, or a monitor that could not start. Never replaces a capture or
+    /// configuration notice; cleared by the next audio choice.
+    case audio
 }
