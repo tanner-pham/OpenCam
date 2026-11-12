@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// The Mix group: eight band buttons in two rows of four, then the chosen band's hue, saturation and luminance sliders.
+/// The Mix group: eight band buttons in two rows of four (four rows of two at accessibility text sizes, where a quarter of the
+/// panel cannot hold a band's name), then the chosen band's hue, saturation and luminance sliders.
 struct MixPanel: View {
     @Bindable var model: EditorModel
 
-    private static let columns = 4
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var columns: Int { dynamicTypeSize.isAccessibilitySize ? 2 : 4 }
 
     var body: some View {
         ScrollView {
@@ -25,9 +28,9 @@ struct MixPanel: View {
 
     private var bands: some View {
         Grid(horizontalSpacing: Theme.Space.s, verticalSpacing: Theme.Space.s) {
-            ForEach(0..<(ColourBand.allCases.count / Self.columns), id: \.self) { row in
+            ForEach(0..<(ColourBand.allCases.count / columns), id: \.self) { row in
                 GridRow {
-                    ForEach(ColourBand.allCases.dropFirst(row * Self.columns).prefix(Self.columns), id: \.self) { band in
+                    ForEach(ColourBand.allCases.dropFirst(row * columns).prefix(columns), id: \.self) { band in
                         bandButton(band)
                     }
                 }
