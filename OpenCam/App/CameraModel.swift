@@ -259,6 +259,14 @@ final class CameraModel {
         case .pressure:
             pressureLevel = .serious
             isThermalPressure = true
+        case .cameraStopped:
+            phase = .failed(Self.cameraStopped)
+            configurator = StoppedSessionStandIn()
+        case .cameraRestricted:
+            phase = .cameraRestricted
+            access.camera = .restricted
+        case .sweepWarning:
+            if let option = currentVideoOption { failedCombinations = FailedCombinations(osBuild: "", failedByLens: [option.lensID: [option]]) }
         case .scanning, nil:
             break
         }
