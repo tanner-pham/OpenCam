@@ -64,13 +64,25 @@ import Testing
         rig.model.isRecording = true
         rig.model.setControl(.iso, step: 6)
         await rig.model.manualApplyTask?.value
-        #expect(await rig.fake.manualApplies.count == 1)
+        // The move reaches the camera as an apply while recording, and nothing configures it.
+        let applies = await rig.fake.manualApplies
+        #expect(applies.count == 1)
+        #expect(applies.first?.settings == rig.model.manual)
+        #expect(rig.model.manual != .automatic)
+        #expect(!(await rig.fake.calls.contains("configure")))
+        #expect(rig.model.openControl == .iso)
         let held = rig.model.manual
+        let heldControl = rig.model.openControl
+        let configures = await rig.fake.applied.count
+        // The stop queues no configure and changes neither the slider nor the values.
         rig.model.isRecording = false
         #expect(rig.model.enqueueConfigure() == nil)
+        #expect(!rig.model.isConfigurePending)
         await rig.model.waitForQueuedConfigures()
-        #expect(await rig.fake.applied.isEmpty)
-        #expect(rig.model.openControl == .iso)
+        #expect(!(await rig.fake.calls.contains("configure")))
+        #expect(await rig.fake.applied.count == configures)
+        #expect(await rig.fake.manualApplies.count == 1)
+        #expect(rig.model.openControl == heldControl)
         #expect(rig.model.manual == held)
     }
 
