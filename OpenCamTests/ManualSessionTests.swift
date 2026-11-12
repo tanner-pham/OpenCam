@@ -147,7 +147,19 @@ import Testing
         #expect(try !make(.automatic, applied: .automatic, limits: full).restoresFrameDuration)
         var video = full
         video.frameSeconds = 1.0 / 30
+        video.isVideo = true
         #expect(try !make(manual, limits: video).restoresFrameDuration)
+    }
+
+    @Test func aVideoNeverReleasesTheFrameRateLock() throws {
+        // A video format without custom exposure, or whose frame time cannot be read, has no shutter range and no frame time.
+        let video = ManualRanges(isVideo: true)
+        #expect(try !make(.automatic, applied: nil, limits: video).restoresFrameDuration)
+        #expect(try make(.automatic, applied: nil, limits: video).exposure == .continuous)
+        #expect(try !make(.automatic, applied: .automatic, limits: video).restoresFrameDuration)
+        // The photo counterpart restores it.
+        let photo = ManualRanges(isVideo: false)
+        #expect(try make(.automatic, applied: nil, limits: photo).restoresFrameDuration)
     }
 
     @Test func errorsReadInTheHouseFormat() {

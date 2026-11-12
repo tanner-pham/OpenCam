@@ -10,6 +10,9 @@ nonisolated struct ManualRanges: Sendable, Equatable {
     var hasFocus = false
     /// Video only.
     var frameSeconds: Double?
+    /// True when the session has the movie output attached (video mode), false in photo mode. Never inferred from
+    /// `frameSeconds`, which is also nil on a video format whose frame time cannot be read.
+    var isVideo = false
 }
 
 extension ManualRanges {

@@ -88,24 +88,24 @@ extension CameraSession {
 
     // MARK: Limits
 
-    private var isVideoMode: Bool { lastWorkingConfiguration?.mode == .video }
+    /// From what the session has attached: video mode has the movie output.
+    private var isVideoMode: Bool { session.outputs.contains(recorder.output) }
 
     /// The table of limits, read off the device. Custom exposure needs `isExposureModeSupported(.custom)`; in video the
     /// shutter's upper end is the frame time, and `frameSeconds` is set (photo mode has no frame time).
     private func ranges(of device: AVCaptureDevice) -> ManualRanges {
         let format = device.activeFormat
         var ranges = ManualRanges()
+        ranges.isVideo = isVideoMode
+        if ranges.isVideo {
+            let frame = device.activeVideoMaxFrameDuration
+            if frame.isNumeric, frame.seconds > 0 { ranges.frameSeconds = frame.seconds }
+        }
         let shortest = format.minExposureDuration, longest = format.maxExposureDuration
         if device.isExposureModeSupported(.custom), shortest.isNumeric, longest.isNumeric, shortest.seconds > 0,
            format.minISO.isFinite, format.maxISO.isFinite, format.minISO <= format.maxISO {
             var upper = longest.seconds
-            if isVideoMode {
-                let frame = device.activeVideoMaxFrameDuration
-                if frame.isNumeric, frame.seconds > 0 {
-                    ranges.frameSeconds = frame.seconds
-                    upper = min(upper, frame.seconds)
-                }
-            }
+            if let frame = ranges.frameSeconds { upper = min(upper, frame) }
             ranges.shutterSeconds = shortest.seconds...max(shortest.seconds, upper)
             ranges.iso = format.minISO...format.maxISO
         }

@@ -55,7 +55,7 @@ nonisolated struct ManualApplyPlan: Sendable, Equatable {
             case .automatic: plan.exposure = .continuous
             case .manual(let shutter, let iso): plan.exposure = .custom(seconds: shutter, iso: iso)
             }
-            plan.restoresFrameDuration = limits.frameSeconds == nil
+            plan.restoresFrameDuration = !limits.isVideo
         }
         // Bias only steers metering while exposure is manual, so it waits: the plan remembers the bias the device has, and
         // the change is seen again when exposure returns to automatic.

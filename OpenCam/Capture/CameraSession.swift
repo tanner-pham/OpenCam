@@ -14,7 +14,7 @@ actor CameraSession: SessionConfigurator {
     private let continuation: AsyncStream<SessionEvent>.Continuation
     private let recordingContinuation: AsyncStream<RecordingResult>.Continuation
     /// Its output is attached in video mode only.
-    private let recorder: MovieRecorder
+    let recorder: MovieRecorder
     /// Registered on the first `start()`, because the runtime-error observer needs a reference to this actor.
     private var notificationTokens: [any NSObjectProtocol] = []
     var videoInput: AVCaptureDeviceInput?
