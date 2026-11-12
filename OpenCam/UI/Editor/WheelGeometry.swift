@@ -3,11 +3,12 @@ import Foundation
 
 /// Maps a grading wheel's square canvas, `diameter` on a side with the disc filling it, to a hue and saturation.
 nonisolated enum WheelGeometry {
-    static let maxDiameter: CGFloat = 160
+    static let maxDiameter: CGFloat = 144
     /// The grading panel's padding on each side.
     static let sideInset = Theme.Space.l
 
-    /// One wheel fills the panel up to `maxDiameter`: 160 pt in the folded portrait panel and in the 320 pt one.
+    /// One wheel fills the panel up to `maxDiameter`, 144 pt in every layout: at 160 the folded portrait panel cut its Luminance
+    /// slider at rest.
     static func diameter(forWidth width: CGFloat) -> CGFloat {
         max(0, min(maxDiameter, (width - 2 * sideInset).rounded(.down)))
     }
