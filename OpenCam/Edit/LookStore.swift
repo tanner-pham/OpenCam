@@ -60,7 +60,7 @@ nonisolated struct LookStore: Sendable {
     }
 
     func rename(_ id: UUID, to name: String) throws(LookStoreError) -> Look {
-        var look = try read(id)
+        var look = try readWritable(id)
         look.name = try Self.validName(name)
         try write(look)
         return look
@@ -68,7 +68,7 @@ nonisolated struct LookStore: Sendable {
 
     /// "<name> copy"; a long name is cut so the result still fits the limit.
     func duplicate(_ id: UUID, now: Date = .now) throws(LookStoreError) -> Look {
-        let original = try read(id)
+        let original = try readWritable(id)
         let suffix = " copy"
         let base = String(original.name.prefix(Self.maxNameLength - suffix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
         return try save(name: base + suffix, adjustments: original.adjustments, now: now)
@@ -113,17 +113,37 @@ nonisolated struct LookStore: Sendable {
         let url = url(for: id)
         let path = url.path(percentEncoded: false)
         guard FileManager.default.fileExists(atPath: path) else { throw .notFound(id: id) }
+        let data: Data
         do {
-            return try Self.decoder.decode(Look.self, from: Data(contentsOf: url))
+            data = try Data(contentsOf: url)
         } catch {
+            throw .unreadable(path: path, reason: error.localizedDescription)
+        }
+        do {
+            return try Self.decoder.decode(Look.self, from: data)
+        } catch {
+            if let version = try? JSONDecoder().decode(EditFileVersion.self, from: data).version, version > Look.currentVersion {
+                throw .newerVersion(path: path, version: version)
+            }
             throw .unreadable(path: path, reason: error.localizedDescription)
         }
     }
 
+    /// A look from a newer build is listed and can be deleted, but never rewritten, so its newer values survive.
+    private func readWritable(_ id: UUID) throws(LookStoreError) -> Look {
+        let look = try read(id)
+        if look.version > Look.currentVersion {
+            throw .newerVersion(path: url(for: id).path(percentEncoded: false), version: look.version)
+        }
+        return look
+    }
+
     private func write(_ look: Look) throws(LookStoreError) {
         let url = url(for: look.id)
+        var stamped = look
+        stamped.version = Look.currentVersion
         do {
-            try Self.encoder.encode(look).write(to: url, options: .atomic)
+            try Self.encoder.encode(stamped).write(to: url, options: .atomic)
         } catch {
             throw .unwritable(path: url.path(percentEncoded: false), reason: error.localizedDescription)
         }

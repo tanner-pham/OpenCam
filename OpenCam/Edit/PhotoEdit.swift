@@ -2,7 +2,7 @@ import Foundation
 
 /// The edit of one photo: its adjustments and the name of the look they were copied from, if any.
 nonisolated struct PhotoEdit: Codable, Sendable, Equatable {
-    static let currentVersion = 1
+    static let currentVersion = 2
     var adjustments = Adjustments()
     var lookName: String? = nil
     var version = PhotoEdit.currentVersion
