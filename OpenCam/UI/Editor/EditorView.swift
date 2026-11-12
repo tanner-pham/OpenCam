@@ -82,6 +82,16 @@ struct EditorView: View {
                 .disabled(model.isExporting)
         }
         ToolbarItem(placement: .topBarTrailing) {
+            Button("Undo", systemImage: "arrow.uturn.backward", action: model.undo)
+                .keyboardShortcut("z")
+                .disabled(isFailed || !model.canUndo)
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("Redo", systemImage: "arrow.uturn.forward", action: model.redo)
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+                .disabled(isFailed || !model.canRedo)
+        }
+        ToolbarItem(placement: .topBarTrailing) {
             if model.isExporting {
                 ProgressView()
                     .accessibilityLabel("Exporting")

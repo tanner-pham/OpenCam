@@ -97,4 +97,27 @@ import Testing
         #expect(!model.hasUnsavedChanges)
         model.adjustments.exposure = 2; #expect(!model.hasUnsavedChanges)   // read-only: nothing can be saved, so nothing is lost
     }
+
+    @Test func undoTakesASliderDragBackInOneStep() async throws {
+        let clock = TestClock()
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })
+        for value in [10.0, 20, 30] { model.adjustments.exposure = value; clock.advance(0.2) }
+        model.undo(); #expect(model.adjustments.exposure == 0)
+        model.redo(); #expect(model.adjustments.exposure == 30)
+    }
+    @Test func applyingALookIsOneUndoStep() async throws {
+        let clock = TestClock()
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })
+        #expect(!model.canUndo)   // loading is not a step
+        model.applyLook(Look(id: UUID(), name: "Warm", adjustments: Adjustments().setting(.contrast, to: 20), createdAt: Date()))
+        #expect(model.lookName == "Warm")
+        model.undo(); #expect(model.adjustments.isIdentity); #expect(model.lookName == nil); #expect(!model.canUndo)
+    }
+}
+
+nonisolated final class TestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current = Date(timeIntervalSinceReferenceDate: 1000)
+    var date: Date { lock.withLock { current } }
+    func advance(_ seconds: TimeInterval) { lock.withLock { current += seconds } }
 }

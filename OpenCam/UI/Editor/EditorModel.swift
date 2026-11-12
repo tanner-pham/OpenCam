@@ -31,9 +31,15 @@ import OSLog
     private let launchLook: String?
 
     var adjustments = Adjustments() {
-        didSet { if adjustments != oldValue { requestRender() } }
+        didSet {
+            guard adjustments != oldValue else { return }
+            record(PhotoEdit(adjustments: oldValue, lookName: lookName))
+            requestRender()
+        }
     }
-    private(set) var lookName: String?
+    private(set) var lookName: String? {
+        didSet { if lookName != oldValue { record(PhotoEdit(adjustments: adjustments, lookName: oldValue)) } }
+    }
     /// The lens and exposure facts of the original file; none until the read finishes or when the file carries none.
     private(set) var facts = PhotoFacts.none
     var designation: FormatDesignation? { FormatDesignation.of(item) }
@@ -61,6 +67,10 @@ import OSLog
 
     /// The edit as it was loaded or last saved.
     private var savedEdit = PhotoEdit()
+    private var history = EditHistory()
+    /// True while `restore(_:)` writes the edit, so an undo or redo is not recorded as a change.
+    private var isRestoring = false
+    private let now: @Sendable () -> Date
     private var proxy: CIImage?
     private var renders = RenderCoalescer<Adjustments>()
     private var renderTask: Task<Void, Never>?
@@ -80,7 +90,9 @@ import OSLog
     /// `launchLook` names a look in `looks` that is applied through `applyLook(_:)`, unsaved, after a successful load.
     init(item: LibraryItem, edits: EditStore, looks: LookStore, group: EditorGroup = .light, renderer: LookRenderer = .shared,
          exporter: PhotoExporter = .appDefault(), renderPreview: (@Sendable (CIImage, Adjustments) async -> CGImage?)? = nil,
-         makeHistogram: (@Sendable (CGImage) async -> PictureHistogram?)? = nil, launchLook: String? = nil) {
+         makeHistogram: (@Sendable (CGImage) async -> PictureHistogram?)? = nil, launchLook: String? = nil,
+         now: (@Sendable () -> Date)? = nil) {
+        self.now = now ?? { Date() }
         self.item = item
         self.edits = edits
         self.lookStore = looks
@@ -90,6 +102,32 @@ import OSLog
         self.renderPreview = renderPreview ?? { image, adjustments in await renderer.renderedCGImage(image, adjustments: adjustments) }
         self.makeHistogram = makeHistogram ?? { image in await PictureHistogram.make(from: image) }
         self.launchLook = launchLook
+    }
+
+    /// The edit as shown; with `restore(_:)`, the one place the model's edit state is read and written.
+    var currentEdit: PhotoEdit { PhotoEdit(adjustments: adjustments, lookName: lookName) }
+
+    private func restore(_ edit: PhotoEdit) {
+        isRestoring = true
+        defer { isRestoring = false }
+        adjustments = edit.adjustments
+        lookName = edit.lookName
+    }
+
+    private func record(_ before: PhotoEdit) {
+        guard !isRestoring else { return }
+        history.record(before, at: now())
+    }
+
+    var canUndo: Bool { history.canUndo }
+    var canRedo: Bool { history.canRedo }
+
+    func undo() {
+        if let previous = history.undo(from: currentEdit) { restore(previous) }
+    }
+
+    func redo() {
+        if let next = history.redo(from: currentEdit) { restore(next) }
     }
 
     var hasChanges: Bool { !adjustments.matches(savedEdit.adjustments) || lookName != savedEdit.lookName }
@@ -123,8 +161,8 @@ import OSLog
             return
         }
         savedEdit = edit
-        lookName = edit.lookName
-        adjustments = edit.adjustments
+        restore(edit)
+        history.clear()
         guard edit.version <= PhotoEdit.currentVersion else {
             Self.logger.error("[EditorModel:load] Edit is from a newer version, so the photo opens read-only — {stem: \(self.item.stem, privacy: .public), version: \(edit.version)}")
             phase = .failed(LibraryCopy.newerEdit)
@@ -217,7 +255,7 @@ import OSLog
             return false
         }
         guard hasChanges else { return true }
-        let edit = PhotoEdit(adjustments: adjustments, lookName: lookName)
+        let edit = currentEdit
         do {
             try edits.save(edit, stem: item.stem)
         } catch {
@@ -383,7 +421,7 @@ extension EditorModel {
         isExporting = true
         defer { isExporting = false }
         do {
-            return try await exporter.export(item, edit: PhotoEdit(adjustments: adjustments, lookName: lookName))
+            return try await exporter.export(item, edit: currentEdit)
         } catch {
             Self.logger.error("\(error.description, privacy: .public)")
             if case .sourceMissing = error { phase = .failed(LibraryCopy.cannotOpen) } else { alertMessage = LibraryCopy.exportFailed }
