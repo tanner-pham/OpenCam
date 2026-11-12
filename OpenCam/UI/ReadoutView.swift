@@ -33,7 +33,8 @@ struct ReadoutView: View {
         .frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget)
         .overlay(alignment: .bottom) {
             if isOpen {
-                Capsule().fill(Theme.accent).frame(width: Theme.Space.l, height: 2).padding(.bottom, Theme.Space.xs)
+                // The full-size value fills the cell lower than the compact one, so its bar sits on the cell's edge to stay clear of it.
+                Capsule().fill(Theme.accent).frame(width: Theme.Space.l, height: 2).padding(.bottom, isCompact ? Theme.Space.xs : 0)
             }
         }
         .accessibilityElement(children: .ignore)

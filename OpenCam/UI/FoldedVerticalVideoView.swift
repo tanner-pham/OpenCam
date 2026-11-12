@@ -40,32 +40,43 @@ struct FoldedVerticalVideoView: View {
     private var bottomControls: some View {
         GlassEffectContainer(spacing: Theme.Space.s) {
             HStack(spacing: Theme.Space.s) {
-                // The summary is on one line when it fits beside the meters and the shutter, and stacked when it does not (a
-                // longer summary such as "ProRes 1080p Rec. 709"), so the row is never wider than the screen. Its priority
-                // offers it all the width the meters, the time left and the shutter leave, and those keep their places and
-                // sizes either way. With a look the summary has a fourth part and is always stacked.
+                // The summary is on one line when it fits beside the meters and the shutter; with a look, the format on one
+                // line and the look on a second; and one part per line when that does not fit either (a longer summary such
+                // as "ProRes 1080p Rec. 709", or larger text), so the row is never wider than the screen. Its priority offers
+                // it all the width the meters, the time left and the shutter leave, and those keep their places and sizes
+                // either way.
                 ViewThatFits(in: .horizontal) {
-                    if model.summaryLookName == nil { formatButton(isStacked: false) }
-                    formatButton(isStacked: true)
+                    formatButton(.oneLine)
+                    if model.summaryLookName != nil { formatButton(.formatAndLook) }
+                    formatButton(.onePerLine)
                 }
                 .layoutPriority(1)
-                // "Storage full" is wider than the minutes, so the meters give way to it.
-                HStack(spacing: Theme.Space.s) {
-                    if !model.isStorageFull { LiveAudioMeters(model: model, width: 48) }
-                    remainingText
+                // The meters capsule takes the width the summary and the shutter leave, so the gaps between the three are
+                // equal: the meters at its leading edge, the time left at its trailing edge. "Storage full" is wider than the
+                // minutes, so the meters give way to it.
+                HStack(spacing: 0) {
+                    if model.isStorageFull {
+                        Spacer(minLength: 0)
+                        remainingText
+                        Spacer(minLength: 0)
+                    } else {
+                        LiveAudioMeters(model: model, width: 48)
+                        Spacer(minLength: Theme.Space.s)
+                        remainingText
+                    }
                 }
-                .padding(.horizontal, Theme.Space.s + Theme.Space.xs / 2)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, Theme.Space.s)
                 .frame(minHeight: Theme.Size.minTarget)
-                .glassEffect(.regular, in: .capsule)
-                // Pushed to the trailing edge by its frame rather than a spacer, which would add a second gap of its own.
+                // Red text over the picture is unreadable (about 1.2:1), so the capsule carries the warning and the text stays primary.
+                .glassEffect(model.remaining.isWarning ? .regular.tint(Theme.recordRed) : .regular, in: .capsule)
                 CaptureButton(model: model)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
     }
 
-    private func formatButton(isStacked: Bool) -> some View {
-        FormatButton(parts: model.summaryParts, isStacked: isStacked, isWarning: model.sweepCaption != nil,
+    private func formatButton(_ form: SummaryForm) -> some View {
+        FormatButton(parts: model.summaryParts, form: form, hasLook: model.summaryLookName != nil, isWarning: model.sweepCaption != nil,
                      onLongPress: { model.openSweep() }) { model.openRecordSettings() }
             .disabled(!model.canOpenRecordSettings)
     }
@@ -73,7 +84,7 @@ struct FoldedVerticalVideoView: View {
     private var remainingText: some View {
         Text(model.remaining.text)
             .font(Theme.Text.compactValue)
-            .foregroundStyle(model.remaining.isWarning ? Theme.recordRed : .primary)
+            .foregroundStyle(.primary)
             .fixedSize()
     }
 }

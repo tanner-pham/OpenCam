@@ -325,15 +325,15 @@ final class CameraModel {
         currentVideoOption.map { DataRateEstimator.minutesRemaining(freeBytes: freeBytes, option: $0) } ?? 0
     }
 
-    /// "-- min" until a video format is known, then the minutes left, or "Storage full" at 0.
+    /// "--" until a video format is known, then the time left ("11h 17m"), or "Storage full" at 0.
     var remaining: RemainingTime {
-        guard shownVideoOption != nil else { return RemainingTime(text: "-- min", isWarning: false) }
+        guard shownVideoOption != nil else { return RemainingTime(text: "--", isWarning: false) }
         return StatusText.remaining(minutes: minutesRemaining)
     }
     var remainingText: String { remaining.text }
     var isStorageFull: Bool { remaining.text == StatusText.storageFull }
 
-    var pressureText: String? { StatusText.pressure(pressureLevel, isThermal: isThermalPressure) }
+    var pressureText: String? { StatusText.pressure(pressureLevel, isThermal: isThermalPressure, mode: mode) }
 
     /// The one line under the controls; photo mode never mentions the microphone, which photos do not use.
     var bottomNotice: String? {

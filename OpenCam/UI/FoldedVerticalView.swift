@@ -17,7 +17,7 @@ struct FoldedVerticalView: View {
             VStack(spacing: Theme.Space.s) {
                 PhotoReadoutRow(model: model)
                 HStack {
-                    FormatButton(parts: model.summaryParts, isStacked: true) { model.openRecordSettings() }
+                    FormatButton(parts: model.summaryParts, form: .onePerLine, hasLook: model.summaryLookName != nil) { model.openRecordSettings() }
                         .disabled(!model.canOpenRecordSettings)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     CaptureButton(model: model)

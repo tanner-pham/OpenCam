@@ -31,7 +31,8 @@ struct CameraLayout: View {
             // Built only where the strip is not used. Inside the safe area, so it keeps clear of the strip and the bars.
             if case .picture = placement {
                 PictureSliderColumn(model: model)
-                    .padding(Theme.Space.s)
+                    .padding(.horizontal, Theme.Space.l)
+                    .padding(.vertical, Theme.Space.s)
             }
         }
     }

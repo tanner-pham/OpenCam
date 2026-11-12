@@ -6,7 +6,7 @@ nonisolated enum RecordRow: CaseIterable, Sendable {
     /// Grid columns per row, so wrapped rows line up. Wide is the horizontal layout.
     func columns(isWide: Bool) -> Int {
         switch self {
-        case .codec: 4
+        case .codec: isWide ? 5 : 3
         case .quality: isWide ? 5 : 3
         case .resolution: isWide ? 5 : 3
         case .frameRate: isWide ? 8 : 4
