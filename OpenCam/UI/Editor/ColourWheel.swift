@@ -1,15 +1,14 @@
 import SwiftUI
 
-/// One grading region's wheel: its name and "<hue>° · <saturation>", a disc of every hue that whitens to the centre with a puck
-/// at the region's hue and saturation, and the region's luminance slider below. The colour drawn under the puck is the colour
-/// the region adds. A touch on the disc takes the puck to the finger and a drag moves it; a double tap takes it back to the
-/// centre. The drag wins over the panel's scroll view, so a vertical drag that starts on the disc moves the puck, never the panel.
+/// One grading region's wheel, as wide as the panel: its name and "<hue>° · <saturation>" on a row like a slider's, a centred disc
+/// of every hue that whitens to the centre with a puck at the region's hue and saturation, and the region's luminance slider
+/// below, as wide as Blending and Balance. The colour drawn under the puck is the colour the region adds. A touch on the disc
+/// takes the puck to the finger and a drag moves it; a double tap takes it back to the centre. The drag wins over the panel's
+/// scroll view, so a vertical drag that starts on the disc moves the puck, never the panel.
 struct ColourWheel: View {
     let region: GradingRegion
     @Bindable var model: EditorModel
     let diameter: CGFloat
-
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private static let puckDiameter: CGFloat = 16
     private static let ringWidth: CGFloat = 2
@@ -30,28 +29,34 @@ struct ColourWheel: View {
                 model.reset(region.luminanceKey)
             }
         }
-        .frame(width: diameter)
     }
 
-    /// The readout follows its title. At accessibility text sizes the two do not fit a 144 pt column on one line, so the
-    /// readout goes under the title and either may wrap rather than be cut.
+    /// The name at the leading edge and the readout at the trailing one, as a slider's name and value are. When the two do not
+    /// fit one row at full size (the longest pair at accessibility text sizes) the readout goes under the name, and either may
+    /// wrap rather than be cut or shrunk.
     private var titleRow: some View {
-        let isLarge = dynamicTypeSize.isAccessibilitySize
-        let layout = isLarge ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
-                             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: Theme.Space.s))
-        return layout {
-            Text(region.title)
-            Text("\(region.hueKey.valueText(hue)) · \(region.saturationKey.valueText(saturation))")
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(region.title)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                readout
+            }
+            .lineLimit(1)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(region.title)
+                readout
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .font(.subheadline)
-        .lineLimit(isLarge ? nil : 1)
-        // "Highlights" and "359° · 100" need about 149 pt of the 144, so the longest pair shrinks a little rather than cutting either.
-        .minimumScaleFactor(isLarge ? 1 : 0.8)
         // The disc's sliders say the same.
         .accessibilityHidden(true)
+    }
+
+    private var readout: some View {
+        Text("\(region.hueKey.valueText(hue)) · \(region.saturationKey.valueText(saturation))")
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
     }
 
     private var disc: some View {
