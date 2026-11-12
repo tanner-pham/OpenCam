@@ -6,7 +6,7 @@ import Testing
 @MainActor @Suite struct GradingTests {
     @Test func keysAndText() {
         #expect(AdjustmentKey.allCases.count == 49); #expect(EditorGroup.grading.keys.count == 11)
-        #expect(EditorGroup.allCases.map(\.title) == ["Light", "Colour", "Curve", "Mix", "Grading", "Detail", "Effects", "Looks"])
+        #expect(EditorGroup.allCases.map(\.title) == ["Light", "Colour", "Curve", "Mix", "Grading", "Detail", "Effects", "Masks", "Looks"])
         #expect(AdjustmentKey.gradingShadowsHue.range == 0...360); #expect(AdjustmentKey.gradingShadowsHue.valueText(210) == "210°")
         #expect(AdjustmentKey.gradingBlending.title == "Blending"); #expect(AdjustmentKey.gradingHighlightsLuminance.title == "Highlights luminance")
         #expect(GradingRegion.midtones.saturationKey == .gradingMidtonesSaturation) }

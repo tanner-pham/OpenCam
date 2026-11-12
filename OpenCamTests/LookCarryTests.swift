@@ -21,5 +21,5 @@ nonisolated struct LookCarryTests {
         let camera = CameraLook(id: UUID(), name: name, adjustments: look); _ = await LookCapture.finish(PhotoCaptureResult(saved: [dng], error: nil), look: camera, format: .raw,
                                      heicURL: dir.appending(path: "OC_0001.HEIC"), dngURL: dng, edits: EditStore(directory: dir))
         #expect(try EditStore(directory: dir).load(stem: "OC_0001").adjustments == look)
-        #expect(try JSONDecoder().decode(EditFileVersion.self, from: Data(contentsOf: EditStore(directory: dir).url(forStem: "OC_0001"))).version == 2)
+        #expect(try JSONDecoder().decode(EditFileVersion.self, from: Data(contentsOf: EditStore(directory: dir).url(forStem: "OC_0001"))).version == PhotoEdit.versionWithoutMasks)
         #expect(try JSONDecoder().decode(CameraLook.self, from: JSONEncoder().encode(camera)) == camera) } }

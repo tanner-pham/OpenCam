@@ -21,7 +21,7 @@ import Testing
         #expect(EditorGroup.light.keys == [.exposure, .contrast, .highlights, .shadows, .whites, .blacks])
         #expect(EditorGroup.colour.keys == [.temperature, .tint, .vibrance, .saturation])
         #expect(EditorGroup.detail.keys == [.sharpening, .noiseReduction]); #expect(EditorGroup.effects.keys == [.grain, .vignette])
-        #expect(EditorGroup.looks.keys.isEmpty); #expect(EditorGroup.allCases.map(\.title) == ["Light", "Colour", "Curve", "Mix", "Grading", "Detail", "Effects", "Looks"])
+        #expect(EditorGroup.looks.keys.isEmpty); #expect(EditorGroup.allCases.map(\.title) == ["Light", "Colour", "Curve", "Mix", "Grading", "Detail", "Effects", "Masks", "Looks"])
         #expect(AdjustmentKey.exposure.valueText(0.5) == "+0.5"); #expect(AdjustmentKey.exposure.valueText(0) == "0.0")
         #expect(AdjustmentKey.exposure.valueText(-1.3) == "-1.3")
         #expect(AdjustmentKey.contrast.valueText(-35) == "-35"); #expect(AdjustmentKey.contrast.valueText(20) == "+20"); #expect(AdjustmentKey.grain.valueText(20) == "20")

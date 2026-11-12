@@ -34,7 +34,7 @@ import Testing
     @Test func geometryAndSizes() {
         let g = CurveGeometry(side: 236); #expect(g.viewPoint(CurvePoint(x: 0, y: 0)) == CGPoint(x: 12, y: 224)); #expect(g.viewPoint(CurvePoint(x: 1, y: 1)) == CGPoint(x: 224, y: 12))
         #expect(abs(g.hitRadius - 22.0 / 212) < 1e-9)
-        #expect(EditorLayout.minPanelHeight(for: .curve) == 340); #expect(EditorLayout.minPanelHeight(for: .grading) == 340); #expect(EditorLayout.minPanelHeight(for: .light) == 240) }
+        #expect(EditorLayout.minPanelHeight(for: .curve) == 340); #expect(EditorLayout.minPanelHeight(for: .grading) == 340); #expect(EditorLayout.minPanelHeight(for: .masks) == 340); #expect(EditorLayout.minPanelHeight(for: .light) == 240) }
     @Test func curveDragRendersTheProxyOnlyThroughTheCoalescer() async throws {   // Review Focus 5
         let (model, _, _) = try await EditorFixture.make(width: 4096, height: 3072); let before = model.previewRenderCount
         let drag = try #require(CurveDrag.begin(on: model.adjustments.curves.master, at: CurvePoint(x: 0.5, y: 0.5), radius: 0.05))

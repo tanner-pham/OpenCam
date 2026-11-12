@@ -2,16 +2,15 @@ import SwiftUI
 
 /// A row of system buttons, one per option with its full title, scrolling sideways when it is wider than the space; the
 /// selected one is filled. A drag that starts on a button scrolls the row (a segmented control would keep it), and the
-/// selection is kept in view. It reads as one control named `title`.
+/// selection is kept in view, centred where the row can scroll that far. It reads as one control named `title`.
 struct ScrollingPicker<Value: Hashable>: View {
     let title: String
     @Binding var selection: Value
     let options: [Value]
+    /// The space before the first button: the panel's side padding, or none when the row follows another control that keeps
+    /// its own gap (the Masks group's Add menu). The space after the last is always the panel's.
+    var leadingInset = Theme.Space.l
     let label: (Value) -> String
-
-    /// The bordered styles add about 6.5 pt above and below the label (measured, iOS 27.2), so each button is
-    /// `Theme.Size.minTarget` tall.
-    private static var labelHeight: CGFloat { Theme.Size.minTarget - 13 }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -22,7 +21,8 @@ struct ScrollingPicker<Value: Hashable>: View {
                             .id(option)
                     }
                 }
-                .padding(.horizontal, Theme.Space.l)
+                .padding(.leading, leadingInset)
+                .padding(.trailing, Theme.Space.l)
             }
             .scrollIndicators(.hidden)
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
@@ -32,9 +32,14 @@ struct ScrollingPicker<Value: Hashable>: View {
             .mask { Rectangle().padding(.vertical, -Theme.Space.l) }
             // The opening offset only: the end that holds the selection.
             .defaultScrollAnchor(isSelectionInLastHalf ? .trailing : .leading, for: .initialOffset)
-            .onAppear { proxy.scrollTo(selection) }
-            .onChange(of: selection) { _, chosen in
-                withAnimation { proxy.scrollTo(chosen) }
+            // Centred, so the selection never stops flush against or cut by the row's edge, as the least scroll would leave it.
+            .onAppear { centreSelection(proxy) }
+            // The scroll view keeps its offset when its width or its safe-area insets change (the editor settling beside the
+            // system strip, or turning), which left the selection, or the last groups, out of view.
+            .onScrollGeometryChange(for: CGSize.self, of: \.containerSize) { _, _ in centreSelection(proxy) }
+            .onScrollGeometryChange(for: EdgeInsets.self, of: \.contentInsets) { _, _ in centreSelection(proxy) }
+            .onChange(of: selection) { _, _ in
+                withAnimation { centreSelection(proxy) }
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -52,7 +57,7 @@ struct ScrollingPicker<Value: Hashable>: View {
                 .font(.subheadline)
                 .lineLimit(1)
                 .fixedSize()
-                .frame(minHeight: Self.labelHeight)
+                .frame(minHeight: Theme.Size.borderedLabel)
                 .foregroundStyle(isSelected ? Color.black : Color.primary)
         }
         .buttonStyle(.borderedProminent)
@@ -61,6 +66,10 @@ struct ScrollingPicker<Value: Hashable>: View {
     }
 
     private static var unselectedFill: Double { 0.18 }
+
+    private func centreSelection(_ proxy: ScrollViewProxy) {
+        proxy.scrollTo(selection, anchor: .center)
+    }
 
     private var isSelectionInLastHalf: Bool {
         guard let index = options.firstIndex(of: selection) else { return false }

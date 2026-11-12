@@ -38,6 +38,7 @@ struct EditorView: View {
             .alert(model.alertMessage ?? "", isPresented: Binding(get: { model.alertMessage != nil }, set: { if !$0 { model.alertMessage = nil } })) {
                 Button("OK") {}
             }
+            .onDisappear(perform: model.cancelSubjectSearch)
             .task {
                 guard model.phase == .loading else { return }
                 await model.load()
@@ -82,6 +83,16 @@ struct EditorView: View {
                 .disabled(model.isExporting)
         }
         ToolbarItem(placement: .topBarTrailing) {
+            Button("Undo", systemImage: "arrow.uturn.backward", action: model.undo)
+                .keyboardShortcut("z")
+                .disabled(isFailed || !model.canUndo)
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("Redo", systemImage: "arrow.uturn.forward", action: model.redo)
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+                .disabled(isFailed || !model.canRedo)
+        }
+        ToolbarItem(placement: .topBarTrailing) {
             if model.isExporting {
                 ProgressView()
                     .accessibilityLabel("Exporting")
@@ -93,7 +104,7 @@ struct EditorView: View {
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button("Reset all", action: model.resetAll)
-                .disabled(isFailed || (model.adjustments.isIdentity && model.lookName == nil))
+                .disabled(isFailed || model.currentEdit.isIdentity)
         }
         ToolbarItem(placement: .confirmationAction) {
             // Leaving waits for an export to finish, so its file is shared and then removed rather than left behind.

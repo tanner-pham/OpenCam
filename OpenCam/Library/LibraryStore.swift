@@ -131,18 +131,26 @@ import OSLog
 
     /// Each photo's edit becomes a copy of the look, so later changes to the look never reach it. Clips are skipped.
     func applyLook(_ look: Look, to items: [LibraryItem]) throws(LibraryError) -> LookChange {
-        let edit = PhotoEdit(adjustments: look.adjustments, lookName: look.name)
         return try changeEdits(of: items, action: .applied) { item throws(EditStoreError) in
+            var edit = self.edit(for: item)
+            edit.adjustments = look.adjustments
+            edit.lookName = look.name
             try edits.save(edit, stem: item.stem)
             return true
         }
     }
 
-    /// Removes the whole edit of each photo that has a look; photos without one and clips are left as they are.
+    /// Clears the look and adjustments of each photo that has a look, keeping its masks (a photo without masks loses its edit
+    /// file); photos without a look and clips are left as they are.
     func removeLook(from items: [LibraryItem]) throws(LibraryError) -> LookChange {
         try changeEdits(of: items, action: .removed) { item throws(EditStoreError) in
-            guard edit(for: item).lookName != nil else { return false }
-            try edits.remove(stem: item.stem)
+            let current = edit(for: item)
+            guard current.lookName != nil else { return false }
+            if current.masks.isEmpty {
+                try edits.remove(stem: item.stem)
+            } else {
+                try edits.save(PhotoEdit(masks: current.masks), stem: item.stem)
+            }
             return true
         }
     }
