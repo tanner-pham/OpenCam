@@ -9,30 +9,35 @@ struct MasksPanel: View {
     var body: some View {
         ScrollView {
             VStack(spacing: Self.rowGap) {
+                // The masks scroll to the panel's edge, as the groups above do, so the row pads only its leading side.
                 topRow
-                if model.masks.isEmpty {
-                    Text("Add a mask to change one part of the photo.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    actions
-                    if model.selectedMask?.shape.kind == .subject { subjectNote }
-                    if case let .radial(_, _, feather)? = model.selectedMask?.shape { featherSlider(feather) }
-                    if model.selectedMask?.shape.kind == .brush { brushControls }
-                    ForEach(LocalMask.keys, id: \.self) { key in
-                        AdjustmentSlider(key: key, value: sliderBinding(key)) { model.updateSelectedMask { $0.adjustments[key] = 0 } }
+                    .padding(.leading, Theme.Space.l)
+                VStack(spacing: Self.rowGap) {
+                    if model.masks.isEmpty {
+                        Text("Add a mask to change one part of the photo.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        actions
+                        if model.selectedMask?.shape.kind == .subject { subjectNote }
+                        if case let .radial(_, _, feather)? = model.selectedMask?.shape { featherSlider(feather) }
+                        if model.selectedMask?.shape.kind == .brush { brushControls }
+                        ForEach(LocalMask.keys, id: \.self) { key in
+                            AdjustmentSlider(key: key, value: sliderBinding(key)) { model.updateSelectedMask { $0.adjustments[key] = 0 } }
+                        }
                     }
                 }
+                .padding(.horizontal, Theme.Space.l)
             }
-            .padding(.horizontal, Theme.Space.l)
             .padding(.top, Theme.Space.m)
             .padding(.bottom, Theme.Space.l)
         }
         .scrollBounceBehavior(.basedOnSize)
     }
 
-    /// The Add menu and, once a mask exists, the masks by position in the rest of the row.
+    /// The Add menu and, once a mask exists, the masks by position in the rest of the row, the first as far from the menu as the
+    /// masks are from each other.
     private var topRow: some View {
         HStack(spacing: Theme.Space.s) {
             addMenu
@@ -64,7 +69,7 @@ struct MasksPanel: View {
             get: { model.selectedMaskID ?? model.masks.first?.id ?? UUID() },
             set: { model.selectedMaskID = $0 }
         )
-        return ScrollingPicker(title: "Mask", selection: selection, options: model.masks.map(\.id), label: title(of:))
+        return ScrollingPicker(title: "Mask", selection: selection, options: model.masks.map(\.id), leadingInset: 0, label: title(of:))
     }
 
     private func title(of id: UUID) -> String {

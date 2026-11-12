@@ -7,6 +7,9 @@ struct ScrollingPicker<Value: Hashable>: View {
     let title: String
     @Binding var selection: Value
     let options: [Value]
+    /// The space before the first button: the panel's side padding, or none when the row follows another control that keeps
+    /// its own gap (the Masks group's Add menu). The space after the last is always the panel's.
+    var leadingInset = Theme.Space.l
     let label: (Value) -> String
 
     /// The bordered styles add about 6.5 pt above and below the label (measured, iOS 27.2), so each button is
@@ -22,7 +25,8 @@ struct ScrollingPicker<Value: Hashable>: View {
                             .id(option)
                     }
                 }
-                .padding(.horizontal, Theme.Space.l)
+                .padding(.leading, leadingInset)
+                .padding(.trailing, Theme.Space.l)
             }
             .scrollIndicators(.hidden)
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
