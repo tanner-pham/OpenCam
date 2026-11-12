@@ -151,6 +151,13 @@ import Testing
             }
             if let option = resolver.option(for: model.record) { _ = DataRateEstimator.footer(for: option, freeBytes: model.freeBytes) }
         } < Self.bound)
+        #expect(PerfClock.report("sheet: video rows with estimates, one render", runs: 7) {
+            let resolver = model.recordResolver
+            for row in RecordRow.allCases {
+                _ = resolver.chips(row, for: model.record, freeBytes: model.freeBytes).first { !$0.isAvailable }?.reason
+            }
+            if let option = resolver.option(for: model.record) { _ = DataRateEstimator.footer(for: option, freeBytes: model.freeBytes) }
+        } < Self.bound)
         #expect(PerfClock.report("sheet: photo rows, one render", runs: 7) {
             let resolver = model.photoResolver
             for row in PhotoRow.allCases {

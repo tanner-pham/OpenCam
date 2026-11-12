@@ -14,7 +14,7 @@ struct VideoRecordRows: View {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
                 ForEach(RecordRow.allCases, id: \.self) { row in
                     // Worked out once per row; the reason line is the first dimmed chip's reason (`reasonLine`).
-                    let chips = resolver.chips(row, for: selection)
+                    let chips = resolver.chips(row, for: selection, freeBytes: freeBytes)
                     ChipRow(title: row.title,
                             chips: chips,
                             selectedID: selectedID(row),

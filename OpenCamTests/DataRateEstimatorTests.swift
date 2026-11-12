@@ -21,7 +21,48 @@ import Testing
         #expect(abs(DataRateEstimator.gigabytesPerMinute(for: hq) - 6.6066) < 0.001)
         #expect(DataRateEstimator.minutesRemaining(freeBytes: 141_000_000_000, option: hq) == 21)
         #expect(DataRateEstimator.minutesRemaining(freeBytes: 1_500_000_000, option: hq) == 0)
-        #expect(DataRateEstimator.footer(for: hq, freeBytes: 141_000_000_000) == "About 6.6 GB per minute. 21 min left.")
+        #expect(DataRateEstimator.footer(for: hq, freeBytes: 141_000_000_000) == "About 881 Mb/s, 6.6 GB per minute. 21 min left.")
         #expect(DataRateEstimator.isLowStorage(minutes: 4)); #expect(!DataRateEstimator.isLowStorage(minutes: 5))
+    }
+
+    @Test func chipRateTextRoundsByMagnitude() {
+        #expect(DataRateEstimator.chipRateText(megabits: 7.5) == "~7.5 Mb/s")
+        #expect(DataRateEstimator.chipRateText(megabits: 44.79) == "~45 Mb/s")
+        #expect(DataRateEstimator.chipRateText(megabits: 147) == "~147 Mb/s")
+        #expect(DataRateEstimator.chipRateText(megabits: 1200) == "~1.2 Gb/s")
+        #expect(DataRateEstimator.chipRateText(megabits: 999.7) == "~1.0 Gb/s")
+        #expect(DataRateEstimator.chipRateText(megabits: 9.97) == "~10 Mb/s")
+    }
+    @Test func chipTimeTextUsesTheSystemDurationFormat() {
+        func system(_ minutes: Int) -> String {
+            "~" + Duration.seconds(minutes * 60).formatted(.units(allowed: [.hours, .minutes], width: .narrow))
+        }
+        #expect(DataRateEstimator.chipTimeText(minutes: 0) == "Full")
+        #expect(DataRateEstimator.chipTimeText(minutes: 45) == system(45))
+        #expect(DataRateEstimator.chipTimeText(minutes: 677) == system(677))
+        #expect(DataRateEstimator.chipTimeText(minutes: 45).hasPrefix("~45"))
+        #expect(DataRateEstimator.chipTimeText(minutes: 677).hasPrefix("~11"))
+        #expect(DataRateEstimator.chipTimeText(minutes: 677).contains("17"))
+    }
+    @Test func estimateCarriesTheTwoLinesAndTheSpokenForm() {
+        let hevc = opt(.hevc, "Max", .max, 3840, 2160, 30)
+        let free = DataRateEstimator.reserveBytes + 677 * 336_000_000
+        let minutes = DataRateEstimator.minutesRemaining(freeBytes: free, option: hevc)
+        let estimate = DataRateEstimator.estimate(for: hevc, freeBytes: free)
+        #expect(estimate.rate == "~45 Mb/s")
+        #expect(estimate.time == DataRateEstimator.chipTimeText(minutes: minutes))
+        #expect(estimate.spoken.hasPrefix("about 45 megabits per second, about "))
+        #expect(estimate.spoken.hasSuffix(" of recording"))
+        let full = DataRateEstimator.estimate(for: hevc, freeBytes: 0)
+        #expect(full.time == "Full")
+        #expect(full.spoken == "about 45 megabits per second, no recording time left")
+        let fast = DataRateEstimator.estimate(for: opt(.proRes, "4444 XQ", nil, 3840, 2160, 30), freeBytes: 0)
+        #expect(fast.spoken.hasPrefix("about 2.0 gigabits per second"))
+    }
+    @Test func footerStatesTheRateWithoutATilde() {
+        let hevc = opt(.hevc, "Max", .max, 3840, 2160, 30)
+        let free = DataRateEstimator.reserveBytes + 100 * 336_000_000
+        let minutes = DataRateEstimator.minutesRemaining(freeBytes: free, option: hevc)
+        #expect(DataRateEstimator.footer(for: hevc, freeBytes: free) == "About 45 Mb/s, 0.3 GB per minute. \(minutes) min left.")
     }
 }

@@ -53,8 +53,19 @@ nonisolated struct RecordSelectionResolver: Sendable {
         firstByKey = first
     }
 
-    func chips(_ row: RecordRow, for selection: RecordSelection) -> [Chip] {
-        entries(row, for: selection).map(\.chip)
+    /// With `freeBytes`, the available Codec and Quality chips also carry the estimate for the selection a tap would settle on.
+    func chips(_ row: RecordRow, for selection: RecordSelection, freeBytes: Int64? = nil) -> [Chip] {
+        let rowEntries = entries(row, for: selection)
+        guard let freeBytes, row == .codec || row == .quality else { return rowEntries.map(\.chip) }
+        return rowEntries.map { entry in
+            guard entry.chip.isAvailable else { return entry.chip }
+            let tapped = applying(row, from: entry.option, to: selection)
+            // A tap that lands on a real option settles on itself, so only the others walk the lens.
+            guard let option = option(for: tapped) ?? settled(tapped).flatMap({ option(for: $0) }) else { return entry.chip }
+            var chip = entry.chip
+            chip.estimate = DataRateEstimator.estimate(for: option, freeBytes: freeBytes)
+            return chip
+        }
     }
 
     func reasonLine(_ row: RecordRow, for selection: RecordSelection) -> String? {
@@ -77,7 +88,7 @@ nonisolated struct RecordSelectionResolver: Sendable {
             guard let chosen = same ?? pick(row, from: pool, for: current) else { return nil }
             current = applying(row, from: options[chosen], to: current)
             let chosenCode = codes[chosen * Self.columnCount + column]
-            pool = pool.filter { codes[$0 * Self.columnCount + column] == chosenCode }
+            pool.removeAll { codes[$0 * Self.columnCount + column] != chosenCode }
         }
         return current
     }
