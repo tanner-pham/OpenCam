@@ -16,6 +16,33 @@ nonisolated struct ManualRanges: Sendable, Equatable {
 }
 
 extension ManualRanges {
+    /// What the camera allows by hand, from what was read off it. Shutter and ISO need custom exposure and usable limits; in
+    /// video the shutter's upper end is the frame time, and `isVideo` is stated, never inferred from the frame time.
+    nonisolated static func make(from limits: DeviceLimits) -> ManualRanges {
+        var ranges = ManualRanges()
+        ranges.isVideo = limits.isVideo
+        if limits.isVideo, limits.frameDuration.isNumeric, limits.frameDuration.seconds > 0 {
+            ranges.frameSeconds = limits.frameDuration.seconds
+        }
+        let shortest = limits.minExposureDuration, longest = limits.maxExposureDuration
+        if limits.supportsCustomExposure, shortest.isNumeric, longest.isNumeric, shortest.seconds > 0,
+           limits.minISO.isFinite, limits.maxISO.isFinite, limits.minISO <= limits.maxISO {
+            var upper = longest.seconds
+            if let frame = ranges.frameSeconds { upper = min(upper, frame) }
+            ranges.shutterSeconds = shortest.seconds...max(shortest.seconds, upper)
+            ranges.iso = limits.minISO...limits.maxISO
+        }
+        if let recommended = limits.recommendedBias {
+            ranges.bias = recommended
+        } else if limits.minBias.isFinite, limits.maxBias.isFinite, limits.minBias <= limits.maxBias {
+            ranges.bias = limits.minBias...limits.maxBias
+        }
+        ranges.hasWhiteBalance = limits.supportsCustomGains && limits.supportsLockedWhiteBalance
+            && limits.maxWhiteBalanceGain.isFinite && limits.maxWhiteBalanceGain >= 1
+        ranges.hasFocus = limits.supportsLockedFocus && limits.supportsCustomLensPosition
+        return ranges
+    }
+
     /// Every number inside what this camera allows, and a group it lacks returned to automatic.
     /// A non-finite exposure number holds the camera's value; any other non-finite value is dropped.
     nonisolated func clamped(_ settings: ManualSettings) -> ManualSettings {
