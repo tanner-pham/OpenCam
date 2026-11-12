@@ -7,9 +7,16 @@ nonisolated enum WriterOptions {
 
     private static let proResFourCCs = ["apch", "apcn", "apcs", "apco"]
 
-    /// The one place a measured limit goes. True for everything up to 60 fps today.
+    /// Above 1080p's pixel count (4K, and 1920 x 1440) only up to this rate for now. Nothing has measured ProRes there at 60 fps
+    /// with a real scene, a preview and sound; the second on-device check (`-recorderCheck2` on `diag/recorder-check`, trials 1 to
+    /// 3) decides whether this lifts to `maximumFrameRate`, per "To confirm on the phone" in the recorder plan.
+    static let largeSizeMaximumFrameRate = 30
+    private static let largeSizePixelCount = 1920 * 1080
+
+    /// The one place a measured limit goes: up to 60 fps at 1080p and below, up to 30 above.
     static func isOffered(quality: String, resolution: Resolution, frameRate: Int, colour: ColourMode) -> Bool {
-        frameRate <= maximumFrameRate
+        let limit = resolution.pixelCount > largeSizePixelCount ? largeSizeMaximumFrameRate : maximumFrameRate
+        return frameRate <= limit
     }
 
     /// Options only the writer records, grouped by lens in the mapper's row order; none the scan already holds.

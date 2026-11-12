@@ -16,14 +16,14 @@ import Testing
 
     @Test func thePhoneGainsProResAndLogWhereItHasHLG() throws {
         let all = try derived(.all)
-        #expect(all.count == 2_160)
+        #expect(all.count == 1_776)
         let wideOptions = all.filter { $0.lensID == Self.wide }
-        #expect(wideOptions.count == 384)
+        #expect(wideOptions.count == 288)
         let proRes = wideOptions.filter { $0.codec.family == .proRes }
-        #expect(proRes.count == 288)
-        for colour in [ColourMode.hlg, .log, .rec709] { #expect(proRes.filter { $0.colour == colour }.count == 96, "\(colour)") }
+        #expect(proRes.count == 216)
+        for colour in [ColourMode.hlg, .log, .rec709] { #expect(proRes.filter { $0.colour == colour }.count == 72, "\(colour)") }
         let hevc = wideOptions.filter { $0.codec.family == .hevc }
-        #expect(hevc.count == 96)
+        #expect(hevc.count == 72)
         #expect(hevc.allSatisfy { $0.colour == .log })
         #expect(Set(wideOptions.map(\.resolution.id)) == ["3840x2160", "1920x1440", "1920x1080", "1280x720"])
         #expect(wideOptions.map(\.frameRate).max() == 60)
@@ -51,17 +51,27 @@ import Testing
     @Test func supportGatesWhatIsDerived() throws {
         #expect(try derived([]).isEmpty)
         let hlgOnly = try derived([.proRes])
-        #expect(hlgOnly.count == 540)
+        #expect(hlgOnly.count == 444)
         #expect(hlgOnly.allSatisfy { $0.codec.family == .proRes && $0.colour == .hlg })
-        #expect(try derived([.proRes, .proResSDR]).count == 1_080)
-        #expect(try derived(.all).count == 2_160)
+        #expect(try derived([.proRes, .proResSDR]).count == 888)
+        #expect(try derived(.all).count == 1_776)
     }
 
     @Test func theMaximumFrameRateIsOneNumber() {
         #expect(WriterOptions.maximumFrameRate == 60)
         let size = Resolution.named(width: 3840, height: 2160)
-        #expect(WriterOptions.isOffered(quality: "422 HQ", resolution: size, frameRate: 60, colour: .hlg))
-        #expect(!WriterOptions.isOffered(quality: "422 HQ", resolution: size, frameRate: 120, colour: .hlg))
+        // 4K (and anything above 1080p's pixel count) is offered up to 30 fps until the second on-device check measures more.
+        #expect(WriterOptions.largeSizeMaximumFrameRate == 30)
+        #expect(WriterOptions.isOffered(quality: "422 HQ", resolution: size, frameRate: 30, colour: .hlg))
+        #expect(!WriterOptions.isOffered(quality: "422 HQ", resolution: size, frameRate: 48, colour: .hlg))
+        #expect(!WriterOptions.isOffered(quality: "422 HQ", resolution: size, frameRate: 60, colour: .hlg))
+        let uhdPortraitBinned = Resolution.named(width: 1920, height: 1440)
+        #expect(!WriterOptions.isOffered(quality: "422", resolution: uhdPortraitBinned, frameRate: 60, colour: .hlg))
+        for name in [(1920, 1080), (1280, 720)] {
+            let small = Resolution.named(width: name.0, height: name.1)
+            #expect(WriterOptions.isOffered(quality: "422 HQ", resolution: small, frameRate: 60, colour: .hlg))
+            #expect(!WriterOptions.isOffered(quality: "422 HQ", resolution: small, frameRate: 120, colour: .hlg))
+        }
     }
 
     @Test func shippedSupportIsOnlyWhatIsWired() {
@@ -75,7 +85,7 @@ import Testing
         var scanned = try Fixture.loadDuo()
         scanned.scanVersion = CaptureCapabilities.currentScanVersion   // the cache reuses only the current version
         let merged = scanned.withWriterOptions(.all)
-        #expect(merged.writerOptions.count == 2_160)
+        #expect(merged.writerOptions.count == 1_776)
         #expect(scanned.writerOptions.isEmpty)
         #expect(try merged.encoded() == scanned.encoded())
         let directory = try TestFiles.directory()
