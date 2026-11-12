@@ -28,7 +28,10 @@ extension CameraSession {
         defer { device.unlockForConfiguration() }
         var result = plan.applied
         if let exposure = plan.exposure {
-            setExposure(exposure, restoresFrameDuration: plan.restoresFrameDuration, on: device)
+            if !setExposure(exposure, restoresFrameDuration: plan.restoresFrameDuration, on: device) {
+                // Not set, so the camera still has the exposure it had.
+                result.exposure = appliedManual?.exposure ?? .automatic
+            }
         }
         if let bias = plan.bias {
             let low = device.minExposureTargetBias, high = device.maxExposureTargetBias
@@ -124,29 +127,42 @@ extension CameraSession {
 
     // MARK: Device calls. The caller holds the configuration lock.
 
-    private func setExposure(_ exposure: ManualApplyPlan.Exposure, restoresFrameDuration: Bool, on device: AVCaptureDevice) {
+    /// Returns whether the exposure was set.
+    private func setExposure(_ exposure: ManualApplyPlan.Exposure, restoresFrameDuration: Bool, on device: AVCaptureDevice) -> Bool {
         // Setting the frame duration throws while auto video frame rate is on (AVCaptureDevice.h, activeVideoMaxFrameDuration).
         if restoresFrameDuration, !device.isAutoVideoFrameRateEnabled {
             device.activeVideoMaxFrameDuration = .invalid
         }
         switch exposure {
         case .continuous:
-            guard device.isExposureModeSupported(.continuousAutoExposure) else { return }
+            guard device.isExposureModeSupported(.continuousAutoExposure) else { return false }
             device.exposureMode = .continuousAutoExposure
+            return true
         case .custom(let seconds, let iso):
             guard device.isExposureModeSupported(.custom) else {
                 Self.logger.error("[CameraSession:applyManual] Custom exposure not supported — {lens: \(self.lastWorkingConfiguration?.lens.id ?? "unknown", privacy: .public)}")
-                return
+                return false
             }
             let format = device.activeFormat
             var longest = format.maxExposureDuration
             if isVideoMode, device.activeVideoMaxFrameDuration.isNumeric { longest = min(longest, device.activeVideoMaxFrameDuration) }
             let duration = seconds.flatMap { ManualApplyPlan.clampedDuration($0, minimum: format.minExposureDuration, maximum: longest) }
-            if let seconds, let duration, duration.seconds != seconds { logClamp("shutter", asked: seconds, set: duration.seconds) }
+            // Logged only when the clamp moved the CMTime itself.
+            if let seconds, let duration, duration != CMTime(seconds: seconds, preferredTimescale: 1_000_000_000) {
+                logClamp("shutter", asked: seconds, set: duration.seconds)
+            }
             let sensitivity = iso.map { ManualApplyPlan.clampedValue($0, lower: format.minISO, upper: format.maxISO) }
             if let iso, let sensitivity, sensitivity != iso { logClamp("iso", asked: Double(iso), set: Double(sensitivity)) }
-            device.setExposureModeCustom(duration: duration ?? AVCaptureDevice.currentExposureDuration,
-                                         iso: sensitivity ?? AVCaptureDevice.currentISO, completionHandler: nil)
+            let durationToSet = duration ?? AVCaptureDevice.currentExposureDuration
+            let isoToSet = sensitivity ?? AVCaptureDevice.currentISO
+            // The setter raises for a combination the format does not support; the format can be asked with the exact values
+            // (AVCaptureDevice.h, `supportsExposureModeCustom`, which accepts the "current" constants).
+            guard format.supportsExposureModeCustom(lensAperture: AVCaptureDevice.currentLensAperture, duration: durationToSet, iso: isoToSet) else {
+                Self.logger.error("[CameraSession:applyManual] Custom exposure not supported by the format — {lens: \(self.lastWorkingConfiguration?.lens.id ?? "unknown", privacy: .public), duration: \(durationToSet.seconds), iso: \(isoToSet)}")
+                return false
+            }
+            device.setExposureModeCustom(duration: durationToSet, iso: isoToSet, completionHandler: nil)
+            return true
         }
     }
 
