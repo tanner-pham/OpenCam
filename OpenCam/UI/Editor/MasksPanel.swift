@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The Masks group: four buttons that add a mask, then the chosen mask's row, Invert and Delete, then its seven sliders.
+/// The Masks group: one row with the Add menu and the masks, then Invert and Delete, then its seven sliders.
 struct MasksPanel: View {
     @Bindable var model: EditorModel
 
@@ -9,14 +9,13 @@ struct MasksPanel: View {
     var body: some View {
         ScrollView {
             VStack(spacing: Self.rowGap) {
-                addButtons
+                topRow
                 if model.masks.isEmpty {
                     Text("Add a mask to change one part of the photo.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    maskRow
                     actions
                     ForEach(LocalMask.keys, id: \.self) { key in
                         AdjustmentSlider(key: key, value: sliderBinding(key)) { model.updateSelectedMask { $0.adjustments[key] = 0 } }
@@ -30,22 +29,31 @@ struct MasksPanel: View {
         .scrollBounceBehavior(.basedOnSize)
     }
 
-    private var addButtons: some View {
+    /// The Add menu and, once a mask exists, the masks by position in the rest of the row.
+    private var topRow: some View {
         HStack(spacing: Theme.Space.s) {
-            ForEach(MaskKind.allCases, id: \.self) { kind in
-                Button { model.addMask(kind) } label: {
-                    Text(kind.title)
-                        .font(.footnote)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                        .frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget)
-                }
-                .buttonStyle(.bordered)
-            }
+            addMenu
+            if !model.masks.isEmpty { maskRow }
+            else { Spacer(minLength: 0) }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Add a mask")
     }
+
+    private var addMenu: some View {
+        Menu {
+            ForEach(MaskKind.allCases, id: \.self) { kind in
+                Button(kind.title) { model.addMask(kind) }
+            }
+        } label: {
+            Label("Add", systemImage: "plus")
+                .frame(minHeight: Theme.Size.minTarget - Self.borderedInset)
+        }
+        .buttonStyle(.bordered)
+        .fixedSize()
+        .accessibilityLabel("Add mask")
+    }
+
+    /// The bordered styles add about 6.5 pt above and below the label (measured, as in `ScrollingPicker`).
+    private static let borderedInset: CGFloat = 13
 
     /// The masks by position, bound through the selected id (the picker's selection is not optional).
     private var maskRow: some View {
@@ -54,8 +62,6 @@ struct MasksPanel: View {
             set: { model.selectedMaskID = $0 }
         )
         return ScrollingPicker(title: "Mask", selection: selection, options: model.masks.map(\.id), label: title(of:))
-            // The picker pads its own sides; the panel's padding already does.
-            .padding(.horizontal, -Theme.Space.l)
     }
 
     private func title(of id: UUID) -> String {
@@ -64,19 +70,25 @@ struct MasksPanel: View {
     }
 
     private var actions: some View {
-        HStack(spacing: Theme.Space.s) {
-            let isInverted = model.selectedMask?.isInverted ?? false
+        let isInverted = model.selectedMask?.isInverted ?? false
+        return HStack(spacing: Theme.Space.s) {
+            // Filled in the accent with dark text when on, the faint neutral fill when off, as the picker's buttons are.
             Button { model.updateSelectedMask { $0.isInverted.toggle() } } label: {
-                Text("Invert").frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget)
+                Text("Invert")
+                    .font(.subheadline)
+                    .foregroundStyle(isInverted ? Color.black : Color.primary)
+                    .frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget - Self.borderedInset)
             }
-            .buttonStyle(.bordered)
-            .tint(isInverted ? Theme.accent : Color.primary)
-            .fontWeight(isInverted ? .semibold : .regular)
+            .buttonStyle(.borderedProminent)
+            .tint(isInverted ? Theme.accent : Color.primary.opacity(0.18))
             .accessibilityAddTraits(isInverted ? .isSelected : [])
             Button(role: .destructive) { model.deleteSelectedMask() } label: {
-                Text("Delete").frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget)
+                Text("Delete")
+                    .font(.subheadline)
+                    .frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget - Self.borderedInset)
             }
             .buttonStyle(.bordered)
+            .tint(.red)
         }
         // The first slider's reset target reaches up over the gap above its name row; the padding keeps it off the buttons.
         .padding(.bottom, AdjustmentSlider.reachUp - Self.rowGap)
