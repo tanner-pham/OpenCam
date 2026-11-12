@@ -53,4 +53,25 @@ import Testing
             #expect(error.description.hasPrefix("[LookStore:read] Cannot read the look"))
         }
     }
+
+    func writeLook(_ json: String, in store: LookStore, id: UUID) throws -> URL {
+        let url = store.directory.appending(path: "\(id.uuidString).json"); try Data(json.utf8).write(to: url); return url }
+    @Test func lookFilesFromBeforeLoadAsVersionOneAndAreStampedOnWrite() throws {
+        let store = try LookStore(directory: TestFiles.directory()), id = UUID()
+        let url = try writeLook(#"{"id": "\#(id.uuidString)", "name": "Old", "adjustments": {"temperature": 20}, "createdAt": "2026-11-10T09:00:00Z"}"#, in: store, id: id)
+        #expect(store.all().map(\.version) == [1]); #expect(store.all().first?.adjustments == Adjustments().setting(.temperature, to: 20)); _ = try store.rename(id, to: "Older")
+        #expect(try JSONDecoder().decode(EditFileVersion.self, from: Data(contentsOf: url)).version == 2); #expect(try store.save(name: "New", adjustments: Adjustments()).version == 2) }
+    @Test func newerLookIsListedButNotRenamedOrDuplicated() throws {
+        let store = try LookStore(directory: TestFiles.directory()), id = UUID()
+        let json = #"{"id": "\#(id.uuidString)", "name": "Future", "version": 3, "adjustments": {"exposure": 1, "masks": []}, "createdAt": "2026-11-10T09:00:00Z"}"#
+        let url = try writeLook(json, in: store, id: id), path = url.path(percentEncoded: false)
+        #expect(store.all().map(\.name) == ["Future"]); #expect(throws: LookStoreError.newerVersion(path: path, version: 3)) { try store.rename(id, to: "Now") }
+        #expect(throws: LookStoreError.newerVersion(path: path, version: 3)) { try store.duplicate(id) }
+        #expect(try Data(contentsOf: url) == Data(json.utf8)); try store.delete(id); #expect(store.all().isEmpty) }
+    @Test func newerLookWithShapeThisBuildCannotReadIsStillNewerAndUntouched() throws {
+        let store = try LookStore(directory: TestFiles.directory()), id = UUID()
+        let json = #"{"id": "\#(id.uuidString)", "name": "Future", "version": 3, "adjustments": {"curves": 1}, "createdAt": "2026-11-10T09:00:00Z"}"#
+        let url = try writeLook(json, in: store, id: id), path = url.path(percentEncoded: false)
+        #expect(throws: LookStoreError.newerVersion(path: path, version: 3)) { try store.rename(id, to: "Now") }
+        #expect(try Data(contentsOf: url) == Data(json.utf8)) }
 }

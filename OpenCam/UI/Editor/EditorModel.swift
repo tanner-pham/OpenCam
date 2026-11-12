@@ -11,19 +11,70 @@ import OSLog
     private static let logger = Logger(subsystem: "local.opencam.app", category: "EditorModel")
 
     let item: LibraryItem
-    var group: EditorGroup
+    var group: EditorGroup {
+        didSet { if group != oldValue { requestMaskOverlay() } }
+    }
+    /// The curve the Curve group shows and edits.
+    var curveChannel: CurveChannel = .master
+    /// The colour band the Mix group shows; never saved, so an edit opens on Red.
+    var mixBand: ColourBand = .red
+    /// The tonal range the Grading group shows; never saved, so an edit opens on Midtones.
+    var gradingRegion: GradingRegion = .midtones
     var isShowingOriginal = false
     private let edits: EditStore
     private let lookStore: LookStore
     private let renderer: LookRenderer
     private let exporter: PhotoExporter
     /// The preview render; `renderer.renderedCGImage` unless a test replaces it.
-    private let renderPreview: @Sendable (CIImage, Adjustments) async -> CGImage?
+    private let renderPreview: @Sendable (CIImage, PhotoEdit, CIImage?) async -> CGImage?
+    /// Finds the photo's subject on the proxy; `SubjectMasker.mask(for:)` unless a test replaces it.
+    private let findSubject: @Sendable (CIImage) async -> CIImage?
+    /// The histogram count; `PictureHistogram.make(from:)` unless a test replaces it.
+    private let makeHistogram: @Sendable (CGImage) async -> PictureHistogram?
+    /// The name of a look to apply, unsaved, once the photo has loaded (`-editorLook` for screenshots); nil for a tap.
+    private let launchLook: String?
 
     var adjustments = Adjustments() {
-        didSet { if adjustments != oldValue { requestRender() } }
+        didSet {
+            guard adjustments != oldValue else { return }
+            record(PhotoEdit(adjustments: oldValue, lookName: lookName, masks: masks))
+            requestRender()
+        }
     }
-    private(set) var lookName: String?
+    private(set) var lookName: String? {
+        didSet { if lookName != oldValue { record(PhotoEdit(adjustments: adjustments, lookName: oldValue, masks: masks)) } }
+    }
+    /// The local masks, in the order they are drawn; edited through `addMask`, `deleteSelectedMask` and `updateSelectedMask`.
+    private(set) var masks: [LocalMask] = [] {
+        didSet {
+            guard masks != oldValue else { return }
+            record(PhotoEdit(adjustments: adjustments, lookName: lookName, masks: oldValue))
+            requestRender()
+            requestMaskOverlay()
+            requestSubject()
+        }
+    }
+    /// Whether the photo's subject has been looked for: `.notNeeded` until a subject mask first exists, then once per open.
+    private(set) var subjectState: SubjectState = .notNeeded
+    /// The brush's size, 1...100, and whether it erases; editor settings, neither saved nor undoable.
+    var brushSize = 30.0
+    var isErasing = false
+    /// The brush's radius as a fraction of the picture's shorter side, 0.01...0.15.
+    var brushRadius: Double { 0.01 + (min(max(brushSize, 1), 100) - 1) / 99 * 0.14 }
+    /// The mask the Masks group shows; never saved, so an edit opens with none chosen.
+    var selectedMaskID: UUID? {
+        didSet { if selectedMaskID != oldValue { requestMaskOverlay() } }
+    }
+    /// Whether the selected mask is tinted red on the picture while the Masks group is open.
+    var isShowingMaskOverlay = true {
+        didSet { if isShowingMaskOverlay != oldValue { requestMaskOverlay() } }
+    }
+    /// The selected mask in translucent red at the proxy's size; nil when it is not shown or the mask cannot apply.
+    private(set) var maskOverlay: CGImage?
+    var selectedMask: LocalMask? { masks.first { $0.id == selectedMaskID } }
+    /// The lens and exposure facts of the original file; none until the read finishes or when the file carries none.
+    private(set) var facts = PhotoFacts.none
+    var designation: FormatDesignation? { FormatDesignation.of(item) }
     private(set) var phase: EditorPhase = .loading
     /// The saved looks, as `LookStore.all()` orders them.
     private(set) var looks: [Look] = []
@@ -38,18 +89,37 @@ import OSLog
     private(set) var original: CGImage?
     private(set) var proxySize: CGSize?
     /// What `preview` shows.
-    private(set) var renderedAdjustments: Adjustments?
+    private(set) var renderedEdit: PhotoEdit?
+    var renderedAdjustments: Adjustments? { renderedEdit?.adjustments }
     /// Width x height of the image the last completed render returned, measured on that image.
     private(set) var lastRenderPixelSize: CGSize?
     /// Completed preview renders, the first one included.
     private(set) var previewRenderCount = 0
+    /// The histogram of the newest preview counted so far; nil until the first count finishes.
+    private(set) var histogram: PictureHistogram?
 
     /// The edit as it was loaded or last saved.
     private var savedEdit = PhotoEdit()
+    private var history = EditHistory()
+    /// True while `restore(_:)` writes the edit, so an undo or redo is not recorded as a change.
+    private var isRestoring = false
+    private var isStroking = false
+    private var hasRecordedStroke = false
+    private var strokeBuilder: BrushStrokeBuilder?
+    private var strokeMaskID: UUID?
+    private let now: @Sendable () -> Date
     private var proxy: CIImage?
-    private var renders = RenderCoalescer<Adjustments>()
+    private var subject: CIImage?
+    private var subjectTask: Task<Void, Never>?
+    private var renders = RenderCoalescer<PhotoEdit>()
     private var renderTask: Task<Void, Never>?
+    private var overlays = RenderCoalescer<MaskOverlayKey?>()
+    private var overlayTask: Task<Void, Never>?
+    private var requestedOverlay: MaskOverlayKey?
     private var shownGeneration = 0
+    private var histograms = RenderCoalescer<CGImage>()
+    private var histogramTask: Task<Void, Never>?
+    private var countedGeneration = 0
 
     /// The unedited proxy at `tileLongSide`, which every look tile is rendered from.
     private var tileSource: CIImage?
@@ -58,19 +128,60 @@ import OSLog
     /// The tile render started last; the next one waits for it, so tiles draw one at a time.
     private var lastTile: Task<CGImage?, Never>?
 
-    /// `renderPreview` is a test seam for a render that fails; the app never passes it.
+    /// `renderPreview` is a test seam for a render that fails, `makeHistogram` one for a slow count and `findSubject` one for
+    /// a subject that Vision would not find in a drawn test picture; the app passes none of them.
+    /// `launchLook` names a look in `looks` that is applied through `applyLook(_:)`, unsaved, after a successful load.
     init(item: LibraryItem, edits: EditStore, looks: LookStore, group: EditorGroup = .light, renderer: LookRenderer = .shared,
-         exporter: PhotoExporter = .appDefault(), renderPreview: (@Sendable (CIImage, Adjustments) async -> CGImage?)? = nil) {
+         exporter: PhotoExporter = .appDefault(), renderPreview: (@Sendable (CIImage, PhotoEdit, CIImage?) async -> CGImage?)? = nil,
+         makeHistogram: (@Sendable (CGImage) async -> PictureHistogram?)? = nil, launchLook: String? = nil,
+         findSubject: (@Sendable (CIImage) async -> CIImage?)? = nil, now: (@Sendable () -> Date)? = nil) {
+        self.now = now ?? { Date() }
         self.item = item
         self.edits = edits
         self.lookStore = looks
         self.group = group
         self.renderer = renderer
         self.exporter = exporter
-        self.renderPreview = renderPreview ?? { image, adjustments in await renderer.renderedCGImage(image, adjustments: adjustments) }
+        self.renderPreview = renderPreview ?? { image, edit, subject in await renderer.renderedCGImage(image, edit: edit, subject: subject) }
+        self.findSubject = findSubject ?? { image in await SubjectMasker.mask(for: image) }
+        self.makeHistogram = makeHistogram ?? { image in await PictureHistogram.make(from: image) }
+        self.launchLook = launchLook
     }
 
-    var hasChanges: Bool { !adjustments.matches(savedEdit.adjustments) || lookName != savedEdit.lookName }
+    /// The edit as shown; with `restore(_:)`, the one place the model's edit state is read and written.
+    var currentEdit: PhotoEdit { PhotoEdit(adjustments: adjustments, lookName: lookName, masks: masks) }
+
+    private func restore(_ edit: PhotoEdit) {
+        isRestoring = true
+        defer { isRestoring = false }
+        adjustments = edit.adjustments
+        lookName = edit.lookName
+        masks = edit.masks
+        if selectedMask == nil { selectedMaskID = masks.last?.id }
+    }
+
+    private func record(_ before: PhotoEdit) {
+        guard !isRestoring else { return }
+        // A stroke in progress is one step however long the finger pauses: only its first write records.
+        if isStroking {
+            if hasRecordedStroke { return }
+            hasRecordedStroke = true
+        }
+        history.record(before, at: now())
+    }
+
+    var canUndo: Bool { history.canUndo }
+    var canRedo: Bool { history.canRedo }
+
+    func undo() {
+        if let previous = history.undo(from: currentEdit) { restore(previous) }
+    }
+
+    func redo() {
+        if let next = history.redo(from: currentEdit) { restore(next) }
+    }
+
+    var hasChanges: Bool { !adjustments.matches(savedEdit.adjustments) || lookName != savedEdit.lookName || masks != savedEdit.masks }
 
     /// Changes that leaving without Done would lose. A photo that cannot be edited (any failed phase) has none to lose.
     var hasUnsavedChanges: Bool {
@@ -81,6 +192,13 @@ import OSLog
     /// Reads the edit, decodes the proxy off the main actor and renders the first preview. An edit from a newer version, or
     /// one that cannot be read, leaves the photo read-only and decodes nothing: this build never overwrites such a file.
     func load() async {
+        // Started first, so the read never delays the decode; a read-only photo still shows its facts.
+        async let readFacts = PhotoFacts.read(at: item.pictureURL)
+        await loadPhoto()
+        facts = await readFacts
+    }
+
+    private func loadPhoto() async {
         looks = lookStore.all()
         let edit: PhotoEdit
         do {
@@ -94,8 +212,8 @@ import OSLog
             return
         }
         savedEdit = edit
-        lookName = edit.lookName
-        adjustments = edit.adjustments
+        restore(edit)
+        history.clear()
         guard edit.version <= PhotoEdit.currentVersion else {
             Self.logger.error("[EditorModel:load] Edit is from a newer version, so the photo opens read-only — {stem: \(self.item.stem, privacy: .public), version: \(edit.version)}")
             phase = .failed(LibraryCopy.newerEdit)
@@ -116,6 +234,8 @@ import OSLog
         }
         proxy = decoded
         proxySize = decoded.extent.size
+        requestMaskOverlay()
+        requestSubject()
         original = unedited
         tileSource = await Self.makeTileSource(from: unedited)
         requestRender()
@@ -126,6 +246,13 @@ import OSLog
             return
         }
         phase = .ready
+        if let launchLook {
+            if let look = looks.first(where: { $0.name == launchLook }) {
+                applyLook(look)
+            } else {
+                Self.logger.error("[EditorModel:load] No look has the launch look's name, so none was applied — {look: \(launchLook, privacy: .public)}")
+            }
+        }
     }
 
     /// Returns when no render is running or waiting.
@@ -135,14 +262,57 @@ import OSLog
         }
     }
 
+    /// Returns when the subject search and the renders it leads to have finished.
+    func waitForSubject() async {
+        await subjectTask?.value
+        await waitForPreview()
+        await waitForMaskOverlay()
+    }
+
+    /// Returns when no mask overlay render is running or waiting.
+    func waitForMaskOverlay() async {
+        while !overlays.isIdle, let task = overlayTask {
+            await task.value
+        }
+    }
+
+    /// Returns when no histogram count is running or waiting.
+    func waitForHistogram() async {
+        while !histograms.isIdle, let task = histogramTask {
+            await task.value
+        }
+    }
+
     func reset(_ key: AdjustmentKey) {
         adjustments[key] = 0
     }
 
+    /// Straightens one channel's curve; the other curves stay.
+    func resetCurve(_ channel: CurveChannel) {
+        adjustments.curves[channel] = .identity
+    }
+
+    /// Sets one grading wheel's hue and saturation in a single write to `adjustments`, so a drag renders once per move.
+    func setWheel(_ region: GradingRegion, hue: Double, saturation: Double) {
+        var edited = adjustments
+        edited[region.hueKey] = hue
+        edited[region.saturationKey] = saturation
+        adjustments = edited
+    }
+
+    /// Takes one grading wheel's puck back to the centre (hue and saturation 0); its luminance keeps its own reset.
+    func resetWheel(_ region: GradingRegion) {
+        setWheel(region, hue: 0, saturation: 0)
+    }
+
     /// Also clears the look.
     func resetAll() {
+        history.breakStep()
         adjustments = Adjustments()
         lookName = nil
+        masks = []
+        selectedMaskID = nil
+        history.breakStep()
     }
 
     /// Writes the edit beside the original (an empty edit removes the file). False, with the phase saying why, when the photo is
@@ -156,7 +326,7 @@ import OSLog
             return false
         }
         guard hasChanges else { return true }
-        let edit = PhotoEdit(adjustments: adjustments, lookName: lookName)
+        let edit = currentEdit
         do {
             try edits.save(edit, stem: item.stem)
         } catch {
@@ -172,18 +342,18 @@ import OSLog
         return true
     }
 
-    /// Starts a render of the current adjustments, or leaves them waiting in place of any earlier value while one runs.
+    /// Starts a render of the current edit, or leaves it waiting in place of any earlier value while one runs.
     private func requestRender() {
-        guard proxy != nil, let job = renders.request(adjustments) else { return }
+        guard proxy != nil, let job = renders.request(currentEdit) else { return }
         renderTask = Task { await runRenders(from: job) }
     }
 
     /// Renders the job, then whatever latest value waited meanwhile, until nothing waits. Every render takes the in-memory proxy.
-    private func runRenders(from first: (generation: Int, value: Adjustments)) async {
-        var job: (generation: Int, value: Adjustments)? = first
+    private func runRenders(from first: (generation: Int, value: PhotoEdit)) async {
+        var job: (generation: Int, value: PhotoEdit)? = first
         while let current = job {
-            if let proxy, let image = await renderPreview(proxy, current.value) {
-                show(image, adjustments: current.value, generation: current.generation)
+            if let proxy, let image = await renderPreview(proxy, current.value, subject) {
+                show(image, edit: current.value, generation: current.generation)
             } else {
                 Self.logger.error("[EditorModel:runRenders] The preview could not be rendered — {stem: \(self.item.stem, privacy: .public)}")
             }
@@ -192,13 +362,110 @@ import OSLog
     }
 
     /// A result older than the one on screen is dropped.
-    private func show(_ image: CGImage, adjustments rendered: Adjustments, generation: Int) {
+    private func show(_ image: CGImage, edit rendered: PhotoEdit, generation: Int) {
         guard generation > shownGeneration else { return }
         shownGeneration = generation
         preview = image
-        renderedAdjustments = rendered
+        renderedEdit = rendered
         lastRenderPixelSize = CGSize(width: image.width, height: image.height)
         previewRenderCount += 1
+        requestHistogram(of: image)
+    }
+
+    /// Counts the newest preview at a lower priority; the preview path never awaits it, and a count still waiting is replaced.
+    private func requestHistogram(of image: CGImage) {
+        guard let job = histograms.request(image) else { return }
+        histogramTask = Task(priority: .utility) { await runHistograms(from: job) }
+    }
+
+    private func runHistograms(from first: (generation: Int, value: CGImage)) async {
+        var job: (generation: Int, value: CGImage)? = first
+        while let current = job {
+            if let counted = await makeHistogram(current.value) {
+                if current.generation > countedGeneration {
+                    countedGeneration = current.generation
+                    histogram = counted
+                }
+            } else {
+                Self.logger.error("[EditorModel:runHistograms] The histogram could not be counted — {stem: \(self.item.stem, privacy: .public)}")
+            }
+            job = histograms.finish()
+        }
+    }
+}
+
+// MARK: - Masks
+
+extension EditorModel {
+    /// Adds a mask of `kind` with its default shape and no adjustments, and selects it. One undo step.
+    func addMask(_ kind: MaskKind) {
+        let mask = LocalMask(shape: kind.defaultShape)
+        history.breakStep()
+        masks.append(mask)
+        selectedMaskID = mask.id
+        history.breakStep()
+    }
+
+    /// Removes the selected mask and selects the one before it, or none. One undo step.
+    func deleteSelectedMask() {
+        guard let index = masks.firstIndex(where: { $0.id == selectedMaskID }) else { return }
+        history.breakStep()
+        masks.remove(at: index)
+        selectedMaskID = masks.indices.contains(index - 1) ? masks[index - 1].id : masks.first?.id
+        history.breakStep()
+    }
+
+    /// Changes the selected mask in one write to `masks`, so a drag renders once per move and coalesces like any slider.
+    func updateSelectedMask(_ change: (inout LocalMask) -> Void) {
+        guard let index = masks.firstIndex(where: { $0.id == selectedMaskID }) else { return }
+        var edited = masks
+        change(&edited[index])
+        masks = edited
+    }
+}
+
+// MARK: - Brush
+
+extension EditorModel {
+    /// Starts a stroke in the selected brush mask; does nothing when the selection is not a brush. Not undoable until `endStroke`
+    /// closes it: the whole stroke is one step.
+    func beginStroke(at point: MaskPoint, pressure: Double?) {
+        guard !isStroking, let mask = selectedMask, case .brush = mask.shape else { return }
+        var builder = BrushStrokeBuilder(radius: brushRadius, isErasing: isErasing)
+        guard builder.add(point, pressure: pressure) else { return }
+        history.breakStep()
+        isStroking = true
+        hasRecordedStroke = false
+        strokeBuilder = builder
+        strokeMaskID = mask.id
+        let stroke = builder.stroke
+        writeStroke { (strokes: inout [BrushStroke]) in strokes.append(stroke) }
+    }
+
+    func continueStroke(at point: MaskPoint, pressure: Double?) {
+        guard isStroking, var builder = strokeBuilder, builder.add(point, pressure: pressure) else { return }
+        strokeBuilder = builder
+        let stroke = builder.stroke
+        writeStroke { (strokes: inout [BrushStroke]) in
+            if strokes.isEmpty { strokes.append(stroke) } else { strokes[strokes.count - 1] = stroke }
+        }
+    }
+
+    func endStroke() {
+        guard isStroking else { return }
+        isStroking = false
+        strokeBuilder = nil
+        strokeMaskID = nil
+        history.breakStep()
+    }
+
+    /// One write to `masks` per sample, so the picture renders once per sample.
+    private func writeStroke(_ change: (inout [BrushStroke]) -> Void) {
+        guard let index = masks.firstIndex(where: { $0.id == strokeMaskID }), case var .brush(strokes) = masks[index].shape else { return }
+        change(&strokes)
+        var edited = masks
+        edited[index].shape = .brush(strokes: strokes)
+        masks = edited
     }
 }
 
@@ -211,14 +478,19 @@ extension EditorModel {
     /// An edit like any other: copies the look's values and name into the edit, which renders through the preview path.
     /// Nil clears the edit and the look.
     func applyLook(_ look: Look?) {
+        history.breakStep()
         adjustments = look?.adjustments ?? Adjustments()
         lookName = look?.name
+        history.breakStep()
     }
 
     /// Saves the current values as a new look, which the edit then names as its look.
     func saveAsLook(named name: String) throws(LookStoreError) -> Look {
         let look = try lookStore.save(name: name, adjustments: adjustments)
+        // Naming the edit changes no picture, so it is not an undo step.
+        isRestoring = true
         lookName = look.name
+        isRestoring = false
         refreshLooks()
         return look
     }
@@ -300,7 +572,7 @@ extension EditorModel {
         isExporting = true
         defer { isExporting = false }
         do {
-            return try await exporter.export(item, edit: PhotoEdit(adjustments: adjustments, lookName: lookName))
+            return try await exporter.export(item, edit: currentEdit)
         } catch {
             Self.logger.error("\(error.description, privacy: .public)")
             if case .sourceMissing = error { phase = .failed(LibraryCopy.cannotOpen) } else { alertMessage = LibraryCopy.exportFailed }
@@ -314,6 +586,79 @@ extension EditorModel {
             try FileManager.default.removeItem(at: url)
         } catch {
             Self.logger.error("[EditorModel:discardExport] The export file could not be removed — {file: \(url.lastPathComponent, privacy: .public), reason: \(error.localizedDescription, privacy: .public)}")
+        }
+    }
+}
+
+// MARK: - Mask overlay
+
+/// What the overlay depends on: the mask's shape and inversion. Its adjustments do not change it.
+private nonisolated struct MaskOverlayKey: Equatable, Sendable {
+    let shape: MaskShape
+    let isInverted: Bool
+    /// A subject mask draws once the subject is found.
+    let hasSubject: Bool
+}
+
+extension EditorModel {
+    /// Renders the overlay for the selected mask when it differs from the last one asked for, one render at a time.
+    fileprivate func requestMaskOverlay() {
+        let wanted: MaskOverlayKey? = group == .masks && isShowingMaskOverlay
+            ? selectedMask.map { MaskOverlayKey(shape: $0.shape, isInverted: $0.isInverted, hasSubject: subject != nil) } : nil
+        guard wanted != requestedOverlay else { return }
+        // Recorded only once it can start: a request made before the proxy decodes is asked for again when the proxy is ready.
+        guard let proxy else { return }
+        requestedOverlay = wanted
+        // Nothing to draw clears at once; a render still running is dropped when it ends, as it no longer matches the request.
+        if wanted == nil { maskOverlay = nil }
+        guard let job = overlays.request(wanted) else { return }
+        overlayTask = Task { await runOverlays(from: job, extent: proxy.extent) }
+    }
+
+    fileprivate func runOverlays(from first: (generation: Int, value: MaskOverlayKey?), extent: CGRect) async {
+        var job: (generation: Int, value: MaskOverlayKey?)? = first
+        while let current = job {
+            let image = await renderOverlay(current.value, extent: extent, subject: subject)
+            // Only the newest request decides what is shown, so a stale result never replaces a clear.
+            if current.value == requestedOverlay { maskOverlay = image }
+            job = overlays.finish()
+        }
+    }
+
+    private func renderOverlay(_ key: MaskOverlayKey?, extent: CGRect, subject: CIImage?) async -> CGImage? {
+        guard let key else { return nil }
+        let mask = LocalMask(shape: key.shape, isInverted: key.isInverted)
+        let renderer = renderer
+        return await Self.overlayImage(renderer: renderer, mask: mask, extent: extent, subject: subject)
+    }
+
+    @concurrent private static func overlayImage(renderer: LookRenderer, mask: LocalMask, extent: CGRect, subject: CIImage?) async -> CGImage? {
+        guard let overlay = renderer.maskOverlay(for: mask, extent: extent, subject: subject) else { return nil }
+        return await renderer.cgImage(overlay)
+    }
+}
+
+// MARK: - Subject
+
+/// Where the search for the photo's subject stands.
+nonisolated enum SubjectState: Equatable, Sendable {
+    case notNeeded, finding, found, notFound
+}
+
+extension EditorModel {
+    /// Looks for the subject on the proxy, off the main actor, the first time any subject mask exists. Once per open: a photo
+    /// where nothing was found is not searched again. A found subject brings the preview and the overlay up to date.
+    fileprivate func requestSubject() {
+        guard subjectState == .notNeeded, let proxy, masks.contains(where: { $0.shape.kind == .subject }) else { return }
+        subjectState = .finding
+        let find = findSubject
+        subjectTask = Task {
+            let found = await find(proxy)
+            subject = found
+            subjectState = found == nil ? .notFound : .found
+            guard found != nil else { return }
+            requestRender()
+            requestMaskOverlay()
         }
     }
 }

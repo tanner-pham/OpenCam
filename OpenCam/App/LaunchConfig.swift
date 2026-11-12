@@ -11,16 +11,20 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
     var keepsSweepClips = false
     var hasWiredMicrophone = false          // -wiredMic on: the Simulator's audio route lists a wired headset microphone (does not make the launch scripted)
     var hasHeadphones = false               // -headphones on: the Simulator's audio route plays to wired headphones (does not make the launch scripted)
-    var editorGroup: EditorGroup = .light   // -editorGroup light|colour|detail|effects|looks
+    var editorGroup: EditorGroup = .light   // -editorGroup light|colour|curve|mix|grading|detail|effects|looks
     var seedsSamples = false                // -seedSamples on (honoured in the Simulator only)
     var seedsLook = false                   // -seedLook on (honoured in the Simulator only)
+    var seedsFormats = false                // -seedFormats on (honoured in the Simulator only)
+    var seedsStudyLook = false              // -seedStudy on: saves the look "Colour study" (honoured in the Simulator only)
     var startsInSelectMode = false          // -librarySelect on
     var showsShutterDemo = false            // -shutterDemo on: the shutter blink runs once a second (honoured in the Simulator only)
     var cameraLookName: String?             // -cameraLook <name>: the look of that name is selected, or None when there is none
     var openControl: ManualControl?         // -control shutter|iso|ev|wb|tint|focus: that slider starts open (honoured in the Simulator only)
     var forcesPictureSlider = false         // -sliderPlacement picture: the slider is drawn in the picture on the folded display (honoured in the Simulator only)
-    /// True when -orientation, -mode, -screen, -recording, -state, -editorGroup, -cameraLook, -control, -sliderPlacement or an "on" flag among -seedSamples,
-    /// -seedLook, -librarySelect and -shutterDemo parsed to a valid value; such launches never restore or save selections.
+    var editorLookName: String?             // -editorLook <name>: the launch push applies the look of that name, unsaved
+    /// True when -orientation, -mode, -screen, -recording, -state, -editorGroup, -cameraLook, -editorLook, -control, -sliderPlacement or an
+    /// "on" flag among -seedSamples, -seedLook, -seedFormats, -seedStudy, -librarySelect and -shutterDemo parsed to a valid value; such
+    /// launches never restore or save selections.
     var isScripted = false
 
     static func parse(_ args: [String]) -> LaunchConfig {
@@ -61,6 +65,14 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
             config.seedsLook = true
             config.isScripted = true
         }
+        if value("-seedFormats") == "on" {
+            config.seedsFormats = true
+            config.isScripted = true
+        }
+        if value("-seedStudy") == "on" {
+            config.seedsStudyLook = true
+            config.isScripted = true
+        }
         if value("-librarySelect") == "on" {
             config.startsInSelectMode = true
             config.isScripted = true
@@ -79,6 +91,10 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
         }
         if value("-sliderPlacement") == "picture" {
             config.forcesPictureSlider = true
+            config.isScripted = true
+        }
+        if let name = value("-editorLook") {
+            config.editorLookName = name
             config.isScripted = true
         }
         config.freeSpaceMarginMB = value("-freeSpaceMarginMB").flatMap { Int($0) }

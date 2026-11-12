@@ -23,11 +23,13 @@ nonisolated struct ThumbnailCache: Sendable {
         self.directory = directory
     }
 
-    /// "<file name>-<milliseconds since 1970>-<first 16 hex of SHA-256 of the adjustments>.jpg"
+    /// "<file name>-<milliseconds since 1970>-<first 16 hex of SHA-256 of the adjustments, and of the masks if there are any>.jpg"
     static func key(fileName: String, modified: Date, edit: PhotoEdit) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let json = (try? encoder.encode(edit.adjustments)) ?? Data()
+        var json = (try? encoder.encode(edit.adjustments)) ?? Data()
+        // Masks join the hash only when there are some, so the keys of edits without them stay as they were.
+        if !edit.masks.isEmpty { json.append((try? encoder.encode(edit.masks)) ?? Data()) }
         let digest = SHA256.hash(data: json).prefix(8).map { String(format: "%02x", $0) }.joined()
         return "\(fileName)-\(Int64((modified.timeIntervalSince1970 * 1000).rounded()))-\(digest).jpg"
     }
@@ -43,7 +45,8 @@ nonisolated struct ThumbnailCache: Sendable {
         switch item.kind {
         case .photo:
             let proxy = try await PictureDecoder.proxy(at: item.pictureURL, longSide: Self.longSide)
-            guard let rendered = await LookRenderer.shared.renderedCGImage(proxy, adjustments: edit.adjustments) else {
+            // No subject is found here: a subject mask shows only in the editor and the export.
+            guard let rendered = await LookRenderer.shared.renderedCGImage(proxy, edit: edit) else {
                 throw .undecodable(path: path, in: .proxy)
             }
             image = rendered

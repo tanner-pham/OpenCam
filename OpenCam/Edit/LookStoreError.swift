@@ -4,6 +4,7 @@ nonisolated enum LookStoreError: Error, CustomStringConvertible, Equatable {
     case emptyName
     case nameTooLong(count: Int)
     case notFound(id: UUID)
+    case newerVersion(path: String, version: Int)
     case unreadable(path: String, reason: String)
     case unwritable(path: String, reason: String)
     case directoryUnavailable(reason: String)
@@ -16,6 +17,8 @@ nonisolated enum LookStoreError: Error, CustomStringConvertible, Equatable {
             "[LookStore:validName] Look name is too long — {count: \(count), max: \(LookStore.maxNameLength)}"
         case .notFound(let id):
             "[LookStore:read] Look does not exist — {id: \(id.uuidString)}"
+        case .newerVersion(let path, let version):
+            "[LookStore:write] Look file was written by a newer version and is read-only here — {path: \(path), version: \(version), supported: \(Look.currentVersion)}"
         case .unreadable(let path, let reason):
             "[LookStore:read] Cannot read the look — {path: \(path), reason: \(reason)}"
         case .unwritable(let path, let reason):

@@ -47,7 +47,7 @@ import Testing
         let first = try #require(values.first), last = try #require(values.last)
         #expect(abs(last - first) > 0.05)   // the slider does something
     }
-    /// Pins the stage order: exposure (stage 2) before contrast (5) before saturation (8).
+    /// Pins the stage order: exposure (stage 1) before contrast (3) before saturation (7).
     /// Expected values worked out by hand in that order: (0.6, 0.4, 0.3) +0.5 stop gives (0.70176, 0.47069, 0.35515),
     /// contrast +30 about 0.5 gives (0.76228, 0.46189, 0.31170), saturation +40 about its luma 0.51491 gives (0.86123, 0.44068, 0.23041).
     @Test func severalStagesApplyInTheFixedOrder() {
@@ -58,5 +58,19 @@ import Testing
         // Contrast and saturation commute (both scale about a point), so a reordering that matters moves exposure.
         let reordered = apply(.exposure, 0.5, apply(.contrast, 30, apply(.saturation, 40, rgb)))
         #expect(maxDiff(reordered, out) > 0.02)
+    }
+    @Test func e1TablesAreRebuiltBitForBit() {   // Review Focus 2
+        for a in [Adjustments(), LookSeeder.warmFade, Adjustments().setting(.contrast, to: 60).setting(.tint, to: -30)] {
+            var expected = [Float]()   // LookCompiler's order: red fastest, then green, then blue; alpha 1
+            for b in 0..<33 { for g in 0..<33 { for r in 0..<33 {
+                let out = E1ColourReference.apply(a, to: SIMD3(Float(r) / 32, Float(g) / 32, Float(b) / 32)); expected += [out.x, out.y, out.z, 1]
+            } } }
+            #expect(LookCompiler.cube(for: a).data == expected)
+        }
+    }
+    @Test func masterRunsBeforeTheChannelCurve() {
+        var a = Adjustments(); a.curves.master = ToneCurve(points: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.6), CurvePoint(x: 1, y: 1)])
+        #expect(maxDiff(ColourMath.apply(a, to: grey), SIMD3(0.6, 0.6, 0.6)) < 1e-4); a.curves.red = ToneCurve(points: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.7), CurvePoint(x: 1, y: 1)])
+        #expect(maxDiff(ColourMath.apply(a, to: grey), SIMD3(0.77536, 0.6, 0.6)) < 1e-4)   // red curve at 0.6
     }
 }

@@ -12,7 +12,8 @@ import Testing
         let c = LaunchConfig.parse(["app", "-screen", "editor", "-editorGroup", "colour", "-seedSamples", "on", "-seedLook", "on", "-librarySelect", "on"])
         #expect(c.screen == .editor); #expect(c.editorGroup == .colour); #expect(c.seedsSamples); #expect(c.seedsLook); #expect(c.startsInSelectMode); #expect(c.isScripted)
         #expect(LaunchConfig.parse(["app", "-seedSamples", "on"]).isScripted)
-        #expect(LaunchConfig.parse(["app", "-editorGroup", "masks", "-seedSamples", "off"]) == LaunchConfig())
+        #expect(LaunchConfig.parse(["app", "-editorGroup", "sparkle", "-seedSamples", "off"]) == LaunchConfig())
+        #expect(LaunchConfig.parse(["app", "-editorGroup", "masks"]).editorGroup == .masks)
     }
     @Test func parsesCameraLookFlag() {
         let c = LaunchConfig.parse(["app", "-cameraLook", "Warm fade", "-seedLook", "on"])
@@ -35,4 +36,13 @@ import Testing
         #expect(LaunchConfig.parse(["app", "-sliderPlacement", "strip"]) == LaunchConfig())
     }
     @Test func unknownValuesFallBack() { #expect(LaunchConfig.parse(["app", "-mode", "cinema", "-screen", "monitor"]) == LaunchConfig()) }
+    @Test func parsesSeedFormatsFlag() {
+        #expect(LaunchConfig.parse(["app", "-seedFormats", "on"]).seedsFormats); #expect(LaunchConfig.parse(["app", "-seedFormats", "on"]).isScripted)
+        #expect(!LaunchConfig.parse(["app"]).seedsFormats)
+    }
+    @Test func parsesTheStudyFlags() {
+        let c = LaunchConfig.parse(["app", "-screen", "editor", "-editorGroup", "curve", "-seedStudy", "on", "-editorLook", "Colour study"])
+        #expect(c.editorGroup == .curve); #expect(c.seedsStudyLook); #expect(c.editorLookName == "Colour study"); #expect(c.isScripted)
+        #expect(LaunchConfig.parse(["app", "-editorLook", "X"]).isScripted); #expect(LaunchConfig.parse(["app", "-seedStudy", "on"]).isScripted)
+    }
 }

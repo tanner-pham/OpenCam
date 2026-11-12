@@ -9,8 +9,8 @@ nonisolated enum LibraryError: Error, CustomStringConvertible, Equatable {
     case unreadableEdit(path: String, reason: String)
     /// Apply look or Remove look could not change some photos; `change` says what happened to every item.
     case lookChangeIncomplete(change: LookChange, reason: String)
-    /// A sample that could not be rendered or written.
-    case seedFailed(path: String, reason: String)
+    /// A sample that could not be rendered or written; `function` is the seeder that failed.
+    case seedFailed(function: String, path: String, reason: String)
 
     var description: String {
         switch self {
@@ -24,8 +24,8 @@ nonisolated enum LibraryError: Error, CustomStringConvertible, Equatable {
             "[LibraryStore:delete] Edit was written by a newer version, so the photo was kept — {path: \(path), version: \(version)}"
         case .unreadableEdit(let path, let reason):
             "[LibraryStore:delete] Edit cannot be read, so the photo was kept — {path: \(path), reason: \(reason)}"
-        case .seedFailed(let path, let reason):
-            "[SampleSeeder:seedIfEmpty] Cannot create the sample — {path: \(path), reason: \(reason)}"
+        case .seedFailed(let function, let path, let reason):
+            "[SampleSeeder:\(function)] Cannot create the sample — {path: \(path), reason: \(reason)}"
         }
     }
 }

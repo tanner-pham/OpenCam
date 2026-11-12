@@ -9,6 +9,7 @@ struct LooksPanel: View {
     private static let logger = Logger(subsystem: "local.opencam.app", category: "LooksPanel")
     private static let columns = [GridItem(.adaptive(minimum: 96), spacing: Theme.Space.m)]
     private static let saveFailed = "The look could not be saved."
+    private static let newerLook = "This look was made by a newer version of OpenCam, so it can't be changed here."
     private static let deleteFailed = "The look could not be deleted."
 
     /// Rendered tiles by the adjustments they show.
@@ -97,7 +98,7 @@ struct LooksPanel: View {
             try model.saveLookName(name, renaming: presented.look)
         } catch {
             Self.logger.error("\(error.description, privacy: .public)")
-            failure = Self.saveFailed
+            failure = Self.saveFailure(for: error)
         }
     }
 
@@ -106,8 +107,13 @@ struct LooksPanel: View {
             try model.duplicateLook(look.id)
         } catch {
             Self.logger.error("\(error.description, privacy: .public)")
-            failure = Self.saveFailed
+            failure = Self.saveFailure(for: error)
         }
+    }
+
+    /// A look from a newer build is never rewritten, so rename and duplicate say why instead of only that they failed.
+    private static func saveFailure(for error: LookStoreError) -> String {
+        if case .newerVersion = error { newerLook } else { saveFailed }
     }
 
     private func delete(_ look: Look) {
