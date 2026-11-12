@@ -15,6 +15,7 @@ struct LibraryCell: View {
             .aspectRatio(1, contentMode: .fit)
             .overlay { picture }
             .overlay(alignment: .bottomTrailing) { clipBadge }
+            .overlay(alignment: .bottomLeading) { formatBadge }
             .overlay(alignment: .topTrailing) { selectionMark }
             .clipped()
             .contentShape(.rect)
@@ -65,6 +66,18 @@ struct LibraryCell: View {
     }
 
     @ViewBuilder
+    private var formatBadge: some View {
+        if let designation = FormatDesignation.of(item) {
+            Text(designation.title)
+                .font(.caption)
+                .padding(.horizontal, Theme.Space.s)
+                .padding(.vertical, Theme.Space.xs)
+                .glassEffect(.regular, in: .capsule)
+                .padding(Theme.Space.s)
+        }
+    }
+
+    @ViewBuilder
     private var selectionMark: some View {
         if isSelecting {
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
@@ -78,7 +91,7 @@ struct LibraryCell: View {
     private var accessibilityLabel: String {
         var parts: [String]
         switch item.kind {
-        case .photo: parts = [item.stem]
+        case .photo: parts = [item.stem] + (FormatDesignation.of(item).map { [$0.title] } ?? [])
         case .clip: parts = duration.map { ["Video", LibraryCopy.duration(seconds: $0)] } ?? ["Video"]
         }
         if isSelected { parts.append("Selected") }

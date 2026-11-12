@@ -24,6 +24,9 @@ import OSLog
         didSet { if adjustments != oldValue { requestRender() } }
     }
     private(set) var lookName: String?
+    /// The lens and exposure facts of the original file; none until the read finishes or when the file carries none.
+    private(set) var facts = PhotoFacts.none
+    var designation: FormatDesignation? { FormatDesignation.of(item) }
     private(set) var phase: EditorPhase = .loading
     /// The saved looks, as `LookStore.all()` orders them.
     private(set) var looks: [Look] = []
@@ -81,6 +84,13 @@ import OSLog
     /// Reads the edit, decodes the proxy off the main actor and renders the first preview. An edit from a newer version, or
     /// one that cannot be read, leaves the photo read-only and decodes nothing: this build never overwrites such a file.
     func load() async {
+        // Started first, so the read never delays the decode; a read-only photo still shows its facts.
+        async let readFacts = PhotoFacts.read(at: item.pictureURL)
+        await loadPhoto()
+        facts = await readFacts
+    }
+
+    private func loadPhoto() async {
         looks = lookStore.all()
         let edit: PhotoEdit
         do {

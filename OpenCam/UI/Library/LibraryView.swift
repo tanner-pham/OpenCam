@@ -1,4 +1,5 @@
 import PhotosUI
+import OSLog
 import QuickLook
 import SwiftUI
 
@@ -7,6 +8,7 @@ struct LibraryView: View {
     let library: LibraryStore
     let launch: LaunchConfig
 
+    private static let logger = Logger(subsystem: "local.opencam.app", category: "LibraryView")
     @Environment(\.dismiss) private var dismiss
     @State private var path: [LibraryItem] = []
     @State private var isSelecting: Bool
@@ -155,6 +157,16 @@ struct LibraryView: View {
     private func applyLaunch() {
         guard !hasAppliedLaunch else { return }
         hasAppliedLaunch = true
+        #if targetEnvironment(simulator)
+        if launch.seedsFormats {
+            do throws(LibraryError) {
+                _ = try SampleSeeder.seedFormatsIfAbsent(library.captures)
+            } catch {
+                Self.logger.error("\(error.description, privacy: .public)")
+            }
+            library.reload()
+        }
+        #endif
         if launch.startsInSelectMode, let first = library.items.first {
             selectedIDs = [first.id]
         }

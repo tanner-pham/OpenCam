@@ -49,7 +49,10 @@ struct EditorView: View {
         switch EditorLayout.choose(horizontal: horizontalSizeClass, vertical: verticalSizeClass) {
         case .sideBySide:
             HStack(spacing: 0) {
-                EditorPicture(model: model)
+                VStack(spacing: 0) {
+                    EditorPicture(model: model)
+                    PhotoInfoLine(designation: model.designation, facts: model.facts)
+                }
                 EditorPanel(model: model)
                     .frame(width: EditorLayout.panelWidth)
                     .disabled(isFailed)
@@ -59,6 +62,7 @@ struct EditorView: View {
                 VStack(spacing: 0) {
                     EditorPicture(model: model)
                         .frame(height: pictureHeight(in: geo.size))
+                    PhotoInfoLine(designation: model.designation, facts: model.facts)
                     EditorPanel(model: model)
                         .disabled(isFailed)
                 }
@@ -114,10 +118,10 @@ struct EditorView: View {
         if model.hasUnsavedChanges { isConfirmingDiscard = true } else { onDone() }
     }
 
-    /// The picture's fitted height at the full width, held so the panel keeps `minPanelHeight`.
+    /// The picture's fitted height at the full width, held so the panel keeps `minPanelHeight` below the info line.
     private func pictureHeight(in size: CGSize) -> CGFloat {
         let aspect = model.proxySize.map { $0.width / max($0.height, 1) } ?? Self.defaultAspect
         let fitted = size.width / aspect
-        return max(0, min(fitted, size.height - Self.minPanelHeight))
+        return max(0, min(fitted, size.height - Self.minPanelHeight - PhotoInfoLine.height))
     }
 }
