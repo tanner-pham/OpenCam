@@ -23,6 +23,15 @@ import Testing
         }
     }
 
+    /// A finite but absurd bound is capped, never converted to an Int as it stands.
+    @Test func aWildBiasBoundIsCapped() throws {
+        var ranges = photoRanges()
+        ranges.bias = -1e30...1e30
+        let scale = try #require(ManualScale.make(for: .bias, ranges: ranges))
+        #expect(scale.values.first == -24)
+        #expect(scale.values.last == 24)
+    }
+
     @Test func shutterStopsStayInsideTheFormat() throws {
         let values = try scale(.shutter, photoRanges()).values
         #expect(values == values.sorted())

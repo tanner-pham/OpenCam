@@ -22,8 +22,11 @@ nonisolated struct ManualScale: Sendable, Equatable {
         case .bias:
             // Converting an infinite bound to an Int traps.
             guard let range = ranges.bias, range.lowerBound.isFinite, range.upperBound.isFinite else { return nil }
-            let low = Int((Double(range.lowerBound) * 3 - 1e-6).rounded(.up))
-            let high = Int((Double(range.upperBound) * 3 + 1e-6).rounded(.down))
+            // No camera's bias runs past a few stops; a wild finite bound would overflow the Int conversion too.
+            let lower = max(Double(range.lowerBound), -Self.biasLimit)
+            let upper = min(Double(range.upperBound), Self.biasLimit)
+            let low = Int((lower * 3 - 1e-6).rounded(.up))
+            let high = Int((upper * 3 + 1e-6).rounded(.down))
             guard low <= high else { return nil }
             return scale((low...high).map { Double($0) / 3 }, detent: 1, adjust: 1, log: false)
         case .temperature:
@@ -73,6 +76,9 @@ nonisolated struct ManualScale: Sendable, Equatable {
         guard !values.isEmpty else { return nil }
         return ManualScale(values: values, detentStride: detent, adjustStride: adjust, isLogarithmic: log)
     }
+
+    /// The widest exposure bias, in stops, a scale is ever built for.
+    private static let biasLimit = 24.0
 
     private static let shutterDenominators: [Double] = [
         8000, 6400, 5000, 4000, 3200, 2500, 2000, 1600, 1250, 1000, 800, 640, 500, 400, 320, 250, 200, 160,
