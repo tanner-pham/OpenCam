@@ -39,9 +39,9 @@ nonisolated struct PhotoExporter: Sendable {
             }
         }
         let format = ExportFormat.of(source)
-        let name = edit.adjustments.isIdentity ? item.stem : "\(item.stem)-edited"
+        let name = edit.adjustments.isIdentity && edit.masks.isEmpty ? item.stem : "\(item.stem)-edited"
         let url = directory.appending(path: "\(name).\(format.rawValue)", directoryHint: .notDirectory)
-        let rendered = renderer.render(decoded, adjustments: edit.adjustments)
+        let rendered = renderer.render(decoded, edit: edit)
         // Core Image would otherwise write the decoded image's properties as they are, including the original's pixel
         // dimensions and subject area; the export's metadata is chosen here instead.
         let image = rendered.settingProperties(Self.carriedMetadata(from: source, size: rendered.extent.size))

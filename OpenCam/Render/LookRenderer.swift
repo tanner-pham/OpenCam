@@ -14,6 +14,8 @@ nonisolated final class LookRenderer: Sendable {
     let context: CIContext
     let displayP3: CGColorSpace
     private let cubes: ColourCubeCache
+    /// Tables of the masks in the edit on screen; a few masks together would push each other out of a one-entry cache.
+    private let maskCubes = ColourCubeCache(capacity: 8)
 
     /// Long side at which spatial effects are tuned; larger images scale them so proxy and export look alike.
     private static let referenceLongSide: CGFloat = 2048
@@ -41,17 +43,25 @@ nonisolated final class LookRenderer: Sendable {
         render(image, adjustments: adjustments, cube: adjustments.hasColourChanges ? cubes.cube(for: adjustments) : Self.identityCube)
     }
 
+    /// `render(_:adjustments:)` plus the edit's local masks, each blended in after the global colour table. `subject` is a mask of
+    /// the photo's subject for subject masks; without it they do nothing.
+    func render(_ image: CIImage, edit: PhotoEdit, subject: CIImage? = nil) -> CIImage {
+        let adjustments = edit.adjustments
+        return render(image, adjustments: adjustments, cube: adjustments.hasColourChanges ? cubes.cube(for: adjustments) : Self.identityCube,
+                      masks: edit.masks, subject: subject)
+    }
+
     /// `render` with a colour table built for this call alone. Look tiles draw many different tables in a row; going through
     /// the one-entry cache would push out the editor preview's table each time.
     func renderWithOwnTable(_ image: CIImage, adjustments: Adjustments) -> CIImage {
         render(image, adjustments: adjustments, cube: adjustments.hasColourChanges ? LookCompiler.cube(for: adjustments) : Self.identityCube)
     }
 
-    private func render(_ image: CIImage, adjustments: Adjustments, cube: ColourCube) -> CIImage {
+    private func render(_ image: CIImage, adjustments: Adjustments, cube: ColourCube, masks: [LocalMask] = [], subject: CIImage? = nil) -> CIImage {
         let extent = image.extent
         let scale = max(1, max(extent.width, extent.height) / Self.referenceLongSide)
         // Spatial filters sample past the edges, so they read the edge pixels repeated rather than transparency.
-        var out = applyColourStage(image, cube: cube).clampedToExtent()
+        var out = applyMasks(masks, to: applyColourStage(image, cube: cube), subject: subject).clampedToExtent()
 
         if adjustments.sharpening != 0 {
             let filter = CIFilter.sharpenLuminance()
@@ -71,6 +81,22 @@ nonisolated final class LookRenderer: Sendable {
             out = addGrain(to: out, amount: CGFloat(0.12 * adjustments.grain / 100), scale: scale, extent: extent)
         }
         return applyVignette(out, vignette: adjustments.vignette, extent: extent, function: "render").cropped(to: extent)
+    }
+
+    /// Each mask with colour changes: its own table applied to the result so far, blended back through the mask's image.
+    /// A mask that cannot apply (see `MaskImage`) is skipped.
+    private func applyMasks(_ masks: [LocalMask], to image: CIImage, subject: CIImage?) -> CIImage {
+        var out = image
+        for mask in masks where mask.adjustments.hasColourChanges {
+            guard let weights = MaskImage.image(for: mask, extent: image.extent, subject: subject) else { continue }
+            let blend = CIFilter.blendWithMask()
+            blend.inputImage = applyCube(out, cube: maskCubes.cube(for: mask.adjustments))
+            blend.backgroundImage = out
+            blend.maskImage = weights
+            guard let blended = output(of: blend, stage: "mask", function: "applyMasks") else { continue }
+            out = blended.cropped(to: image.extent)
+        }
+        return out
     }
 
     /// The colour table and vignette only, for the viewfinder; matches `render` for the same values.
@@ -97,6 +123,10 @@ nonisolated final class LookRenderer: Sendable {
 
     @concurrent func renderedCGImage(_ image: CIImage, adjustments: Adjustments) async -> CGImage? {
         await cgImage(render(image, adjustments: adjustments))
+    }
+
+    @concurrent func renderedCGImage(_ image: CIImage, edit: PhotoEdit, subject: CIImage? = nil) async -> CGImage? {
+        await cgImage(render(image, edit: edit, subject: subject))
     }
 
     /// `renderedCGImage` through `renderWithOwnTable`, for look tiles.

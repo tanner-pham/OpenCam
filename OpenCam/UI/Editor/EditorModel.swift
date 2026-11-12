@@ -24,7 +24,7 @@ import OSLog
     private let renderer: LookRenderer
     private let exporter: PhotoExporter
     /// The preview render; `renderer.renderedCGImage` unless a test replaces it.
-    private let renderPreview: @Sendable (CIImage, Adjustments) async -> CGImage?
+    private let renderPreview: @Sendable (CIImage, PhotoEdit) async -> CGImage?
     /// The histogram count; `PictureHistogram.make(from:)` unless a test replaces it.
     private let makeHistogram: @Sendable (CGImage) async -> PictureHistogram?
     /// The name of a look to apply, unsaved, once the photo has loaded (`-editorLook` for screenshots); nil for a tap.
@@ -57,7 +57,8 @@ import OSLog
     private(set) var original: CGImage?
     private(set) var proxySize: CGSize?
     /// What `preview` shows.
-    private(set) var renderedAdjustments: Adjustments?
+    private(set) var renderedEdit: PhotoEdit?
+    var renderedAdjustments: Adjustments? { renderedEdit?.adjustments }
     /// Width x height of the image the last completed render returned, measured on that image.
     private(set) var lastRenderPixelSize: CGSize?
     /// Completed preview renders, the first one included.
@@ -72,7 +73,7 @@ import OSLog
     private var isRestoring = false
     private let now: @Sendable () -> Date
     private var proxy: CIImage?
-    private var renders = RenderCoalescer<Adjustments>()
+    private var renders = RenderCoalescer<PhotoEdit>()
     private var renderTask: Task<Void, Never>?
     private var shownGeneration = 0
     private var histograms = RenderCoalescer<CGImage>()
@@ -89,7 +90,7 @@ import OSLog
     /// `renderPreview` is a test seam for a render that fails, `makeHistogram` one for a slow count; the app never passes either.
     /// `launchLook` names a look in `looks` that is applied through `applyLook(_:)`, unsaved, after a successful load.
     init(item: LibraryItem, edits: EditStore, looks: LookStore, group: EditorGroup = .light, renderer: LookRenderer = .shared,
-         exporter: PhotoExporter = .appDefault(), renderPreview: (@Sendable (CIImage, Adjustments) async -> CGImage?)? = nil,
+         exporter: PhotoExporter = .appDefault(), renderPreview: (@Sendable (CIImage, PhotoEdit) async -> CGImage?)? = nil,
          makeHistogram: (@Sendable (CGImage) async -> PictureHistogram?)? = nil, launchLook: String? = nil,
          now: (@Sendable () -> Date)? = nil) {
         self.now = now ?? { Date() }
@@ -99,7 +100,7 @@ import OSLog
         self.group = group
         self.renderer = renderer
         self.exporter = exporter
-        self.renderPreview = renderPreview ?? { image, adjustments in await renderer.renderedCGImage(image, adjustments: adjustments) }
+        self.renderPreview = renderPreview ?? { image, edit in await renderer.renderedCGImage(image, edit: edit) }
         self.makeHistogram = makeHistogram ?? { image in await PictureHistogram.make(from: image) }
         self.launchLook = launchLook
     }
@@ -273,18 +274,18 @@ import OSLog
         return true
     }
 
-    /// Starts a render of the current adjustments, or leaves them waiting in place of any earlier value while one runs.
+    /// Starts a render of the current edit, or leaves it waiting in place of any earlier value while one runs.
     private func requestRender() {
-        guard proxy != nil, let job = renders.request(adjustments) else { return }
+        guard proxy != nil, let job = renders.request(currentEdit) else { return }
         renderTask = Task { await runRenders(from: job) }
     }
 
     /// Renders the job, then whatever latest value waited meanwhile, until nothing waits. Every render takes the in-memory proxy.
-    private func runRenders(from first: (generation: Int, value: Adjustments)) async {
-        var job: (generation: Int, value: Adjustments)? = first
+    private func runRenders(from first: (generation: Int, value: PhotoEdit)) async {
+        var job: (generation: Int, value: PhotoEdit)? = first
         while let current = job {
             if let proxy, let image = await renderPreview(proxy, current.value) {
-                show(image, adjustments: current.value, generation: current.generation)
+                show(image, edit: current.value, generation: current.generation)
             } else {
                 Self.logger.error("[EditorModel:runRenders] The preview could not be rendered — {stem: \(self.item.stem, privacy: .public)}")
             }
@@ -293,11 +294,11 @@ import OSLog
     }
 
     /// A result older than the one on screen is dropped.
-    private func show(_ image: CGImage, adjustments rendered: Adjustments, generation: Int) {
+    private func show(_ image: CGImage, edit rendered: PhotoEdit, generation: Int) {
         guard generation > shownGeneration else { return }
         shownGeneration = generation
         preview = image
-        renderedAdjustments = rendered
+        renderedEdit = rendered
         lastRenderPixelSize = CGSize(width: image.width, height: image.height)
         previewRenderCount += 1
         requestHistogram(of: image)
