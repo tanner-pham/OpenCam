@@ -77,20 +77,36 @@ struct MasksPanel: View {
         return "\(model.masks[index].shape.kind.title) \(index + 1)"
     }
 
+    /// Invert, Show mask and Delete in one row while their titles fit it at full size, each button its title's width plus an even
+    /// share of the rest; otherwise (the largest text sizes) one above another, each the panel's width. No title is shrunk, cut
+    /// or broken.
     private var actions: some View {
-        HStack(spacing: Theme.Space.s) {
-            toggleButton("Invert", isOn: model.selectedMask?.isInverted ?? false) { model.updateSelectedMask { $0.isInverted.toggle() } }
-            toggleButton("Show mask", isOn: model.isShowingMaskOverlay) { model.isShowingMaskOverlay.toggle() }
-            Button(role: .destructive) { model.deleteSelectedMask() } label: {
-                Text("Delete")
-                    .font(.subheadline)
-                    .frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget - Self.borderedInset)
-            }
-            .buttonStyle(.bordered)
-            .tint(.red)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: Theme.Space.s) { actionButtons }
+            VStack(spacing: Theme.Space.s) { actionButtons }
         }
         // The first slider's reset target reaches up over the gap above its name row; the padding keeps it off the buttons.
         .padding(.bottom, AdjustmentSlider.reachUp - Self.rowGap)
+    }
+
+    @ViewBuilder
+    private var actionButtons: some View {
+        toggleButton("Invert", isOn: model.selectedMask?.isInverted ?? false) { model.updateSelectedMask { $0.isInverted.toggle() } }
+        toggleButton("Show mask", isOn: model.isShowingMaskOverlay) { model.isShowingMaskOverlay.toggle() }
+        Button(role: .destructive) { model.deleteSelectedMask() } label: {
+            actionLabel("Delete")
+        }
+        .buttonStyle(.bordered)
+        .tint(.red)
+    }
+
+    /// The title on one line at its full width, which the button never goes below; the button grows from there to share the row.
+    private func actionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline)
+            .lineLimit(1)
+            .fixedSize()
+            .frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget - Self.borderedInset)
     }
 
     /// What the search for the subject is doing, while it has nothing to show.
@@ -113,12 +129,8 @@ struct MasksPanel: View {
     /// Filled in the accent with dark text when on, the faint neutral fill when off, as the picker's buttons are.
     private func toggleButton(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title)
-                .font(.subheadline)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+            actionLabel(title)
                 .foregroundStyle(isOn ? Color.black : Color.primary)
-                .frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget - Self.borderedInset)
         }
         .buttonStyle(.borderedProminent)
         .tint(isOn ? Theme.accent : Color.primary.opacity(0.18))
