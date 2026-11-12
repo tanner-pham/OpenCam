@@ -16,9 +16,10 @@ nonisolated final class RecordingRender {
     static let pixelFormat = kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
     /// Buffers the pool keeps ready.
     private static let minimumBuffers = 3
-    /// Buffers that may be out at once (the writer's queue and the one being drawn). A seventh request fails instead of growing
-    /// memory when the writer stalls.
-    private static let allocationThreshold = 6
+    /// Buffers that may be out at once. The writer's HEVC encoder (Log with HEVC) may reorder frames and hold six or more, so a
+    /// lower number would fail every frame past it; ProRes holds few. About 25 MB a buffer at 4K. A request past it fails instead
+    /// of growing memory when the writer stalls, and `admitVideo`'s readiness check already refuses frames for a stalled writer.
+    private static let allocationThreshold = 12
 
     private static let logger = Logger(subsystem: "local.opencam.app", category: "RecordingRender")
 

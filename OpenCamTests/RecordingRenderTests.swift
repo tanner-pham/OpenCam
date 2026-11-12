@@ -101,7 +101,7 @@ import Testing
     @Test func aHeldPoolReturnsNil() throws {
         let render = Self.makeRender()
         var held: [CVPixelBuffer] = []
-        for _ in 0..<6 { held.append(try #require(render.render(try Self.frame(y: 397)))) }
+        for _ in 0..<12 { held.append(try #require(render.render(try Self.frame(y: 397)))) }
         #expect(render.render(try Self.frame(y: 397)) == nil)
         // A buffer given back makes room again.
         held.removeFirst()

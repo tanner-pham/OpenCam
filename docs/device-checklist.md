@@ -128,6 +128,7 @@ ProRes and Log are recorded by the writer path. HEVC and H.264 in Rec. 709, P3 a
 - [ ] ProRes 422 HQ 4K 30 Rec. 709 (8-bit frames): it records, plays and is tagged Rec. 709. If it fails, note the journal line.
 - [ ] ProRes 422 HQ 4K 60 HLG for 60 s, if it is offered after check 2: note `drops`, heat and the count on screen.
 - [ ] Log with ProRes and with HEVC at 4K 30, then at 4K 60: the viewfinder shows the normal picture, the clip is flat, a grey card reads near 45 percent, the `.json` colour is Log, and Photos and Files show no HDR badge.
+- [ ] Log with HEVC at 4K 30 for 60 s: `drops.renderFailed` is 0 in the `.json`.
 - [ ] Log highlights: film a bright window or a lamp. The clip keeps detail in the highlights and does not clip to a flat white patch.
 - [ ] A clip in each of the four orientations, and on each camera, is upright. Sound stays in sync over 5 minutes (clap at the start and at the end).
 - [ ] Switch HEVC with a look to ProRes and back to HEVC: no "That format could not be used." notice appears.
