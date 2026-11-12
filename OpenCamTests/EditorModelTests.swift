@@ -214,6 +214,14 @@ import Testing
         #expect(model.selectedMask?.isInverted == false); #expect(model.selectedMask?.adjustments[.exposure] == 1)
         model.undo(); #expect(model.selectedMask?.adjustments[.exposure] == 0)
     }
+    @Test func savingALookClearsRedo() async throws {
+        let clock = TestClock()
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })
+        model.adjustments.exposure = 1; clock.advance(1)
+        model.undo(); #expect(model.canRedo)
+        _ = try model.saveAsLook(named: "Mine")
+        #expect(!model.canRedo); #expect(model.canUndo == false)
+    }
     @Test func deletingAMaskIsOneUndoStep() async throws {
         let clock = TestClock()
         let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })

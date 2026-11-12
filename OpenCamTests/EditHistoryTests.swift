@@ -32,6 +32,15 @@ import Testing
         history.record(edit(1), at: t0 + 5)
         #expect(!history.canRedo)
     }
+    @Test func clearRedoKeepsUndo() {
+        var history = EditHistory()
+        history.record(edit(1), at: t0); history.record(edit(2), at: t0 + 5)
+        _ = history.undo(from: edit(3))
+        #expect(history.canRedo); #expect(history.canUndo)
+        history.clearRedo()
+        #expect(!history.canRedo); #expect(history.canUndo)
+        #expect(history.undo(from: edit(2)) == edit(1))
+    }
     @Test func theOldestStepGoesPastTheLimit() {
         var history = EditHistory()
         for step in 0...EditHistory.limit { history.record(edit(Double(step)), at: t0 + Double(step)) }

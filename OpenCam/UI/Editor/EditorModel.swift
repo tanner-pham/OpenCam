@@ -518,7 +518,8 @@ extension EditorModel {
     /// Saves the current values as a new look, which the edit then names as its look.
     func saveAsLook(named name: String) throws(LookStoreError) -> Look {
         let look = try lookStore.save(name: name, adjustments: adjustments)
-        // Naming the edit changes no picture, so it is not an undo step.
+        // Naming the edit changes no picture, so it is not an undo step, but it does end the redo steps.
+        history.clearRedo()
         isRestoring = true
         lookName = look.name
         isRestoring = false
