@@ -11,17 +11,10 @@ nonisolated final class ColourCubeCache: Sendable {
     }
 
     func cube(for adjustments: Adjustments) -> ColourCube {
-        let key = Self.colourPart(of: adjustments)
+        let key = adjustments.colourPart
         if let cached = last.withLock({ $0?.key == key ? $0?.cube : nil }) { return cached }
         let cube = build(key)
         last.withLock { $0 = (key, cube) }
         return cube
-    }
-
-    /// Only the adjustments the table depends on: the colour keys.
-    private static func colourPart(of adjustments: Adjustments) -> Adjustments {
-        var colour = Adjustments()
-        for key in AdjustmentKey.allCases where key.isColour { colour[key] = adjustments[key] }
-        return colour
     }
 }

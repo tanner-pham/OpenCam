@@ -28,4 +28,20 @@ import Testing
         #expect(AdjustmentKey.contrast.valueText(0) == "0")
         #expect(Adjustments().setting(.exposure, to: 8).exposure == 5)
     }
+    @Test func e1FileLoadsWithNewToolsAtDefaults() throws {   // Review Focus 2
+        let a = try JSONDecoder().decode(Adjustments.self, from: Data(#"{"exposure": 1, "saturation": 20, "toneCurve": [0, 1]}"#.utf8))
+        #expect(a == Adjustments().setting(.exposure, to: 1).setting(.saturation, to: 20)); #expect(a.curves.isIdentity)
+        #expect(!String(decoding: try JSONEncoder().encode(a), as: UTF8.self).contains("curves"))
+    }
+    @Test func curvesCountForIdentityMatchingAndRoundTrip() throws {
+        var a = Adjustments(); a.curves.blue = ToneCurve(points: [CurvePoint(x: 0, y: 0.05), CurvePoint(x: 1, y: 1)])
+        #expect(!a.isIdentity); #expect(a.hasColourChanges); #expect(!a.matches(Adjustments())); #expect(try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(a)) == a)
+        var b = a; b.curves.blue = .identity; #expect(b == Adjustments()); #expect(a.setting(.grain, to: 40).colourPart == a); #expect(a.colourPart.curves == a.curves)
+    }
+    @Test func theEncoderWritesExactlyTheFourteenE1Keys() throws {
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        let keys = Set(AdjustmentKey.allCases.map(\.rawValue))
+        let object = try JSONSerialization.jsonObject(with: encoder.encode(Adjustments()))
+        #expect((object as? [String: Double]).map { Set($0.keys) } == keys)
+    }
 }

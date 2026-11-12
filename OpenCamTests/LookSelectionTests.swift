@@ -72,4 +72,10 @@ import Testing
         let look = Self.look("Bright", Adjustments().setting(.exposure, to: 0.3))
         #expect(LookSelection.isSelected(look, among: [look], for: Adjustments().setting(.exposure, to: 0.1 + 0.2), lookName: "Bright"))
     }
+    @Test func looksDifferingOnlyInACurveAreToldApart() {
+        var c1 = Adjustments(), c2 = Adjustments()
+        c1.curves.master = ToneCurve(points: [CurvePoint(x: 0, y: 0.1), CurvePoint(x: 1, y: 1)]); c2.curves.master = ToneCurve(points: [CurvePoint(x: 0, y: 0.12), CurvePoint(x: 1, y: 1)])
+        let a = Look(id: UUID(), name: "A", adjustments: c1, createdAt: .now), b = Look(id: UUID(), name: "B", adjustments: c2, createdAt: .now)
+        #expect(LookSelection.selectedLook(among: [a, b], for: c2, lookName: nil)?.id == b.id)
+    }
 }

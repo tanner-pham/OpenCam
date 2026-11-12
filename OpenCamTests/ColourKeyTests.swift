@@ -33,4 +33,10 @@ import Testing
             #expect(builds.value == (key.isColour ? 2 : 1), "\(key)")
         }
     }
+    @Test func curvesAreInTheTableAndItsCacheKey() {   // Review Focus 3
+        var curved = Adjustments(); curved.curves.master = ToneCurve(points: [CurvePoint(x: 0, y: 0.1), CurvePoint(x: 1, y: 1)])
+        let builds = CallCounter(), cache = ColourCubeCache { builds.increment(); return LookCompiler.cube(for: $0) }; _ = cache.cube(for: Adjustments()); let table = cache.cube(for: curved)
+        #expect(builds.value == 2); #expect(table == LookCompiler.cube(for: curved)); #expect(table != LookCompiler.cube(for: Adjustments()))
+        _ = cache.cube(for: curved.setting(.vignette, to: -30)); #expect(builds.value == 2)
+    }
 }
