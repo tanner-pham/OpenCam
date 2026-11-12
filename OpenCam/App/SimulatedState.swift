@@ -10,7 +10,7 @@ nonisolated struct StoppedSessionStandIn: SessionConfigurator {
     func start() async {}
     func releaseCameras() async {}
     func releaseSavedStart() async {}
-    func startRecording(option: VideoOption, url: URL, minFreeBytes: Int64) async throws(RecordingError) { throw .sessionNotRunning }
+    func startRecording(option: VideoOption, url: URL, minFreeBytes: Int64, dropPolicy: DropPolicy) async throws(RecordingError) { throw .sessionNotRunning }
     func stopRecording() async -> Bool { false }
     func currentReadouts() async -> LiveReadouts { LiveReadouts() }
     func manualRanges() async -> ManualRanges? { nil }
