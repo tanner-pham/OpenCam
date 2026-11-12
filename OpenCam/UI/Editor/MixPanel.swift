@@ -33,6 +33,8 @@ struct MixPanel: View {
                 }
             }
         }
+        // The first slider's reset target reaches up over the gap above its name row; the padding keeps it off the buttons.
+        .padding(.bottom, AdjustmentSlider.reachUp - Self.rowGap)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Colour band")
     }
@@ -45,10 +47,21 @@ struct MixPanel: View {
                 .font(.footnote)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
-                .frame(maxWidth: .infinity, minHeight: 44)
+                .foregroundStyle(isSelected && band.prefersDarkLabel ? Color.black : Color.white)
+                .frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget)
         }
         .tint(tint)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         if isSelected { button.buttonStyle(.borderedProminent) } else { button.buttonStyle(.bordered) }
+    }
+}
+
+private extension ColourBand {
+    /// Black reads better than white on the band's bright swatch when white would fall short of the other's contrast.
+    var prefersDarkLabel: Bool {
+        func linear(_ c: Float) -> Float { ColourMath.decode(c) }
+        let s = swatch
+        let luminance = 0.2126 * linear(s.x) + 0.7152 * linear(s.y) + 0.0722 * linear(s.z)
+        return (luminance + 0.05) / 0.05 > 1.05 / (luminance + 0.05)
     }
 }

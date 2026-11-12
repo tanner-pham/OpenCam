@@ -9,25 +9,27 @@ nonisolated struct Adjustments: Codable, Sendable, Hashable {
     /// Every key added after the fourteen above (the mixer's). Never holds a zero: the subscript removes a key set to 0, so
     /// the synthesized `Equatable` and `Hashable` stay right and a value moved back to 0 equals `Adjustments()`.
     private var toolValues: [AdjustmentKey: Double] = [:]
+    /// The mixer's values as vectors for the colour table, updated only where `toolValues` is (the subscript's added-key branch).
+    private(set) var mixer = MixerLanes()
 
     init() {}
 
     /// A key named by its raw value, or "curves".
-    private struct CodingKey: Swift.CodingKey {
+    private struct Key: CodingKey {
         let stringValue: String
         var intValue: Int? { nil }
         init(stringValue: String) { self.stringValue = stringValue }
         init?(intValue: Int) { nil }
         init(_ key: AdjustmentKey) { stringValue = key.rawValue }
-        static let curves = CodingKey(stringValue: "curves")
+        static let curves = Key(stringValue: "curves")
     }
 
     /// Every key is optional, unknown keys are ignored, and each value is clamped to its range.
     /// A `curves` value that is present but malformed throws, so the edit stays unreadable rather than being overwritten.
     init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKey.self)
+        let container = try decoder.container(keyedBy: Key.self)
         for key in AdjustmentKey.allCases {
-            self[key] = try container.decodeIfPresent(Double.self, forKey: CodingKey(key)) ?? 0
+            self[key] = try container.decodeIfPresent(Double.self, forKey: Key(key)) ?? 0
         }
         curves = try container.decodeIfPresent(ToneCurves.self, forKey: .curves) ?? ToneCurves()
     }
@@ -35,19 +37,19 @@ nonisolated struct Adjustments: Codable, Sendable, Hashable {
     /// Writes the fourteen original keys always, each later key only when it is not 0, and `curves` only when it is not
     /// identity, so an edit that uses none of the later tools encodes as it always did.
     func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKey.self)
+        var container = encoder.container(keyedBy: Key.self)
         for key in AdjustmentKey.allCases.prefix(Self.originalKeyCount) {
-            try container.encode(self[key], forKey: CodingKey(key))
+            try container.encode(self[key], forKey: Key(key))
         }
         // In `allCases` order, so the same edit always writes the same bytes.
         for key in AdjustmentKey.allCases.dropFirst(Self.originalKeyCount) {
-            if let value = toolValues[key] { try container.encode(value, forKey: CodingKey(key)) }
+            if let value = toolValues[key] { try container.encode(value, forKey: Key(key)) }
         }
         if !curves.isIdentity { try container.encode(curves, forKey: .curves) }
     }
 
-    /// True when any mixer value is not 0. A dictionary count, so the colour table can ask it at every lattice point.
-    var hasMixerValues: Bool { !toolValues.isEmpty }
+    /// True when any mixer value is not 0. One stored flag, so the colour table can ask it at every lattice point.
+    var hasMixerValues: Bool { !mixer.isZero }
 
     /// The keys that have a stored property of their own.
     private static let originalKeyCount = 14
@@ -89,7 +91,9 @@ nonisolated struct Adjustments: Codable, Sendable, Hashable {
             case .noiseReduction: noiseReduction = value
             case .grain: grain = value
             case .vignette: vignette = value
-            default: toolValues[key] = value == 0 ? nil : value
+            default:
+                toolValues[key] = value == 0 ? nil : value
+                mixer.set(key, to: value)
             }
         }
     }

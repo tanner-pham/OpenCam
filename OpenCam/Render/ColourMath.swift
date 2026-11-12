@@ -73,13 +73,12 @@ nonisolated enum ColourMath {
         y = luma(x)
         x = SIMD3(repeating: y) + (x - SIMD3(repeating: y)) * (1 + t(.saturation))
 
-        // 8: colour mixer. Skipped outright when no mixer value is set, which is the cheapest check there is; the vectors are
-        // written out per band, in `ColourBand.allCases` order, because this runs at every lattice point of a table.
+        // 8: colour mixer, on the clamped colour (stage 7 can leave a channel outside 0...1, and the mixer reads hue and
+        // saturation). Skipped outright when no mixer value is set. The lanes are precomputed in `Adjustments`, because this
+        // runs at every lattice point of a table.
         if adjustments.hasMixerValues {
-            x = mix(x,
-                    hue: SIMD8(t(.mixRedHue), t(.mixOrangeHue), t(.mixYellowHue), t(.mixGreenHue), t(.mixAquaHue), t(.mixBlueHue), t(.mixPurpleHue), t(.mixMagentaHue)),
-                    saturation: SIMD8(t(.mixRedSaturation), t(.mixOrangeSaturation), t(.mixYellowSaturation), t(.mixGreenSaturation), t(.mixAquaSaturation), t(.mixBlueSaturation), t(.mixPurpleSaturation), t(.mixMagentaSaturation)),
-                    luminance: SIMD8(t(.mixRedLuminance), t(.mixOrangeLuminance), t(.mixYellowLuminance), t(.mixGreenLuminance), t(.mixAquaLuminance), t(.mixBlueLuminance), t(.mixPurpleLuminance), t(.mixMagentaLuminance)))
+            let lanes = adjustments.mixer
+            x = mix(clamp01(x), hue: lanes.hue, saturation: lanes.saturation, luminance: lanes.luminance)
         }
 
         // 9: clamp.
