@@ -5,10 +5,10 @@ import Testing
 @Suite struct EditStoreTests {
     @Test func newerEditFileWithUnknownKeysLoads() throws {
         let dir = try TestFiles.directory()
-        let json = #"{"version": 3, "lookName": "Warm fade", "adjustments": {"exposure": 1, "toneCurve": [[0, 0], [1, 1]]}, "masks": [{"kind": "sky"}], "crop": {"angle": 2}}"#
+        let json = #"{"version": 4, "lookName": "Warm fade", "adjustments": {"exposure": 1, "toneCurve": [[0, 0], [1, 1]]}, "masks": [{"kind": "sky"}], "crop": {"angle": 2}}"#
         try Data(json.utf8).write(to: dir.appending(path: "OC_0001.edit.json"))
         let edit = try EditStore(directory: dir).load(stem: "OC_0001")
-        #expect(edit.adjustments == Adjustments().setting(.exposure, to: 1)); #expect(edit.lookName == "Warm fade"); #expect(edit.version == 3)
+        #expect(edit.adjustments == Adjustments().setting(.exposure, to: 1)); #expect(edit.lookName == "Warm fade"); #expect(edit.version == 4); #expect(edit.masks == [])
     }
     @Test func roundTripAndMissingFile() throws {
         let store = EditStore(directory: try TestFiles.directory())
@@ -34,12 +34,12 @@ import Testing
     @Test func newerVersionFileIsReadOnly() throws {
         let dir = try TestFiles.directory()
         let url = dir.appending(path: "OC_0005.edit.json")
-        let json = #"{"version": 3, "lookName": "Warm fade", "adjustments": {"exposure": 1}, "masks": [{"kind": "sky"}]}"#
+        let json = #"{"version": 4, "lookName": "Warm fade", "adjustments": {"exposure": 1}, "masks": [{"kind": "sky"}]}"#
         try Data(json.utf8).write(to: url)
         let store = EditStore(directory: dir)
         var edit = try store.load(stem: "OC_0005")
         edit.adjustments.exposure = 2
-        #expect(throws: EditStoreError.newerVersion(path: url.path(percentEncoded: false), version: 3)) { try store.save(edit, stem: "OC_0005") }
+        #expect(throws: EditStoreError.newerVersion(path: url.path(percentEncoded: false), version: 4)) { try store.save(edit, stem: "OC_0005") }
         #expect(throws: EditStoreError.self) { try store.save(PhotoEdit(), stem: "OC_0005") }
         #expect(throws: EditStoreError.self) { try store.remove(stem: "OC_0005") }
         #expect(try Data(contentsOf: url) == Data(json.utf8))
@@ -55,9 +55,9 @@ import Testing
     }
 
     @Test func resavingAnOldEditStampsTheCurrentVersion() throws {   // Review Focus 1
-        let dir = try TestFiles.directory(), store = EditStore(directory: dir); #expect(PhotoEdit.currentVersion == 2)
+        let dir = try TestFiles.directory(), store = EditStore(directory: dir); #expect(PhotoEdit.currentVersion == 3)
         for (stem, json) in [("OC_0006", #"{"version": 1, "adjustments": {"exposure": 1}}"#), ("OC_0007", #"{"adjustments": {"exposure": 1}}"#)] {
             let url = dir.appending(path: "\(stem).edit.json"); try Data(json.utf8).write(to: url); var edit = try store.load(stem: stem)
             #expect(edit.version == 1); #expect(edit.adjustments == Adjustments().setting(.exposure, to: 1))
-            edit.adjustments.exposure = 2; try store.save(edit, stem: stem); #expect(try JSONDecoder().decode(EditFileVersion.self, from: Data(contentsOf: url)).version == 2); #expect(try store.load(stem: stem).version == 2) } }
+            edit.adjustments.exposure = 2; try store.save(edit, stem: stem); #expect(try JSONDecoder().decode(EditFileVersion.self, from: Data(contentsOf: url)).version == PhotoEdit.currentVersion); #expect(try store.load(stem: stem).version == PhotoEdit.currentVersion) } }
 }

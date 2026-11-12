@@ -52,7 +52,7 @@ import Testing
     @Test func aReadOnlyPhotoDoesNotExport() async throws {
         let captures = try TestFiles.directory()
         _ = try TestFiles.writeJPEG(width: 40, height: 30, rgb: SIMD3(0.5, 0.5, 0.5), to: captures.appending(path: "OC_0001.JPG"))
-        try Data(#"{"version": 3, "adjustments": {"exposure": 1}}"#.utf8).write(to: captures.appending(path: "OC_0001.edit.json"))
+        try Data(#"{"version": 4, "adjustments": {"exposure": 1}}"#.utf8).write(to: captures.appending(path: "OC_0001.edit.json"))
         let item = try #require(LibraryScanner.items(in: captures).first)
         let model = EditorModel(item: item, edits: EditStore(directory: captures), looks: try LookStore(directory: TestFiles.directory()))
         await model.load()
