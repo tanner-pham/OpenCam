@@ -38,7 +38,7 @@ nonisolated enum StatusText {
     }
 
     static func remaining(minutes: Int) -> RemainingTime {
-        RemainingTime(text: minutes <= 0 ? storageFull : "\(minutes) min", isWarning: DataRateEstimator.isLowStorage(minutes: minutes))
+        RemainingTime(text: minutes <= 0 ? storageFull : DataRateEstimator.durationText(minutes: minutes), isWarning: DataRateEstimator.isLowStorage(minutes: minutes))
     }
 
     static func canRecord(phase: CameraPhase, mode: CaptureMode, minutesRemaining: Int) -> Bool {

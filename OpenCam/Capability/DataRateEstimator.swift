@@ -43,7 +43,8 @@ nonisolated enum DataRateEstimator {
     static func footer(for option: VideoOption, freeBytes: Int64) -> String {
         let rate = String(format: "%.1f", gigabytesPerMinute(for: option))
         let minutes = minutesRemaining(freeBytes: freeBytes, option: option)
-        return "About \(rateText(megabitsPerSecond(for: option))), \(rate) GB per minute. \(minutes) min left."
+        let left = minutes > 0 ? "\(durationText(minutes: minutes)) left." : "No recording time left."
+        return "About \(rateText(megabitsPerSecond(for: option))), \(rate) GB per minute. \(left)"
     }
 
     /// What a chip shows for `option`: the data rate, then the record time left in `freeBytes`.
@@ -59,10 +60,14 @@ nonisolated enum DataRateEstimator {
 
     static func chipRateText(megabits: Double) -> String { "~" + rateText(megabits) }
 
-    /// "~11h 17m" in the system's duration format; "Full" when no minutes are left.
+    /// "~11h 17m" in the duration text; "Full" when no minutes are left.
     static func chipTimeText(minutes: Int) -> String {
-        minutes > 0 ? "~" + durationStyle(width: .narrow, minutes: minutes) : "Full"
+        minutes > 0 ? "~" + durationText(minutes: minutes) : "Full"
     }
+
+    /// "11h 17m", "21m": the system's narrow duration format. The chips, the settings footer and the camera's time-left slot
+    /// all say a time left this way.
+    static func durationText(minutes: Int) -> String { durationStyle(width: .narrow, minutes: minutes) }
 
     /// One decimal under 10 Mb/s, whole megabits up to 1000, then gigabits with one decimal.
     private static func rateText(_ megabits: Double) -> String {

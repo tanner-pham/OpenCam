@@ -21,7 +21,7 @@ import Testing
     @Test func nothingNamesAFormatBeforeTheScanHasProducedIt() throws {
         let scanning = CameraModel(config: .parse(["app", "-state", "scanning"]), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
         #expect(scanning.phase == .scanning)
-        #expect(scanning.summaryParts == ["--"]); #expect(scanning.frameRateText == "--"); #expect(scanning.remainingText == "-- min")
+        #expect(scanning.summaryParts == ["--"]); #expect(scanning.frameRateText == "--"); #expect(scanning.remainingText == "--")
         #expect(!scanning.canOpenRecordSettings)
 
         let empty = CaptureCapabilities(lenses: [], videoOptions: [], photoOptions: [], osBuild: "", modelIdentifier: "")
@@ -37,11 +37,11 @@ import Testing
         for phase in [CameraPhase.cameraDenied, .cameraRestricted, .failed("The camera stopped."), .scanning, .released] {
             let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
             model.phase = phase
-            #expect(model.summaryParts == ["--"]); #expect(model.frameRateText == "--"); #expect(model.remainingText == "-- min")
+            #expect(model.summaryParts == ["--"]); #expect(model.frameRateText == "--"); #expect(model.remainingText == "--")
             #expect(!model.canOpenRecordSettings); #expect(!model.canCapture); #expect(model.shownMeterLevels == [0, 0])
         }
         let simulator = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
-        #expect(simulator.shownMeterLevels == [0, 0]); #expect(simulator.remainingText == "677 min")
+        #expect(simulator.shownMeterLevels == [0, 0]); #expect(simulator.remainingText == "11h 17m")
         let denied = CameraModel(config: .parse(["app", "-state", "micDenied"]), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
         denied.phase = .ready
         #expect(denied.shownMeterLevels == [0, 0])
@@ -50,10 +50,10 @@ import Testing
     @Test func remainingTimeFollowsFreeBytes() throws {
         let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
         let option = try #require(model.currentVideoOption)
-        #expect(model.remainingText == "677 min")
+        #expect(model.remainingText == "11h 17m")
         let bytesPerMinute = DataRateEstimator.gigabytesPerMinute(for: option) * 1_000_000_000
         model.freeBytes = DataRateEstimator.reserveBytes + Int64(10.5 * bytesPerMinute)
-        #expect(model.remainingText == "10 min"); #expect(!model.isStorageFull)
+        #expect(model.remainingText == "10m"); #expect(!model.isStorageFull)
         model.freeBytes = DataRateEstimator.reserveBytes
         #expect(model.remainingText == "Storage full"); #expect(model.isStorageFull); #expect(!model.canCapture)
     }

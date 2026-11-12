@@ -29,9 +29,9 @@ import Testing
         #expect(StatusText.bottomNotice(access: micOn, pressure: nil, notice: nil) == nil)
     }
     @Test func remainingAndLatest() {
-        #expect(StatusText.remaining(minutes: 4) == RemainingTime(text: "4 min", isWarning: true))
+        #expect(StatusText.remaining(minutes: 4) == RemainingTime(text: "4m", isWarning: true))
         #expect(StatusText.remaining(minutes: 0) == RemainingTime(text: "Storage full", isWarning: true))
-        #expect(StatusText.remaining(minutes: 5) == RemainingTime(text: "5 min", isWarning: false))
+        #expect(StatusText.remaining(minutes: 5) == RemainingTime(text: "5m", isWarning: false))
         #expect(CaptureStore.latestCaptureName(["OC_0003.MOV", "OC_0004.json", "sweep-x.json"]) == "OC_0003.MOV")
         #expect(CaptureStore.latestCaptureName(["OC_0001.DNG", "OC_0001.HEIC", "OC_0002.MOV", "OC_0002.json", "sweep-x.json"]) == "OC_0002.MOV")
         #expect(CaptureStore.latestCaptureName(["OC_0003.DNG", "OC_0003.HEIC"]) == "OC_0003.HEIC"); #expect(CaptureStore.latestCaptureName([]) == nil)
