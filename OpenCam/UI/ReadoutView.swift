@@ -25,6 +25,8 @@ struct ReadoutView: View {
                     .font(isCompact ? Theme.Text.compactValue : Theme.Text.value)
                     .foregroundStyle(isAlert ? Theme.recordRed : isSet ? Theme.accent : .primary)
                     .lineLimit(1)
+                    // A value one character longer than usual (10000K) is drawn slightly smaller, never cut off.
+                    .minimumScaleFactor(0.75)
             }
         }
         .padding(.horizontal, isCompact ? 0 : Theme.Space.s)
