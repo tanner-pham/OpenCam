@@ -22,10 +22,14 @@ struct ViewfinderArea: View {
     @State private var isFrameDrawn = false
 
     var body: some View {
-        // The overlay reads the photo counter itself, so a photo never re-runs this body.
+        // The overlays read the photo counter and the change flag themselves, so neither re-runs this body.
         picture
+            .overlay { if showsPicture { ViewfinderChangeBlur() } }
             .overlay { ShutterBlinkOverlay() }
     }
+
+    /// The status screens are not a picture, so nothing blurs them.
+    private var showsPicture: Bool { phase == .ready || phase == .simulator }
 
     @ViewBuilder private var picture: some View {
         switch phase {

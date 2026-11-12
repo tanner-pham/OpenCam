@@ -32,7 +32,22 @@ actor FakeSessionConfigurator: SessionConfigurator {
         failingLensIDs = ids
     }
 
-    func configure(_ configuration: SessionConfiguration) throws(CameraSessionError) {
+    private var isHolding = false
+    private var held: [CheckedContinuation<Void, Never>] = []
+
+    /// From now on a configure waits, before it does anything, until `resumeConfigures`.
+    func holdConfigures() {
+        isHolding = true
+    }
+
+    func resumeConfigures() {
+        isHolding = false
+        for waiting in held { waiting.resume() }
+        held = []
+    }
+
+    func configure(_ configuration: SessionConfiguration) async throws(CameraSessionError) {
+        if isHolding { await withCheckedContinuation { held.append($0) } }
         guard !failingLensIDs.contains(configuration.lens.id) else {
             throw .noMatchingFormat(option: "fake \(configuration.lens.id)")
         }
