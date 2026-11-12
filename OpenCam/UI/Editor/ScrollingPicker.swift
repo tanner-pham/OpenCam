@@ -42,11 +42,12 @@ struct ScrollingPicker<Value: Hashable>: View {
         .accessibilityLabel(title)
     }
 
-    /// The selected option is filled in the accent with dark text, which white text on the light accent would not be
-    /// legible against; the others are neutral, so the row does not compete with the panel's own accent controls.
-    @ViewBuilder private func button(for option: Value) -> some View {
+    /// One button whatever the selection, so it keeps its identity (and VoiceOver its focus) when chosen. The selected option is
+    /// filled in the accent with dark text, which white text on the light accent would not be legible against; the others
+    /// are a faint neutral fill, so the row does not compete with the panel's own accent controls.
+    private func button(for option: Value) -> some View {
         let isSelected = option == selection
-        let button = Button { selection = option } label: {
+        return Button { selection = option } label: {
             Text(label(option))
                 .font(.subheadline)
                 .lineLimit(1)
@@ -54,13 +55,12 @@ struct ScrollingPicker<Value: Hashable>: View {
                 .frame(minHeight: Self.labelHeight)
                 .foregroundStyle(isSelected ? Color.black : Color.primary)
         }
+        .buttonStyle(.borderedProminent)
+        .tint(isSelected ? Theme.accent : Color.primary.opacity(Self.unselectedFill))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        if isSelected {
-            button.buttonStyle(.borderedProminent)
-        } else {
-            button.buttonStyle(.bordered).tint(.primary)
-        }
     }
+
+    private static var unselectedFill: Double { 0.18 }
 
     private var isSelectionInLastHalf: Bool {
         guard let index = options.firstIndex(of: selection) else { return false }

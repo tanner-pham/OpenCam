@@ -9,6 +9,8 @@ struct ColourWheel: View {
     @Bindable var model: EditorModel
     let diameter: CGFloat
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     private static let puckDiameter: CGFloat = 16
     private static let ringWidth: CGFloat = 2
     /// Every 30° of hue at full saturation, from 0 at the right; y points down, so the conic gradient runs clockwise on screen
@@ -32,20 +34,24 @@ struct ColourWheel: View {
     }
 
     /// The readout follows its title rather than the column's far edge, so beside the other wheel's title it still reads as
-    /// this wheel's.
+    /// this wheel's. At accessibility text sizes the two do not fit a 138 to 160 pt column on one line, so the readout goes
+    /// under the title and either may wrap rather than be cut.
     private var titleRow: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
+        let isLarge = dynamicTypeSize.isAccessibilitySize
+        let layout = isLarge ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
+                             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: Theme.Space.s))
+        return layout {
             Text(region.title)
             Text("\(region.hueKey.valueText(hue)) · \(region.saturationKey.valueText(saturation))")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .font(.subheadline)
-        .lineLimit(1)
+        .lineLimit(isLarge ? nil : 1)
         // "Highlights" and "359° · 100" need about 149 pt; beside the picture a wheel is 138 pt wide, so the longest pair
         // shrinks a little rather than cutting either.
-        .minimumScaleFactor(0.8)
+        .minimumScaleFactor(isLarge ? 1 : 0.8)
         // The disc's sliders say the same.
         .accessibilityHidden(true)
     }
@@ -75,11 +81,17 @@ struct ColourWheel: View {
                 Text(region.hueKey.title)
             }
             .accessibilityValue(region.hueKey.valueText(hue))
+            .accessibilityAdjustableAction { direction in
+                model.adjustments[region.hueKey] = WheelGeometry.steppedHue(hue, steps: direction.steps)
+            }
             .accessibilityAction(named: "Reset") { model.resetWheel(region) }
             Slider(value: $model.adjustments[region.saturationKey], in: region.saturationKey.range, step: region.saturationKey.step) {
                 Text(region.saturationKey.title)
             }
             .accessibilityValue(region.saturationKey.valueText(saturation))
+            .accessibilityAdjustableAction { direction in
+                model.adjustments[region.saturationKey] = WheelGeometry.steppedSaturation(saturation, steps: direction.steps)
+            }
             .accessibilityAction(named: "Reset") { model.resetWheel(region) }
         }
     }
@@ -101,5 +113,16 @@ struct ColourWheel: View {
     private static func colour(hue: Double, saturation: Double) -> Color {
         let rgb = ColourMath.rgb(hue: Float(hue), saturation: Float(saturation / 100), value: 1)
         return Color(.displayP3, red: Double(rgb.x), green: Double(rgb.y), blue: Double(rgb.z))
+    }
+}
+
+private extension AccessibilityAdjustmentDirection {
+    /// +1 for an increment, -1 for a decrement.
+    var steps: Int {
+        switch self {
+        case .increment: 1
+        case .decrement: -1
+        @unknown default: 0
+        }
     }
 }

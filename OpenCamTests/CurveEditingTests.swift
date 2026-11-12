@@ -33,8 +33,7 @@ import Testing
         #expect(drag.curve(translation: CurvePoint(x: -0.49, y: 0), margin: 0.1).points == [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.01, y: 0.6), CurvePoint(x: 1, y: 1)]) }
     @Test func geometryAndSizes() {
         let g = CurveGeometry(side: 236); #expect(g.viewPoint(CurvePoint(x: 0, y: 0)) == CGPoint(x: 12, y: 224)); #expect(g.viewPoint(CurvePoint(x: 1, y: 1)) == CGPoint(x: 224, y: 12))
-        #expect(abs(g.hitRadius - 22.0 / 212) < 1e-9); #expect(CurveGeometry.side(for: CGSize(width: 381, height: 300)) == 232)    // a formula check, not the real folded size
-        #expect(CurveGeometry.side(for: CGSize(width: 320, height: 384)) == 288)    // folded landscape, open
+        #expect(abs(g.hitRadius - 22.0 / 212) < 1e-9)
         #expect(EditorLayout.minPanelHeight(for: .curve) == 340); #expect(EditorLayout.minPanelHeight(for: .grading) == 340); #expect(EditorLayout.minPanelHeight(for: .light) == 240) }
     @Test func curveDragRendersTheProxyOnlyThroughTheCoalescer() async throws {   // Review Focus 5
         let (model, _, _) = try await EditorFixture.make(width: 4096, height: 3072); let before = model.previewRenderCount

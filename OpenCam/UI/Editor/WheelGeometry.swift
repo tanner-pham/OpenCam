@@ -27,6 +27,21 @@ nonisolated enum WheelGeometry {
         return ((degrees + 360).truncatingRemainder(dividingBy: 360), saturation)
     }
 
+    /// What one VoiceOver swipe moves the wheel's sliders: 15° of hue, 5 of saturation.
+    static let hueStep = 15.0
+    static let saturationStep = 5.0
+
+    /// `hue` moved by `steps` of `hueStep` degrees, wrapping 345 to 0 and 0 back to 345 (a hue of 360 is 0).
+    static func steppedHue(_ hue: Double, steps: Int) -> Double {
+        let moved = (hue + Double(steps) * hueStep).truncatingRemainder(dividingBy: 360)
+        return moved < 0 ? moved + 360 : moved
+    }
+
+    /// `saturation` moved by `steps` of `saturationStep`, held to 0...100.
+    static func steppedSaturation(_ saturation: Double, steps: Int) -> Double {
+        min(100, max(0, saturation + Double(steps) * saturationStep))
+    }
+
     /// Where the puck of this hue and saturation sits on the canvas: the inverse of `tint(at:diameter:)`.
     static func point(hue: Double, saturation: Double, diameter: CGFloat) -> CGPoint {
         let radius = Double(diameter) / 2

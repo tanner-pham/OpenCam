@@ -5,8 +5,11 @@ struct PhotoInfoLine: View {
     let designation: FormatDesignation?
     let facts: PhotoFacts
 
-    static let height: CGFloat = 36
+    /// The line's height at the default text size; it grows with the text size, so the footnote never overflows it. The editor
+    /// scales the same value relative to the same style when it subtracts the line from the picture's height.
+    static let baseHeight: CGFloat = 36
 
+    @ScaledMetric(relativeTo: .footnote) private var height = PhotoInfoLine.baseHeight
     @State private var isShowingInfo = false
 
     var body: some View {
@@ -18,11 +21,11 @@ struct PhotoInfoLine: View {
                 .minimumScaleFactor(0.85)
                 .truncationMode(.tail)
                 .padding(.horizontal, Theme.Space.s)
-                .frame(maxWidth: .infinity, minHeight: Self.height)
-                .contentShape(Rectangle().inset(by: -(Theme.Size.minTarget - Self.height) / 2))
+                .frame(maxWidth: .infinity, minHeight: height)
+                .contentShape(Rectangle().inset(by: -max(0, Theme.Size.minTarget - height) / 2))
         }
         .buttonStyle(.plain)
-        .frame(height: Self.height)
+        .frame(height: height)
         .accessibilityLabel("Photo info")
         .accessibilityValue(facts.summary(designation))
         .sheet(isPresented: $isShowingInfo) { info }

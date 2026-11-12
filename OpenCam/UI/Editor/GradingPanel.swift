@@ -26,7 +26,7 @@ struct GradingPanel: View {
                 // touch's radius (about 16 pt); a content shape without a gesture does not count. Without this, a drag in the
                 // gap between the wheels or in the margins reached a disc's drag and never scrolled. A tap here does nothing and
                 // fails as the finger moves, so the scroll view takes the drag.
-                .background { Color.clear.contentShape(.rect).onTapGesture {} }
+                .background { Color.clear.contentShape(.rect).onTapGesture {}.accessibilityHidden(true) }
             }
             .scrollBounceBehavior(.basedOnSize)
         }

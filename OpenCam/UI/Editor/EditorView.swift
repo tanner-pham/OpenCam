@@ -8,6 +8,8 @@ struct EditorView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var isConfirmingDiscard = false
+    /// The info line's height at the current text size, the same scaling as `PhotoInfoLine`'s own.
+    @ScaledMetric(relativeTo: .footnote) private var infoLineHeight = PhotoInfoLine.baseHeight
     /// The file being shared; removed when the share sheet closes.
     @State private var exportedURL: URL?
 
@@ -51,7 +53,7 @@ struct EditorView: View {
                 GeometryReader { geo in
                     VStack(spacing: 0) {
                         EditorPicture(model: model)
-                            .frame(height: max(0, min(fittedHeight(forWidth: geo.size.width), geo.size.height - PhotoInfoLine.height)))
+                            .frame(height: max(0, min(fittedHeight(forWidth: geo.size.width), geo.size.height - infoLineHeight)))
                         PhotoInfoLine(designation: model.designation, facts: model.facts)
                     }
                     .frame(width: geo.size.width, height: geo.size.height)
@@ -124,7 +126,7 @@ struct EditorView: View {
     /// The picture's fitted height at the full width, held so the panel keeps the group's
     /// `EditorLayout.minPanelHeight(for:)` below the info line.
     private func pictureHeight(in size: CGSize) -> CGFloat {
-        max(0, min(fittedHeight(forWidth: size.width), size.height - EditorLayout.minPanelHeight(for: model.group) - PhotoInfoLine.height))
+        max(0, min(fittedHeight(forWidth: size.width), size.height - EditorLayout.minPanelHeight(for: model.group) - infoLineHeight))
     }
 
     /// The picture's height when it fills `width`.

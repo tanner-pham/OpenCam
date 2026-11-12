@@ -8,10 +8,6 @@ nonisolated struct CurveGeometry: Equatable {
     static let hitRadius: CGFloat = 22
     /// How far past the plot's edge an inner point is dragged before it is removed.
     static let removeMargin: CGFloat = 24
-    /// Across the panel: its 16 pt padding on each side.
-    private static let horizontalChrome: CGFloat = 32
-    /// Down the panel: the channel row (about 32 pt) with 12 pt above, between it and the canvas, and below.
-    private static let verticalChrome: CGFloat = 68
 
     /// The canvas is side x side.
     let side: CGFloat
@@ -33,9 +29,4 @@ nonisolated struct CurveGeometry: Equatable {
 
     /// `removeMargin` in curve units.
     var removeMargin: Double { Double(Self.removeMargin / plot) }
-
-    /// The canvas side for the space the curve panel gets below the group picker.
-    static func side(for panel: CGSize) -> CGFloat {
-        max(0, min(panel.width - horizontalChrome, panel.height - verticalChrome))
-    }
 }

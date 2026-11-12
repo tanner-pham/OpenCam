@@ -39,10 +39,12 @@ struct MixPanel: View {
         .accessibilityLabel("Colour band")
     }
 
-    @ViewBuilder private func bandButton(_ band: ColourBand) -> some View {
+    /// One button whatever the selection, so it keeps its identity (and VoiceOver its focus) when chosen: the selected band is
+    /// filled with its colour, the others carry the same colour faintly.
+    private func bandButton(_ band: ColourBand) -> some View {
         let isSelected = model.mixBand == band
-        let tint = Color(.displayP3, red: Double(band.swatch.x), green: Double(band.swatch.y), blue: Double(band.swatch.z))
-        let button = Button { model.mixBand = band } label: {
+        let swatch = Color(.displayP3, red: Double(band.swatch.x), green: Double(band.swatch.y), blue: Double(band.swatch.z))
+        return Button { model.mixBand = band } label: {
             Text(band.title)
                 .font(.footnote)
                 .lineLimit(1)
@@ -50,10 +52,12 @@ struct MixPanel: View {
                 .foregroundStyle(isSelected && band.prefersDarkLabel ? Color.black : Color.white)
                 .frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget)
         }
-        .tint(tint)
+        .buttonStyle(.borderedProminent)
+        .tint(isSelected ? swatch : swatch.opacity(Self.unselectedFill))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        if isSelected { button.buttonStyle(.borderedProminent) } else { button.buttonStyle(.bordered) }
     }
+
+    private static let unselectedFill = 0.25
 }
 
 private extension ColourBand {

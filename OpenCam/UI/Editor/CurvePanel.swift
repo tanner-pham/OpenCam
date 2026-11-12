@@ -6,30 +6,33 @@ struct CurvePanel: View {
     @Bindable var model: EditorModel
 
     var body: some View {
-        GeometryReader { geo in
-            let side = CurveGeometry.side(for: geo.size)
-            VStack(spacing: Theme.Space.m) {
-                HStack(spacing: Theme.Space.m) {
-                    Picker("Curve channel", selection: $model.curveChannel) {
-                        ForEach(CurveChannel.allCases, id: \.self) { channel in
-                            Text(channel.title).tag(channel)
-                        }
+        // The picker row keeps its own height, which grows with the text size; the canvas is the largest square in what is left.
+        // Its plot's own 12 pt inset is the gap under the row, so no spacing is added here.
+        VStack(spacing: 0) {
+            HStack(spacing: Theme.Space.m) {
+                Picker("Curve channel", selection: $model.curveChannel) {
+                    ForEach(CurveChannel.allCases, id: \.self) { channel in
+                        Text(channel.title).tag(channel)
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    Button("Reset") { model.resetCurve(model.curveChannel) }
-                        .buttonStyle(.bordered)
-                        .disabled(model.adjustments.curves[model.curveChannel].isIdentity)
                 }
-                // Every point edit writes the edit's curve for this channel, so it renders through the coalescer like a slider.
-                // A new channel is a new canvas, so a touch under way never writes into another channel's curve.
-                CurveCanvas(curve: $model.adjustments.curves[model.curveChannel], channel: model.curveChannel, histogram: model.histogram)
-                    .id(model.curveChannel)
-                    .frame(width: side, height: side)
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.large)
+                .frame(minHeight: Theme.Size.minTarget)
+                Button("Reset") { model.resetCurve(model.curveChannel) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .frame(minHeight: Theme.Size.minTarget)
+                    .disabled(model.adjustments.curves[model.curveChannel].isIdentity)
             }
-            .padding(.horizontal, Theme.Space.l)
-            .padding(.top, Theme.Space.m)
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+            // Every point edit writes the edit's curve for this channel, so it renders through the coalescer like a slider.
+            // A new channel is a new canvas, so a touch under way never writes into another channel's curve.
+            CurveCanvas(curve: $model.adjustments.curves[model.curveChannel], channel: model.curveChannel, histogram: model.histogram)
+                .id(model.curveChannel)
+                .aspectRatio(1, contentMode: .fit)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .padding(.horizontal, Theme.Space.l)
+        .padding(.top, Theme.Space.m)
     }
 }
