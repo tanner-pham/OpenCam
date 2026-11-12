@@ -170,11 +170,16 @@ actor CameraSession: SessionConfigurator {
         }
         try attachVideo(device, lensID: configuration.lens.id)
         attachAudio(configuration.includesAudio)
-        try attachPhotoOutput(configuration.mode == .photo)
+        // Every output the new configuration does not want comes off before any is added, so the session is never asked to hold
+        // the old path's outputs beside the new path's (`SessionOutputPlan`).
+        let wantedOutputs = SessionOutputPlan.wanted(mode: configuration.mode, recorder: configuration.recorder,
+                                                     needsFrames: configuration.needsFrames, hasMicrophone: audioInput != nil)
+        detachOutputs(SessionOutputPlan.make(attached: attachedOutputs(), wanted: wantedOutputs).removals)
+        try attachPhotoOutput(wantedOutputs.contains(.photo))
         let isVideo = configuration.mode == .video
-        try attachMovieOutput(isVideo && configuration.recorder == .system)
-        try attachWriterOutputs(isVideo && configuration.recorder == .writer)
-        attachFrameOutput(configuration.needsFrames)
+        try attachMovieOutput(wantedOutputs.contains(.movie))
+        try attachWriterOutputs(wantedOutputs.contains(.writerVideo))
+        attachFrameOutput(wantedOutputs.contains(.lookFrames))
         // Photo mode takes the photo preset when the session allows it: only there does the Duo offer Bayer RAW (measured
         // 2026-11-10). The preset picks the format, so neither the format nor the colour space is set by hand, and the
         // session chooses wide colour itself (AVCaptureSession.h, automaticallyConfiguresCaptureDeviceForWideColor).
@@ -347,6 +352,31 @@ actor CameraSession: SessionConfigurator {
     }
 
     // MARK: Outputs
+
+    /// What is attached now, by kind.
+    private func attachedOutputs() -> Set<SessionOutput> {
+        var attached: Set<SessionOutput> = []
+        if session.outputs.contains(photoCapturer.output) { attached.insert(.photo) }
+        if session.outputs.contains(recorder.output) { attached.insert(.movie) }
+        if let writer = writerRecorderStorage {
+            if session.outputs.contains(writer.videoOutput) { attached.insert(.writerVideo) }
+            if session.outputs.contains(writer.audioOutput) { attached.insert(.writerSound) }
+        }
+        if session.outputs.contains(frameOutput) { attached.insert(.lookFrames) }
+        return attached
+    }
+
+    private func detachOutputs(_ removals: [SessionOutput]) {
+        for removal in removals {
+            switch removal {
+            case .photo: session.removeOutput(photoCapturer.output)
+            case .movie: session.removeOutput(recorder.output)
+            case .writerVideo: writerRecorderStorage.map { session.removeOutput($0.videoOutput) }
+            case .writerSound: writerRecorderStorage.map { session.removeOutput($0.audioOutput) }
+            case .lookFrames: session.removeOutput(frameOutput)
+            }
+        }
+    }
 
     /// Photo capture is unsupported in Apple Log, which video mode may select, so the output is detached there.
     private func attachPhotoOutput(_ isAttached: Bool) throws(CameraSessionError) {
