@@ -94,7 +94,12 @@ final class PreviewUIView: UIView {
     func updateRotationCoordinator() {
         let started = ContinuousClock.now
         defer { TimingJournal.record("preview rotation update", since: started, over: TimingJournal.mainActorThreshold) }
-        guard let previewLayer, let device = Self.videoDevice(of: previewLayer) else { return }
+        // The coordinator is made for "a layer displaying the camera's video preview" (AVCaptureDevice.h,
+        // initWithDevice:previewLayer:), and the header gives 0 degrees only for no layer. This view now exists before the
+        // session starts, with its layer in no window yet; the same-device guard below would then keep a coordinator built
+        // too early. `didMoveToWindow` calls this again, which builds it once the view is shown, as before the early attach.
+        guard window != nil else { return }
+        guard let previewLayer,let device = Self.videoDevice(of: previewLayer) else { return }
         guard rotationCoordinator?.device?.uniqueID != device.uniqueID else { return }
         let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: previewLayer)
         rotationCoordinator = coordinator
