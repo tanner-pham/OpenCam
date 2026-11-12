@@ -111,7 +111,7 @@ nonisolated final class WriterRecorder {
         return isInFlight || shared.finishing.withLock { $0 > 0 }
     }
 
-    func storage(freeBytes: Int64) {
+    func storage(freeBytes: Int64?) {
         writerQueue.sync { sink.storage(freeBytes: freeBytes) }
     }
 

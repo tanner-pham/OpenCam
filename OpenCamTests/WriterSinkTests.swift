@@ -156,6 +156,7 @@ import Testing
         try rig.open(minFreeBytes: 1_000)
         try await rig.deliver(frames: 0..<9)
         rig.queue.sync { rig.sink.storage(freeBytes: 5_000) }
+        rig.queue.sync { rig.sink.storage(freeBytes: nil) }   // an unknown reading is not a full disk
         try await Task.sleep(for: .milliseconds(100))
         #expect(rig.finished.value == 0)
         rig.queue.sync { rig.sink.storage(freeBytes: 1_000) }

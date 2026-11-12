@@ -875,6 +875,6 @@ extension CameraSession {
     }
 
     private func checkStorage() {
-        writerRecorderStorage?.storage(freeBytes: FreeSpace.availableBytes())
+        writerRecorderStorage?.storage(freeBytes: FreeSpace.readBytes())
     }
 }

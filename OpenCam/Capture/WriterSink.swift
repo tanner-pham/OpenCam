@@ -200,8 +200,9 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
         reportDrops(arrival: arrival)
     }
 
-    func storage(freeBytes: Int64) {
-        guard phase == .recording, let finish = state?.storage(freeBytes: freeBytes) else { return }
+    /// A reading that could not be taken (nil) never ends the clip; one at or under the minimum does.
+    func storage(freeBytes: Int64?) {
+        guard phase == .recording, let freeBytes, let finish = state?.storage(freeBytes: freeBytes) else { return }
         carryOut(finish)
     }
 
