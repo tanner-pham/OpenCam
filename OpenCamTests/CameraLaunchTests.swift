@@ -168,6 +168,7 @@ import Testing
         #expect(await rig.fake.applied == [rig.expected])
         #expect(rig.model.phase == .ready)
         #expect(rig.model.notice == nil)
+        #expect(rig.model.launchTimeline.line.contains("released differs"))
     }
 
     @Test func aSavedStartThatCouldNotBeConfiguredIsSilent() async throws {
@@ -194,6 +195,7 @@ import Testing
         #expect(await rig.model.startCamera(on: fake, savedStart: Task { expected }))
         #expect(!ranDuringScan); #expect(!heldCameraDuringScan)
         #expect(await fake.calls == ["release", "configure", "start"])
+        #expect(rig.model.launchTimeline.line.contains("released format scan"))
     }
 
     /// Ways the start can fail once a saved start began.

@@ -86,6 +86,8 @@ extension CameraModel {
         let started = await savedStart.value
         // Its start may have queued events; the session marks where they end and the model skips up to the mark.
         isIgnoringEventsUntilSavedStartReleased = true
+        // The session's own line describes the start that is thrown away; this one says so beside it.
+        launchTimeline.note("released \(reason)")
         await configurator.releaseSavedStart()
         guard let started else { return }
         let message = "[CameraModel:startCamera] Saved start released — {reason: \(reason), lens: \(started.lens.id), mode: \(started.mode.rawValue)}"
