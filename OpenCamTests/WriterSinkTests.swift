@@ -295,6 +295,30 @@ import Testing
         #expect(report.facts.framesDelivered == 4)
     }
 
+    @Test func aRenderedFrameOfAnEarlierClipIsDropped() async throws {
+        let rig = try SinkRig()
+        try openLogClip(rig)
+        #expect(admit(rig, frame: 0, arrivalSeconds: 0))
+        let oldGeneration = rig.queue.sync { rig.sink.currentGeneration }
+        // Clip A ends and its report is taken; clip B opens before A's render comes back.
+        #expect(rig.end(.user))
+        #expect(await rig.waitForFinishes())
+        _ = rig.takeReport()
+        try? FileManager.default.removeItem(at: rig.url)
+        try openLogClip(rig)
+        let duration = CMTime(value: 1, timescale: CMTimeScale(SyntheticFrames.framesPerSecond))
+        let pixels = try RecordingRenderTests.frame(y: 397, size: 64)
+        rig.queue.sync { rig.sink.receiveRendered(pixels, pts: SyntheticFrames.time(ofFrame: 0), duration: duration, generation: oldGeneration) }
+        // Nothing was counted for clip B, and B has not started: its first frame still starts its session.
+        #expect(rig.end(.user))
+        #expect(await rig.waitForFinishes(2))
+        let report = try #require(rig.takeReport())
+        #expect(report.facts.framesDelivered == 0)
+        #expect(report.facts.framesWritten == 0)
+        #expect(report.facts.total == 0)
+        #expect(!report.hasFrames)
+    }
+
     @Test func aFailedRenderIsADrop() async throws {
         let rig = try SinkRig()
         try openLogClip(rig)
