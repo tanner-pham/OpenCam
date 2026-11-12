@@ -12,6 +12,8 @@ import OSLog
 
     let item: LibraryItem
     var group: EditorGroup
+    /// The curve the Curve group shows and edits.
+    var curveChannel: CurveChannel = .master
     var isShowingOriginal = false
     private let edits: EditStore
     private let lookStore: LookStore
@@ -21,6 +23,8 @@ import OSLog
     private let renderPreview: @Sendable (CIImage, Adjustments) async -> CGImage?
     /// The histogram count; `PictureHistogram.make(from:)` unless a test replaces it.
     private let makeHistogram: @Sendable (CGImage) async -> PictureHistogram?
+    /// The name of a look to apply, unsaved, once the photo has loaded (`-editorLook` for screenshots); nil for a tap.
+    private let launchLook: String?
 
     var adjustments = Adjustments() {
         didSet { if adjustments != oldValue { requestRender() } }
@@ -69,9 +73,10 @@ import OSLog
     private var lastTile: Task<CGImage?, Never>?
 
     /// `renderPreview` is a test seam for a render that fails, `makeHistogram` one for a slow count; the app never passes either.
+    /// `launchLook` names a look in `looks` that is applied through `applyLook(_:)`, unsaved, after a successful load.
     init(item: LibraryItem, edits: EditStore, looks: LookStore, group: EditorGroup = .light, renderer: LookRenderer = .shared,
          exporter: PhotoExporter = .appDefault(), renderPreview: (@Sendable (CIImage, Adjustments) async -> CGImage?)? = nil,
-         makeHistogram: (@Sendable (CGImage) async -> PictureHistogram?)? = nil) {
+         makeHistogram: (@Sendable (CGImage) async -> PictureHistogram?)? = nil, launchLook: String? = nil) {
         self.item = item
         self.edits = edits
         self.lookStore = looks
@@ -80,6 +85,7 @@ import OSLog
         self.exporter = exporter
         self.renderPreview = renderPreview ?? { image, adjustments in await renderer.renderedCGImage(image, adjustments: adjustments) }
         self.makeHistogram = makeHistogram ?? { image in await PictureHistogram.make(from: image) }
+        self.launchLook = launchLook
     }
 
     var hasChanges: Bool { !adjustments.matches(savedEdit.adjustments) || lookName != savedEdit.lookName }
@@ -145,6 +151,13 @@ import OSLog
             return
         }
         phase = .ready
+        if let launchLook {
+            if let look = looks.first(where: { $0.name == launchLook }) {
+                applyLook(look)
+            } else {
+                Self.logger.error("[EditorModel:load] No look has the launch look's name, so none was applied — {look: \(launchLook, privacy: .public)}")
+            }
+        }
     }
 
     /// Returns when no render is running or waiting.
@@ -163,6 +176,11 @@ import OSLog
 
     func reset(_ key: AdjustmentKey) {
         adjustments[key] = 0
+    }
+
+    /// Straightens one channel's curve; the other curves stay.
+    func resetCurve(_ channel: CurveChannel) {
+        adjustments.curves[channel] = .identity
     }
 
     /// Also clears the look.

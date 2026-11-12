@@ -21,7 +21,8 @@ nonisolated enum ColourMath {
 
     /// Display P3-encoded in and out, 0...1. The stages, in this order:
     /// 1 linear light and exposure, 2 white balance, 3 encoded and contrast, 4 tones (highlights, shadows, whites, blacks),
-    /// 5 point curves (the RGB curve, then the channel's own curve; skipped when every curve is identity),
+    /// 5 point curves (the RGB curve, then the channel's own curve; each identity curve is skipped, so four identity curves
+    /// change nothing),
     /// 6 vibrance, 7 saturation, 8 clamp.
     static func apply(_ adjustments: Adjustments, to rgb: SIMD3<Float>) -> SIMD3<Float> {
         func t(_ key: AdjustmentKey) -> Float { Float(adjustments[key]) / 100 }
@@ -53,14 +54,15 @@ nonisolated enum ColourMath {
         }
         x = SIMD3(tone(x.x), tone(x.y), tone(x.z))
 
-        // 5: point curves. The RGB curve first, then each channel's own.
+        // 5: point curves. The RGB curve first, then each channel's own; an identity curve is skipped, as this runs at every
+        // lattice point of a table.
         let curves = adjustments.curves
-        if !curves.isIdentity {
-            func curved(_ v: Float, _ channel: CurveChannel) -> Float {
-                curves[channel].value(at: curves.master.value(at: v))
-            }
-            x = SIMD3(curved(x.x, .red), curved(x.y, .green), curved(x.z, .blue))
+        if !curves.master.isIdentity {
+            x = SIMD3(curves.master.value(at: x.x), curves.master.value(at: x.y), curves.master.value(at: x.z))
         }
+        if !curves.red.isIdentity { x.x = curves.red.value(at: x.x) }
+        if !curves.green.isIdentity { x.y = curves.green.value(at: x.y) }
+        if !curves.blue.isIdentity { x.z = curves.blue.value(at: x.z) }
 
         // 6: vibrance leaves already saturated colours alone.
         let spread = x.max() - x.min()

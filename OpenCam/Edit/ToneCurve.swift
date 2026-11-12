@@ -14,21 +14,23 @@ nonisolated struct ToneCurve: Codable, Sendable, Hashable {
     static let minGap = 0.01
     static let identity = ToneCurve(points: [CurvePoint(x: 0, y: 0), CurvePoint(x: 1, y: 1)])
 
-    private(set) var points: [CurvePoint]
+    let points: [CurvePoint]
+    /// Set with the points: stage 5 of `ColourMath.apply` asks once per lattice point of every table it builds. Not coded.
+    let isIdentity: Bool
 
     private enum CodingKeys: String, CodingKey { case points }
 
-    /// Normalises: each coordinate clamped to 0...1 and snapped as `(v * 1000).rounded() / 1000`; sorted by x; a point closer
-    /// than `minGap` in x to the one kept before it is dropped; above `maxPoints` the first 15 and the last are kept;
-    /// fewer than 2 left is `identity`. The first and the last point are never dropped for being close to an inner one.
+    /// Normalises: each coordinate snapped by `snapped(_:)`; sorted by x; a point closer than `minGap` in x to the one kept
+    /// before it is dropped; above `maxPoints` the first 15 and the last are kept; fewer than 2 left is `identity`. The first
+    /// and the last point are never dropped for being close to an inner one.
     init(points: [CurvePoint]) {
-        func snap(_ v: Double) -> Double { (min(max(v, 0), 1) * 1000).rounded() / 1000 }
-        func thousandths(_ v: Double) -> Int { Int((v * 1000).rounded()) }
+        let thousandths = Self.thousandths
         let minGapThousandths = thousandths(Self.minGap)
-        let sorted = points.map { CurvePoint(x: snap($0.x), y: snap($0.y)) }.sorted { $0.x < $1.x }
+        let sorted = points.map { CurvePoint(x: Self.snapped($0.x), y: Self.snapped($0.y)) }.sorted { $0.x < $1.x }
         guard let first = sorted.first, let last = sorted.last, sorted.count >= 2,
               thousandths(last.x) - thousandths(first.x) >= minGapThousandths else {
             self.points = Self.identityPoints
+            self.isIdentity = true
             return
         }
         var kept = [first]
@@ -40,6 +42,18 @@ nonisolated struct ToneCurve: Codable, Sendable, Hashable {
         kept.append(last)
         if kept.count > Self.maxPoints { kept = Array(kept.prefix(Self.maxPoints - 1)) + [last] }
         self.points = kept
+        self.isIdentity = kept == Self.identityPoints
+    }
+
+    /// A coordinate clamped to 0...1 and snapped to the nearest thousandth; one that is not finite is 0.
+    static func snapped(_ v: Double) -> Double { Double(thousandths(v)) / 1000 }
+
+    /// A coordinate clamped to 0...1, in whole thousandths; one that is not finite (a drag over a canvas with no size) is 0
+    /// rather than a trap. Gaps are compared in these, so 0.21 after 0.2 is a gap of exactly 10 (as Doubles, 0.21 − 0.2 is
+    /// less than 0.01).
+    static func thousandths(_ v: Double) -> Int {
+        guard v.isFinite else { return 0 }
+        return Int((min(max(v, 0), 1) * 1000).rounded())
     }
 
     init(from decoder: any Decoder) throws {
@@ -48,8 +62,6 @@ nonisolated struct ToneCurve: Codable, Sendable, Hashable {
     }
 
     private static let identityPoints = [CurvePoint(x: 0, y: 0), CurvePoint(x: 1, y: 1)]
-
-    var isIdentity: Bool { points == Self.identityPoints }
 
     func value(at x: Float) -> Float {
         guard let first = points.first, let last = points.last else { return x }

@@ -25,6 +25,8 @@ struct LibraryView: View {
     @State private var pickedItems: [PhotosPickerItem] = []
     /// The group the next editor opens on: `-editorGroup` for the launch push, Light for a tap.
     @State private var editorGroup: EditorGroup = .light
+    /// The look the next editor applies, unsaved: `-editorLook` for the launch push, nil for a tap.
+    @State private var editorLookName: String?
 
     private static let columns = [GridItem(.adaptive(minimum: 110), spacing: 2)]
 
@@ -41,7 +43,7 @@ struct LibraryView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbar }
                 .navigationDestination(for: LibraryItem.self) { item in
-                    EditorScreen(item: item, library: library, group: editorGroup) { path.removeAll() }
+                    EditorScreen(item: item, library: library, group: editorGroup, lookName: editorLookName) { path.removeAll() }
                 }
         }
         .tint(Theme.accent)
@@ -136,14 +138,15 @@ struct LibraryView: View {
         } else if item.kind == .clip {
             previewURL = item.pictureURL
         } else {
-            openEditor(item, group: .light)
+            openEditor(item, group: .light, lookName: nil)
         }
     }
 
     /// Only photos reach the editor.
-    private func openEditor(_ item: LibraryItem, group: EditorGroup) {
+    private func openEditor(_ item: LibraryItem, group: EditorGroup, lookName: String?) {
         guard item.isEditable else { return }
         editorGroup = group
+        editorLookName = lookName
         path = [item]
     }
 
@@ -152,8 +155,9 @@ struct LibraryView: View {
         selectedIDs = []
     }
 
-    /// Once, after the items have loaded: `-librarySelect on` opens in Select mode with the newest item selected, and
-    /// `-screen editor` opens the newest photo in the editor on the `-editorGroup` group.
+    /// Once, after the items have loaded: in the Simulator `-seedFormats on` and `-seedStudy on` seed first, then the store
+    /// reloads once; `-librarySelect on` opens in Select mode with the newest item selected, and `-screen editor` opens the
+    /// newest photo in the editor on the `-editorGroup` group, applying the `-editorLook` look.
     private func applyLaunch() {
         guard !hasAppliedLaunch else { return }
         hasAppliedLaunch = true
@@ -164,6 +168,15 @@ struct LibraryView: View {
             } catch {
                 Self.logger.error("\(error.description, privacy: .public)")
             }
+        }
+        if launch.seedsStudyLook {
+            do throws(LookStoreError) {
+                _ = try LookSeeder.seedColourStudy(into: library.lookStore)
+            } catch {
+                Self.logger.error("\(error.description, privacy: .public)")
+            }
+        }
+        if launch.seedsFormats || launch.seedsStudyLook {
             library.reload()
         }
         #endif
@@ -171,7 +184,7 @@ struct LibraryView: View {
             selectedIDs = [first.id]
         }
         if launch.screen == .editor, let photo = library.items.first(where: \.isEditable) {
-            openEditor(photo, group: launch.editorGroup)
+            openEditor(photo, group: launch.editorGroup, lookName: launch.editorLookName)
         }
     }
 

@@ -34,4 +34,12 @@ import Testing
         #expect(curve([(0, 0), (0.995, 0.5), (1, 1)]).points == [CurvePoint(x: 0, y: 0), CurvePoint(x: 1, y: 1)])   // inner point near the last goes, the last stays
         #expect(curve([(0.5, 0.2), (0.505, 0.8)]) == .identity)                                // ends too close
     }
+    @Test func aCoordinateThatIsNotFiniteBecomesZero() throws {
+        let nanX = curve([(.nan, 0.5), (0, 0), (1, 1)]); #expect(nanX.points.allSatisfy { $0.x.isFinite && $0.y.isFinite }); #expect(nanX.points.count == 2)
+        #expect(curve([(0, 0), (0.5, .nan), (1, 1)]).points[1] == CurvePoint(x: 0.5, y: 0))
+        #expect(curve([(0, 0), (0.5, .infinity), (-.infinity, 0.3), (1, 1)]).points.allSatisfy { $0.x.isFinite && $0.y.isFinite })
+        let json = Data(#"{"points": [{"x": 0, "y": 0}, {"x": 1, "y": 1}]}"#.utf8); #expect(try JSONDecoder().decode(ToneCurve.self, from: json).isIdentity)
+        #expect(!curve([(0, 0), (0.5, 0.5), (1, 1)]).isIdentity); #expect(curve([(0, 0), (1, 1)]).isIdentity); #expect(curve([(0.5, 0.5)]).isIdentity)
+        let encoded = String(decoding: try JSONEncoder().encode(ToneCurve.identity), as: UTF8.self); #expect(!encoded.contains("isIdentity"))
+    }
 }

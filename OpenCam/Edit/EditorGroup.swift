@@ -2,12 +2,13 @@ import Foundation
 
 /// The tabs of the editor's panel.
 nonisolated enum EditorGroup: String, CaseIterable, Sendable {
-    case light, colour, detail, effects, looks
+    case light, colour, curve, detail, effects, looks
 
     var title: String {
         switch self {
         case .light: "Light"
         case .colour: "Colour"
+        case .curve: "Curve"
         case .detail: "Detail"
         case .effects: "Effects"
         case .looks: "Looks"
@@ -20,7 +21,7 @@ nonisolated enum EditorGroup: String, CaseIterable, Sendable {
         case .colour: [.temperature, .tint, .vibrance, .saturation]
         case .detail: [.sharpening, .noiseReduction]
         case .effects: [.grain, .vignette]
-        case .looks: []
+        case .curve, .looks: []
         }
     }
 }

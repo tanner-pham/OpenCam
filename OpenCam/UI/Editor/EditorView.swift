@@ -11,8 +11,6 @@ struct EditorView: View {
     /// The file being shared; removed when the share sheet closes.
     @State private var exportedURL: URL?
 
-    /// Stacked, the picture never takes so much height that less than this is left for the panel.
-    private static let minPanelHeight: CGFloat = 240
     /// Until the proxy is decoded the picture keeps the camera's 4:3 shape.
     private static let defaultAspect: CGFloat = 4 / 3
 
@@ -123,9 +121,10 @@ struct EditorView: View {
         if model.hasUnsavedChanges { isConfirmingDiscard = true } else { onDone() }
     }
 
-    /// The picture's fitted height at the full width, held so the panel keeps `minPanelHeight` below the info line.
+    /// The picture's fitted height at the full width, held so the panel keeps the group's
+    /// `EditorLayout.minPanelHeight(for:)` below the info line.
     private func pictureHeight(in size: CGSize) -> CGFloat {
-        max(0, min(fittedHeight(forWidth: size.width), size.height - Self.minPanelHeight - PhotoInfoLine.height))
+        max(0, min(fittedHeight(forWidth: size.width), size.height - EditorLayout.minPanelHeight(for: model.group) - PhotoInfoLine.height))
     }
 
     /// The picture's height when it fills `width`.

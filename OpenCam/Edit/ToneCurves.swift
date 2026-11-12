@@ -43,5 +43,5 @@ nonisolated struct ToneCurves: Codable, Sendable, Hashable {
         }
     }
 
-    var isIdentity: Bool { CurveChannel.allCases.allSatisfy { self[$0].isIdentity } }
+    var isIdentity: Bool { master.isIdentity && red.isIdentity && green.isIdentity && blue.isIdentity }
 }
