@@ -10,8 +10,8 @@ import Testing
     /// Arrival of frame `index` when the camera delivers on time, plus `lag` seconds.
     func arrival(_ index: Int, lag: Double = 0) -> Duration { .seconds(Double(index) / 30 + lag) }
 
-    func state(_ policy: DropPolicy = .keepRecording, minFreeBytes: Int64 = 100) -> WriterClipState {
-        WriterClipState(policy: policy, frameDuration: frame, minFreeBytes: minFreeBytes)
+    func state(_ policy: DropPolicy = .keepRecording, minFreeBytes: Int64 = 100, rendersFrames: Bool = false) -> WriterClipState {
+        WriterClipState(policy: policy, frameDuration: frame, minFreeBytes: minFreeBytes, rendersFrames: rendersFrames)
     }
 
     /// Delivers and writes frames `0..<count`.
@@ -69,7 +69,7 @@ import Testing
     }
 
     @Test func aFrameMoreThanOneFrameBehindIsDropped() {
-        var clip = state()
+        var clip = state(rendersFrames: true)
         write(&clip, frames: 1)
         // Exactly one frame behind real time still writes.
         let r10 = clip.video(pts: pts(1), duration: frame, arrival: arrival(1, lag: 1.0 / 30), isWriterReady: true)
@@ -79,6 +79,23 @@ import Testing
         #expect(r11 == .skip)
         #expect(clip.facts.total == 1)
         #expect(clip.facts.byReason[DropReason.behind.rawValue] == 1)
+    }
+
+    @Test func aPlainClipNeverSkipsAFrameForBeingLate() {
+        var clip = state()
+        write(&clip, frames: 1)
+        // A frame delivered a full second late, then a burst: the writer takes every one it is ready for.
+        for index in 1..<40 {
+            let step = clip.video(pts: pts(index), duration: frame, arrival: arrival(index, lag: index < 5 ? 1.0 : 0), isWriterReady: true)
+            #expect(step == .write)
+            _ = clip.videoWritten(true, pts: pts(index), duration: frame)
+        }
+        #expect(clip.facts.total == 0)
+        #expect(clip.facts.byReason[DropReason.behind.rawValue] == nil)
+        // A frame the input is not ready for is still a drop.
+        let notReady = clip.video(pts: pts(40), duration: frame, arrival: arrival(40), isWriterReady: false)
+        #expect(notReady == .skip)
+        #expect(clip.facts.byReason[DropReason.writerNotReady.rawValue] == 1)
     }
 
     @Test func outputDropsAreCountedByReason() {
@@ -242,7 +259,7 @@ import Testing
     }
 
     @Test func aLastingRiseInDeliveryDelayStopsDroppingWithinAboutASecond() {
-        var clip = state(.keepRecording)
+        var clip = state(.keepRecording, rendersFrames: true)
         var written = [Bool]()
         for index in 0..<200 {
             // From frame 60 every frame arrives 1.5 frame times later than before, forever.
@@ -259,7 +276,7 @@ import Testing
     }
 
     @Test func aShortHiccupDropsOnlyUntilCaughtUp() {
-        var clip = state(.keepRecording)
+        var clip = state(.keepRecording, rendersFrames: true)
         for index in 0..<10 { #expect(deliver(&clip, index)) }
         // Frame 10 is delivered 3 frame times late; 11 to 13 follow back to back, at the same instant.
         let late = 3.0 / 30

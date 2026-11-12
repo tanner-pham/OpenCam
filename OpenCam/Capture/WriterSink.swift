@@ -137,7 +137,8 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
         videoInput = video
         audioInput = audio
         frameDuration = CMTime(value: 1, timescale: CMTimeScale(max(1, plan.frameRate)))
-        state = WriterClipState(policy: plan.policy, frameDuration: frameDuration, minFreeBytes: plan.minFreeBytes)
+        state = WriterClipState(policy: plan.policy, frameDuration: frameDuration, minFreeBytes: plan.minFreeBytes,
+                               rendersFrames: plan.bakesLog)
         errorText = nil
         phase = .recording
         generation.value.withLock { $0 += 1 }

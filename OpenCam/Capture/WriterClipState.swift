@@ -34,6 +34,9 @@ nonisolated struct WriterClipState: Sendable {
     private let policy: DropPolicy
     private let frameSeconds: Double
     private let minFreeBytes: Int64
+    /// True when each frame is rendered before it is written (the baked Log profile). Only then does a frame delivered late cost
+    /// anything worth skipping; on the plain path the writer takes every frame its input is ready for, as the diagnostic measured.
+    private let rendersFrames: Bool
 
     private var firstPTS: CMTime?
     private var firstArrival = 0.0
@@ -49,7 +52,8 @@ nonisolated struct WriterClipState: Sendable {
     private(set) var end: WriterEnd?
     private(set) var facts = DropFacts()
 
-    init(policy: DropPolicy, frameDuration: CMTime, minFreeBytes: Int64) {
+    init(policy: DropPolicy, frameDuration: CMTime, minFreeBytes: Int64, rendersFrames: Bool) {
+        self.rendersFrames = rendersFrames
         self.policy = policy
         frameSeconds = CMTimeGetSeconds(frameDuration)
         self.minFreeBytes = minFreeBytes
@@ -75,7 +79,7 @@ nonisolated struct WriterClipState: Sendable {
         }
         let offset = CMTimeGetSeconds(CMTimeSubtract(pts, firstPTS))
         let lag = recordDelay((now - firstArrival) - offset, at: offset)
-        if lag > frameSeconds + Self.lagTolerance {
+        if rendersFrames, lag > frameSeconds + Self.lagTolerance {
             countDrop(.behind)
             return .skip
         }

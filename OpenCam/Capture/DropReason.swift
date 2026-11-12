@@ -7,7 +7,7 @@ nonisolated enum DropReason: String, Codable, Sendable, CaseIterable {
     case late, outOfBuffers, discontinuity
     /// Delivered, but the writer input was not ready for it.
     case writerNotReady
-    /// Delivered more than one frame behind real time; not rendered, not written.
+    /// Delivered more than one frame behind real time; not rendered, not written. Only clips whose frames are rendered skip for this.
     case behind
     /// The Log render or its buffer pool failed.
     case renderFailed
