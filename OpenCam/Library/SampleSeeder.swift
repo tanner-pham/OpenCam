@@ -3,10 +3,11 @@ import Foundation
 import ImageIO
 import SwiftUI
 
-/// Writes three generated pictures into an empty Captures folder, so the Library can be shown in the Simulator.
+/// Writes generated pictures into the Captures folder, so the Library can be shown in the Simulator: `seedIfEmpty` three JPEGs
+/// into an empty folder, `seedFormatsIfAbsent` (in `SampleSeeder+Formats.swift`) four more files of different formats.
 @MainActor enum SampleSeeder {
-    private static let size = CGSize(width: 672, height: 504)
-    private static let scale: CGFloat = 3
+    static let size = CGSize(width: 672, height: 504)
+    static let scale: CGFloat = 3
 
     /// 0 when the folder already has any photo or clip. Otherwise OC_0001 is colour bars, OC_0002 a hue sweep and OC_0003 the
     /// drawn scene, so the newest item is the scene. A picture that cannot be rendered or written throws `.seedFailed`.
@@ -22,16 +23,16 @@ import SwiftUI
         let path = url.path(percentEncoded: false)
         let renderer = ImageRenderer(content: content.frame(width: size.width, height: size.height))
         renderer.scale = scale
-        guard let image = renderer.cgImage else { throw .seedFailed(path: path, reason: "The picture could not be rendered") }
+        guard let image = renderer.cgImage else { throw .seedFailed(function: "seedIfEmpty", path: path, reason: "The picture could not be rendered") }
         let context = LookRenderer.shared.context
         let quality = CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String)
         guard let data = context.jpegRepresentation(of: CIImage(cgImage: image), colorSpace: LookRenderer.shared.displayP3, options: [quality: 0.9]) else {
-            throw .seedFailed(path: path, reason: "The picture could not be encoded")
+            throw .seedFailed(function: "seedIfEmpty", path: path, reason: "The picture could not be encoded")
         }
         do {
             try data.write(to: url, options: .atomic)
         } catch {
-            throw .seedFailed(path: path, reason: error.localizedDescription)
+            throw .seedFailed(function: "seedIfEmpty", path: path, reason: error.localizedDescription)
         }
     }
 }

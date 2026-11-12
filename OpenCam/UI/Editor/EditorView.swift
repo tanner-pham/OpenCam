@@ -8,11 +8,11 @@ struct EditorView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var isConfirmingDiscard = false
+    /// The info line's height at the current text size, the same scaling as `PhotoInfoLine`'s own.
+    @ScaledMetric(relativeTo: .footnote) private var infoLineHeight = PhotoInfoLine.baseHeight
     /// The file being shared; removed when the share sheet closes.
     @State private var exportedURL: URL?
 
-    /// Stacked, the picture never takes so much height that less than this is left for the panel.
-    private static let minPanelHeight: CGFloat = 240
     /// Until the proxy is decoded the picture keeps the camera's 4:3 shape.
     private static let defaultAspect: CGFloat = 4 / 3
 
@@ -49,7 +49,15 @@ struct EditorView: View {
         switch EditorLayout.choose(horizontal: horizontalSizeClass, vertical: verticalSizeClass) {
         case .sideBySide:
             HStack(spacing: 0) {
-                EditorPicture(model: model)
+                // The picture at its fitted height with the line touching its bottom edge, the pair centred in the column.
+                GeometryReader { geo in
+                    VStack(spacing: 0) {
+                        EditorPicture(model: model)
+                            .frame(height: max(0, min(fittedHeight(forWidth: geo.size.width), geo.size.height - infoLineHeight)))
+                        PhotoInfoLine(designation: model.designation, facts: model.facts)
+                    }
+                    .frame(width: geo.size.width, height: geo.size.height)
+                }
                 EditorPanel(model: model)
                     .frame(width: EditorLayout.panelWidth)
                     .disabled(isFailed)
@@ -59,6 +67,7 @@ struct EditorView: View {
                 VStack(spacing: 0) {
                     EditorPicture(model: model)
                         .frame(height: pictureHeight(in: geo.size))
+                    PhotoInfoLine(designation: model.designation, facts: model.facts)
                     EditorPanel(model: model)
                         .disabled(isFailed)
                 }
@@ -114,10 +123,15 @@ struct EditorView: View {
         if model.hasUnsavedChanges { isConfirmingDiscard = true } else { onDone() }
     }
 
-    /// The picture's fitted height at the full width, held so the panel keeps `minPanelHeight`.
+    /// The picture's fitted height at the full width, held so the panel keeps the group's
+    /// `EditorLayout.minPanelHeight(for:)` below the info line.
     private func pictureHeight(in size: CGSize) -> CGFloat {
+        max(0, min(fittedHeight(forWidth: size.width), size.height - EditorLayout.minPanelHeight(for: model.group) - infoLineHeight))
+    }
+
+    /// The picture's height when it fills `width`.
+    private func fittedHeight(forWidth width: CGFloat) -> CGFloat {
         let aspect = model.proxySize.map { $0.width / max($0.height, 1) } ?? Self.defaultAspect
-        let fitted = size.width / aspect
-        return max(0, min(fitted, size.height - Self.minPanelHeight))
+        return width / aspect
     }
 }

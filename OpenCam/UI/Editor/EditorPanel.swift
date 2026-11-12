@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The group picker and the chosen group: its sliders, or the looks.
+/// The group picker and the chosen group: its sliders, the curve editor, the mixer, the grading wheels, or the looks.
 struct EditorPanel: View {
     @Bindable var model: EditorModel
 
@@ -9,18 +9,13 @@ struct EditorPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Group", selection: $model.group) {
-                ForEach(EditorGroup.allCases, id: \.self) { group in
-                    Text(group.title).tag(group)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, Theme.Space.l)
-            if model.group == .looks {
-                LooksPanel(model: model)
-            } else {
-                sliders
+            ScrollingPicker(title: "Group", selection: $model.group, options: EditorGroup.allCases, label: \.title)
+            switch model.group {
+            case .looks: LooksPanel(model: model)
+            case .curve: CurvePanel(model: model)
+            case .mix: MixPanel(model: model)
+            case .grading: GradingPanel(model: model)
+            case .light, .colour, .detail, .effects: sliders
             }
         }
         .padding(.top, Theme.Space.xs)

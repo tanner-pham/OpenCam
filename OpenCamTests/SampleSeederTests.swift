@@ -14,4 +14,10 @@ import Testing
         try Data("x".utf8).write(to: clipOnly.appending(path: "OC_0001.MOV"))
         #expect(try SampleSeeder.seedIfEmpty(CaptureStore(directory: clipOnly)) == 0)   // a clip is a library item
     }
+
+    @Test func formatSamplesMakeEachDesignationOnce() throws {
+        let dir = try TestFiles.directory(); let captures = try CaptureStore(directory: dir)
+        #expect(try SampleSeeder.seedFormatsIfAbsent(captures) == 4); #expect(try SampleSeeder.seedFormatsIfAbsent(captures) == 0)
+        #expect(LibraryScanner.items(in: dir).compactMap { FormatDesignation.of($0)?.title } == ["RAW + HEIF", "HEIF", "RAW", "JPEG"])
+    }
 }
