@@ -384,6 +384,50 @@ import Testing
         #expect(rig.model.manual == .automatic)
     }
 
+    // MARK: Dimming
+
+    @Test func readoutsDoNotDimWhileTheCameraChanges() async throws {
+        let rig = try await rig()
+        #expect(rig.model.readout(for: .iso).isAvailable)
+        await rig.fake.holdConfigures()
+        rig.model.selectLens("ultraWide")
+        #expect(rig.model.manualRanges == nil)
+        for control in ManualControl.allCases {
+            let state = rig.model.readout(for: control)
+            #expect(!state.isDimmed, "\(control)")
+            #expect(!state.isAvailable, "\(control)")
+        }
+        await rig.fake.resumeConfigures()
+        await rig.model.waitForQueuedConfigures()
+        for control in ManualControl.allCases {
+            #expect(rig.model.readout(for: control).isAvailable, "\(control)")
+        }
+    }
+
+    @Test func aControlTheCameraLacksIsDimmed() async throws {
+        let rig = try await rig()
+        var noFocus = Self.ranges
+        noFocus.hasFocus = false
+        await rig.fake.setRanges(noFocus)
+        await rig.model.refreshReadouts(from: rig.fake)
+        #expect(rig.model.readout(for: .focus).isDimmed)
+        #expect(!rig.model.readout(for: .focus).isAvailable)
+        for control in ManualControl.allCases where control != .focus {
+            #expect(!rig.model.readout(for: control).isDimmed, "\(control)")
+        }
+    }
+
+    @Test func evIsDimmedWhileExposureIsManual() async throws {
+        let rig = try await rig()
+        #expect(!rig.model.readout(for: .bias).isDimmed)
+        rig.model.setControl(.iso, step: 6)
+        await rig.model.manualApplyTask?.value
+        let state = rig.model.readout(for: .bias)
+        #expect(state.isDimmed)
+        #expect(!state.isAvailable)
+        #expect(!rig.model.readout(for: .iso).isDimmed)
+    }
+
     // MARK: The Simulator
 
     @Test func theSimulatorReseedsItsRangesAndReadoutsWhenItsConfigurationChanges() throws {

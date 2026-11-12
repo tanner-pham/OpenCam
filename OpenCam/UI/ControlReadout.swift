@@ -12,7 +12,7 @@ struct ControlReadout: View {
         let state = model.readout(for: control)
         Button { model.toggleControl(control) } label: {
             ReadoutView(caption: control.caption, value: state.text, isCompact: isCompact, isSet: state.isSet, isOpen: state.isOpen)
-                .opacity(state.isAvailable ? 1 : 0.4)
+                .opacity(state.isDimmed ? 0.4 : 1)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

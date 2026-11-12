@@ -37,7 +37,8 @@ extension CameraModel {
             spoken: control.spoken(value),
             isSet: isMarkedSet(control, value: value),
             isOpen: openControl == control,
-            isAvailable: canAdjustControls && manual.isAdjustable(control) && scale(for: control) != nil
+            isAvailable: canAdjustControls && manual.isAdjustable(control) && scale(for: control) != nil,
+            isDimmed: !manual.isAdjustable(control) || (manualRanges != nil && scale(for: control) == nil)
         )
     }
 

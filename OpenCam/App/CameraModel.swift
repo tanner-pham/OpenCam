@@ -709,6 +709,8 @@ final class CameraModel {
             }
             lastWorking = (configuration, selection)
             clearNotice(from: .configuration)
+            // The buttons are usable now, not at the next poll.
+            await refreshReadouts(from: configurator)
             // A stopped camera runs again with the new selection; a running one is confirmed once it has run long enough.
             if await startIfStopped(configurator) || phase == .ready {
                 confirmWhenRunning(configuration, since: errors)
