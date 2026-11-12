@@ -91,6 +91,10 @@ nonisolated enum RecorderCheck {
     private static func finish(_ report: inout RecorderCheckReport) async {
         report.stateAtEnd = await RecorderCheckSnapshot.now()
         report.device.freeDiskBytesAtEnd = FreeSpace.availableBytes()
+        let skipped = report.writerTrials.filter { $0.skipReason != nil }.count
+        let failed = report.writerTrials.filter { $0.skipReason == nil && ($0.failure != nil || $0.counts?.writerStatus != "completed" || $0.counts?.appendError != nil) }.count
+        let ran = report.writerTrials.count - skipped
+        report.notes.append("Summary: \(report.writerTrials.count) writer trials planned, \(ran) ran, \(skipped) skipped, \(failed) failed (of those that ran).")
         report.isComplete = true
         save(report)
         RecorderCheckStore.removeScratch()

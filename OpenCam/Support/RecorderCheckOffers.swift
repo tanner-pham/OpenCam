@@ -36,7 +36,7 @@ nonisolated enum RecorderCheckOffers {
         offer.activeColorSpace = RecorderCheckFormats.colorSpaceName(device.activeColorSpace)
         rig.session.startRunning()
         offer.wasSessionRunning = rig.session.isRunning
-        try? await Task.sleep(for: settleTime)
+        offer.waitedMilliseconds = await settle(rig.session)
 
         let output = rig.output
         offer.pixelFormats = output.availableVideoPixelFormatTypes.map(RecorderCheckFourCC.string)
@@ -59,6 +59,19 @@ nonisolated enum RecorderCheckOffers {
         return offer
     }
 
+    /// Waits until the session reports it is running (at most 5 s), then at least `settleTime` since `startRunning` returned.
+    /// Returns how long it waited, in milliseconds.
+    private static func settle(_ session: AVCaptureSession) async -> Double {
+        let clock = ContinuousClock()
+        let start = clock.now
+        while !session.isRunning, clock.now - start < .seconds(5) {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        let remaining = settleTime - (clock.now - start)
+        if remaining > .zero { try? await Task.sleep(for: remaining) }
+        return (clock.now - start).recorderCheckMilliseconds
+    }
+
     private static func presetOffer() async -> RecorderCheckPresetOffer {
         var offer = RecorderCheckPresetOffer()
         guard let device = RecorderCheckRig.backWideCamera() else {
@@ -74,7 +87,7 @@ nonisolated enum RecorderCheckOffers {
         }
         rig.session.startRunning()
         offer.wasSessionRunning = rig.session.isRunning
-        try? await Task.sleep(for: settleTime)
+        offer.waitedMilliseconds = await settle(rig.session)
         let active = device.activeFormat
         let size = active.formatDescription.dimensions
         offer.activeFormat = "\(size.width)x\(size.height) \(RecorderCheckFourCC.string(active.formatDescription.mediaSubType.rawValue))"

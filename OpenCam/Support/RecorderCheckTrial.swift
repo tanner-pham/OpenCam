@@ -58,7 +58,9 @@ nonisolated enum RecorderCheckTrial {
         defer { try? FileManager.default.removeItem(at: url) }
         let sink: RecorderCheckSink
         do {
-            sink = try RecorderCheckSink(url: url, settings: writerSettings.settings)
+            sink = RecorderCheckSink()
+            let opening: any RecorderCheckWriterOpening = sink
+            try opening.open(url: url, settings: writerSettings.settings)
             result.writerAcceptedSettings = true
             result.writerInputExpectsRealTime = sink.isRealTimeConfirmed
         } catch let failure as RecorderCheckFailure {

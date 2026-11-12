@@ -26,6 +26,8 @@ nonisolated struct RecorderCheckTrialResult: Codable, Sendable {
     /// False only when `canApply(outputSettings:forMediaType:)` said no.
     var writerAcceptedSettings = false
     var writerSetupError: String?
+    /// Which writer calls the trial used; always "legacy add + append".
+    var writerPath = "legacy add + append"
     /// `expectsMediaDataInRealTime` of the writer input, read back after it was set to true.
     var writerInputExpectsRealTime: Bool?
     var counts: RecorderCheckSinkResult?

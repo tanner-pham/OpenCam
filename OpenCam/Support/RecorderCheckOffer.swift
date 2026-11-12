@@ -6,6 +6,8 @@ nonisolated struct RecorderCheckOffer: Codable, Sendable {
     var format: RecorderCheckFormatPick?
     var activeColorSpace: String?
     var wasSessionRunning = false
+    /// How long the check waited after `startRunning()` returned before reading the lists: until the session reported running, and at least 0.8 s.
+    var waitedMilliseconds = 0.0
     /// `availableVideoCVPixelFormatTypes` (the header's name; Swift: `availableVideoPixelFormatTypes`), four-character codes.
     var pixelFormats: [String] = []
     /// `availableVideoCodecTypes`: what the output's own `videoSettings` can use.

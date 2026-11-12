@@ -10,18 +10,16 @@ import CoreVideo
 /// delegate callbacks (`stop`, `beginFinishing`, `result`, `deliveredCount`) is called through `queue.sync` by the trial. A
 /// finished, immutable `RecorderCheckSinkResult` is handed back.
 ///
-/// iOS 27 deprecates `append`, `isReadyForMoreMediaData` and `expectsMediaDataInRealTime` in favour of
-/// `SampleBufferReceiver.appendImmediately`, which takes a `CMReadySampleBuffer`. That type's only initializer from the
+/// iOS 27 deprecates `add`, `append`, `isReadyForMoreMediaData` and `expectsMediaDataInRealTime` in favour of
+/// `inputReceiver(for:)` and `SampleBufferReceiver.appendImmediately`, which takes a `CMReadySampleBuffer`. That type's only initializer from the
 /// delegate's `CMSampleBuffer` (`init(unsafeBuffer:)`) wants a `sending` buffer, and the delegate's parameter is not one, so it
-/// cannot be made here without `@unchecked Sendable` or `nonisolated(unsafe)`. The deprecated calls are what this check
-/// measures; they sit in the one method marked deprecated so the build stays free of warnings.
-nonisolated final class RecorderCheckSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
-    private let writer: AVAssetWriter
-    private let input: AVAssetWriterInput
-    /// `inputReceiver(for:)` is the only non-deprecated way to attach an input to a writer; it is kept so the input stays attached.
-    private let attachedReceiver: AVAssetWriterInput.SampleBufferReceiver
+/// cannot be made here without `@unchecked Sendable` or `nonisolated(unsafe)`. The check uses one consistent legacy
+/// path (add, append, readiness) that has long been proven; it sits in two methods marked deprecated so the build stays free of warnings.
+nonisolated final class RecorderCheckSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, RecorderCheckWriterOpening {
+    private var writer: AVAssetWriter?
+    private var input: AVAssetWriterInput?
     /// What `expectsMediaDataInRealTime` read back after it was set.
-    let isRealTimeConfirmed: Bool
+    private(set) var isRealTimeConfirmed = false
 
     private var isStopped = false
     private var hasFailed = false
@@ -34,8 +32,11 @@ nonisolated final class RecorderCheckSink: NSObject, AVCaptureVideoDataOutputSam
     private var appendWorst = Duration.zero
     private var appendCalls = 0
 
-    /// Opens the writer: settings checked with `canApply`, input checked with `canAdd`, then started.
-    init(url: URL, settings: [String: Any]) throws {
+    /// Opens the writer the long-proven way: `canApply`, `canAdd`, `add`, `expectsMediaDataInRealTime`, then started. Those
+    /// calls are deprecated in iOS 27, so they sit in a method marked deprecated that the trial reaches through
+    /// `RecorderCheckWriterOpening`, which keeps the build free of warnings.
+    @available(iOS, deprecated: 27.0, message: "Uses the legacy writer path on purpose; see the type's comment")
+    func open(url: URL, settings: [String: Any]) throws {
         let writer: AVAssetWriter
         do {
             writer = try AVAssetWriter(outputURL: url, fileType: .mov)
@@ -46,13 +47,10 @@ nonisolated final class RecorderCheckSink: NSObject, AVCaptureVideoDataOutputSam
             throw RecorderCheckFailure(message: "The writer refused the output settings (canApply was false)", isSettingsRejection: true)
         }
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
-        // AVAssetWriterInput.h says a real-time source should set `expectsMediaDataInRealTime`, so that readiness is judged for
-        // real-time use. The Swift property is deprecated in iOS 27 and has no replacement setter. It is set through
-        // key-value coding, which raises no deprecation warning, and read back so the report shows whether it took.
-        input.setValue(true, forKey: "expectsMediaDataInRealTime")
-        isRealTimeConfirmed = input.value(forKey: "expectsMediaDataInRealTime") as? Bool ?? false
+        input.expectsMediaDataInRealTime = true
+        isRealTimeConfirmed = input.expectsMediaDataInRealTime
         guard writer.canAdd(input) else { throw RecorderCheckFailure(message: "The writer cannot take the video input") }
-        attachedReceiver = writer.inputReceiver(for: input)
+        writer.add(input)
         do {
             try writer.start()
         } catch {
@@ -60,7 +58,6 @@ nonisolated final class RecorderCheckSink: NSObject, AVCaptureVideoDataOutputSam
         }
         self.writer = writer
         self.input = input
-        super.init()
     }
 
     /// Call on the output's queue.
@@ -68,7 +65,7 @@ nonisolated final class RecorderCheckSink: NSObject, AVCaptureVideoDataOutputSam
 
     @available(iOS, deprecated: 27.0, message: "Measures the deprecated append on purpose; see the type's comment")
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard !isStopped else { return }
+        guard !isStopped, let writer, let input else { return }
         counts.framesDelivered += 1
         let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         if firstDelivered == nil {
@@ -112,12 +109,16 @@ nonisolated final class RecorderCheckSink: NSObject, AVCaptureVideoDataOutputSam
     func stop() {
         guard !isStopped else { return }
         isStopped = true
-        input.markAsFinished()
+        input?.markAsFinished()
     }
 
     /// Starts ending the file and calls `completion` when it is done. With no frame ever delivered there is no writing session to
     /// end, so the writer is cancelled. Call on the output's queue.
     func beginFinishing(completion: @escaping @Sendable () -> Void) {
+        guard let writer else {
+            completion()
+            return
+        }
         guard firstDelivered != nil else {
             writer.cancelWriting()
             completion()
@@ -138,8 +139,8 @@ nonisolated final class RecorderCheckSink: NSObject, AVCaptureVideoDataOutputSam
         counts.appendTotalMilliseconds = appendTotal.recorderCheckMilliseconds
         counts.appendWorstMilliseconds = appendWorst.recorderCheckMilliseconds
         counts.appendMeanMilliseconds = appendCalls == 0 ? nil : counts.appendTotalMilliseconds / Double(appendCalls)
-        counts.writerStatus = Self.statusName(writer.status)
-        counts.writerError = writer.error.map { "\($0.localizedDescription) [\(String(describing: $0))]" }
+        counts.writerStatus = writer.map { Self.statusName($0.status) } ?? "not opened"
+        counts.writerError = writer?.error.map { "\($0.localizedDescription) [\(String(describing: $0))]" }
         return counts
     }
 
