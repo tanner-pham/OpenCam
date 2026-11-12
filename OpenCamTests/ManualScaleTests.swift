@@ -116,6 +116,8 @@ import Testing
         #expect(ManualControl.shutter.spoken(1.0 / 60) == "1/60 second")
         #expect(ManualControl.shutter.spoken(2.5) == "2.5 seconds")
         #expect(ManualControl.shutter.spoken(1) == "1 second")
+        #expect(ManualControl.shutter.spoken(1 / 2.5) == "0.4 seconds")
+        #expect(ManualControl.shutter.spoken(0.5) == "0.5 seconds")
         #expect(ManualControl.shutter.spoken(2) == "2 seconds")
         #expect(ManualControl.iso.spoken(400) == "ISO 400")
         #expect(ManualControl.bias.spoken(0.3) == "+0.3 EV")

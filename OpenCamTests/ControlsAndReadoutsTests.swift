@@ -19,8 +19,28 @@ import Testing
         #expect(CameraControlPlan.enablesExposureBias(for: .automatic))
         #expect(!CameraControlPlan.enablesExposureBias(for: .manual(shutterSeconds: nil, iso: 400)))
     }
+    @Test func shutterReadsAsAFractionBelowThirtyFiveHundredthsOfASecondAndSecondsFromThere() {
+        #expect(ReadoutFormatter.shutter(1.0 / 4) == "1/4")
+        #expect(ReadoutFormatter.shutter(1.0 / 3) == "1/3")
+        #expect(ReadoutFormatter.shutter(0.35) == "0.4s")
+        #expect(ReadoutFormatter.shutter(1 / 2.5) == "0.4s")
+        #expect(ReadoutFormatter.shutter(1 / 2.0) == "0.5s")
+        #expect(ReadoutFormatter.shutter(1 / 1.6) == "0.6s")
+        #expect(ReadoutFormatter.shutter(1 / 1.3) == "0.8s")
+        #expect(ReadoutFormatter.shutter(1) == "1s")
+        #expect(ReadoutFormatter.shutter(2.5) == "2.5s")
+    }
+
+    @Test func everyShutterOnThePhotoScaleReadsDifferently() throws {
+        let ranges = ManualRanges(shutterSeconds: (1.0 / 8000)...1, iso: 25...3200)
+        let scale = try #require(ManualScale.make(for: .shutter, ranges: ranges))
+        let texts = scale.values.map { ReadoutFormatter.shutter($0) }
+        #expect(Set(texts).count == texts.count, "\(texts)")
+        #expect(texts.suffix(7) == ["1/4", "1/3", "0.4s", "0.5s", "0.6s", "0.8s", "1s"])
+    }
+
     @Test func formatting() {
-        #expect(ReadoutFormatter.shutter(1.0 / 60) == "1/60"); #expect(ReadoutFormatter.shutter(0.5) == "1/2"); #expect(ReadoutFormatter.shutter(2.5) == "2.5s")
+        #expect(ReadoutFormatter.shutter(1.0 / 60) == "1/60"); #expect(ReadoutFormatter.shutter(0.5) == "0.5s"); #expect(ReadoutFormatter.shutter(2.5) == "2.5s")
         #expect(ReadoutFormatter.shutter(nil) == "--"); #expect(ReadoutFormatter.iso(400.4) == "400")
         #expect(ReadoutFormatter.kelvin(5612) == "5600K"); #expect(ReadoutFormatter.kelvin(5630) == "5650K")
         #expect(ReadoutFormatter.tint(3.6) == "+4"); #expect(ReadoutFormatter.tint(-2.2) == "-2"); #expect(ReadoutFormatter.tint(0.3) == "0")

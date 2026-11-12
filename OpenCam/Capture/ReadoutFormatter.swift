@@ -4,10 +4,11 @@ import Foundation
 nonisolated enum ReadoutFormatter {
     static let missing = "--"
 
-    /// Under a second as a fraction ("1/60"), otherwise seconds ("2.5s", "2s").
+    /// Under 0.35 s as a fraction ("1/60"), otherwise seconds to at most one decimal ("0.4s", "1s", "2.5s"): a fraction rounded
+    /// that far up would read as a different time ("1/3" for 1/2.5 s).
     static func shutter(_ s: Double?) -> String {
         guard let s, s.isFinite, s > 0 else { return missing }
-        if s < 1 { return "1/\(Int((1 / s).rounded()))" }
+        if s < 0.35 { return "1/\(Int((1 / s).rounded()))" }
         let tenths = Int((s * 10).rounded())
         return tenths % 10 == 0 ? "\(tenths / 10)s" : "\(tenths / 10).\(tenths % 10)s"
     }
