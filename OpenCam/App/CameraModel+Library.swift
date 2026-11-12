@@ -17,6 +17,8 @@ extension CameraModel {
             show(Self.libraryUnavailableNotice, from: .library)
             return
         }
+        // The Library covers the camera: the slider closes and the controls return to automatic.
+        resetManual()
         isLibraryPresented = true
         releaseIfLibraryOpen()
     }

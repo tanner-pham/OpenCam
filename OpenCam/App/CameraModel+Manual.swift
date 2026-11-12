@@ -4,6 +4,8 @@ import Foundation
 /// session, raises the viewfinder blur, or saves.
 extension CameraModel {
     static let controlFailedNotice = "That setting could not be applied."
+    /// The device reports floats; a bias this close to the one applied is that one.
+    static let biasTolerance: Float = 0.01
 
     /// A configure that was requested but has not run yet; the session's ranges may belong to the camera before it.
     var isConfigurePending: Bool { requestedConfiguration != lastWorking?.configuration }
@@ -86,6 +88,36 @@ extension CameraModel {
         guard next != manual else { return }
         manual = next
         sendManual()
+    }
+
+    /// The camera is changing, or is not usable: the slider closes, the values return to automatic and are sent, and an apply
+    /// that began earlier changes nothing when it returns. Ranges are the new camera's to report on the next poll (the
+    /// Simulator's are simulated at once).
+    func resetManual() {
+        manualGeneration += 1
+        openControl = nil
+        appliedManual = .automatic
+        reappliesAllManual = false
+        if !seedSimulatedCamera() { manualRanges = nil }
+        guard manual != .automatic else { return }
+        manual = .automatic
+        sendManual()
+    }
+
+    /// After an interruption: the camera may have dropped what was set, so every group is sent again.
+    func reapplyAllManual() {
+        guard manual != .automatic else { return }
+        reappliesAllManual = true
+        sendManual()
+    }
+
+    /// The Camera Control writes the same device bias. While the app's own apply is not running, a live bias that is not the
+    /// one the app applied was set there: the app lets go of its own, so the readout shows the camera and a later re-apply
+    /// cannot write the app's stale bias over it.
+    func followCameraControlBias(live: Float?) {
+        guard let applied = appliedManual.bias, let live, abs(live - applied) > Self.biasTolerance else { return }
+        manual.bias = nil
+        appliedManual.bias = nil
     }
 
     /// Takes new ranges from the session. The open control closes when its scale is gone.

@@ -50,7 +50,7 @@ actor CameraSession: SessionConfigurator {
     /// True from the start of a ProRes RAW clip, which records with white balance locked, until `restoreWhiteBalance` runs.
     var isRAWClipRecording = false
     /// Held here because the session does not keep its controls delegate alive.
-    private let controlsDelegate = CameraControlsDelegate()
+    private let controlsDelegate: CameraControlsDelegate
     static let logger = Logger(subsystem: "local.opencam.app", category: "CameraSession")
 
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
@@ -75,6 +75,7 @@ actor CameraSession: SessionConfigurator {
         self.previewSource = PreviewSource(session: session, frames: frames)
         self.events = events
         self.continuation = continuation
+        self.controlsDelegate = CameraControlsDelegate(events: continuation)
         self.recordingResults = recordingResults
         self.recordingContinuation = recordingContinuation
         self.recorder = MovieRecorder(results: recordingContinuation)

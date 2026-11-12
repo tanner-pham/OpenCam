@@ -24,6 +24,7 @@ extension CameraModel: SweepDriver {
     /// The format summary's long press, in video mode.
     func openSweep() {
         guard mode == .video, canOpenRecordSettings else { return }
+        closeControl()
         sheet = .sweep
     }
 
@@ -41,6 +42,8 @@ extension CameraModel: SweepDriver {
     func runSweep(_ sweep: FormatSweep, lensID: String) async {
         let userRecord = record
         self.sweep = sweep
+        // The sweep drives its own formats: nothing set by hand carries into it.
+        resetManual()
         isSweeping = true
         await sweep.run()
         record = userRecord

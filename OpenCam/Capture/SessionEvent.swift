@@ -14,4 +14,6 @@ nonisolated enum SessionEvent: Sendable, Equatable {
     case framesUnavailable
     /// Everything before this in the stream belongs to a saved start that was released; the model ignores it.
     case savedStartReleased
+    /// The Camera Control's own sliders took the screen (`sessionControlsWillEnterFullscreenAppearance`); the app hides its own.
+    case systemControlsFullscreen
 }

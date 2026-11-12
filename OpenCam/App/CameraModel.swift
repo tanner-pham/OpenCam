@@ -16,7 +16,13 @@ final class CameraModel {
     var sheet: CameraSheet?
     /// True at launch when the screen is the Library or the Editor; the Library is a full-screen cover.
     var isLibraryPresented: Bool
-    var phase: CameraPhase
+    var phase: CameraPhase {
+        didSet {
+            // Leaving a working camera closes the slider and hands the values back; setting the phase it already has does nothing.
+            guard oldValue != phase, oldValue == .ready || oldValue == .simulator, !hasCamera else { return }
+            resetManual()
+        }
+    }
     var freeBytes: Int64
     /// Set only through `show(_:from:)` and cleared only through `clearNotice(from:)`, so each event clears only its own.
     private(set) var notice: String?
@@ -230,11 +236,7 @@ final class CameraModel {
         // A look the launch mode cannot take is None, with no notice.
         if !isLookOffered { self.cameraLook = nil }
         if isSimulator { simulate(config.simulatedState) }
-        if isSimulator, hasCamera {
-            readouts = SimulatedCamera.readouts(mode: mode, frameRate: record.frameRate)
-            manualRanges = SimulatedCamera.ranges(mode: mode, frameRate: record.frameRate)
-            if let control = config.openControl, scale(for: control) != nil { openControl = control }
-        }
+        if seedSimulatedCamera(), let control = config.openControl, scale(for: control) != nil { openControl = control }
         if isSimulator { simulatedConfiguration = sessionConfiguration }
         launchTimeline.mark("model")
     }
@@ -360,6 +362,8 @@ final class CameraModel {
 
     func openRecordSettings() {
         guard canOpenRecordSettings else { return }
+        // The sheet covers the slider; the values stay.
+        closeControl()
         sheet = .record
     }
 
@@ -594,10 +598,23 @@ final class CameraModel {
     private func simulateViewfinderChange() {
         guard isSimulator, let configuration = sessionConfiguration else { return }
         defer { simulatedConfiguration = configuration }
+        // The configuration changed, which on the device is a configure: the controls return to automatic.
+        if configuration != simulatedConfiguration { resetManual() }
         guard ViewfinderChange.pausesPicture(from: simulatedConfiguration, to: configuration) else { return }
         isViewfinderChanging = true
         viewfinderChangeCount += 1
         lowerViewfinderChange(after: ViewfinderChange.simulated, change: viewfinderChangeCount)
+    }
+
+    /// The Simulator's stand-in readouts and ranges for the current mode and frame rate, nil without a camera. False on the
+    /// device, which has neither.
+    @discardableResult
+    func seedSimulatedCamera() -> Bool {
+        guard isSimulator else { return false }
+        let hasSimulatedCamera = hasCamera
+        readouts = hasSimulatedCamera ? SimulatedCamera.readouts(mode: mode, frameRate: record.frameRate) : LiveReadouts()
+        manualRanges = hasSimulatedCamera ? SimulatedCamera.ranges(mode: mode, frameRate: record.frameRate) : nil
+        return hasSimulatedCamera
     }
 
     /// Called when a queued change's task ends, however it ends. Only the newest change lowers the flag, once it has settled.
@@ -673,6 +690,9 @@ final class CameraModel {
         viewfinderChangeCount += 1
         let change = viewfinderChangeCount
         viewfinderClearing?.cancel()
+        // Every configure returns the camera to automatic. The reset first, so the apply it sends is the latest the configure waits for.
+        resetManual()
+        let manualApply = manualApplyTask
         requestedConfiguration = configuration
         configureGeneration += 1
         let generation = configureGeneration
@@ -682,6 +702,8 @@ final class CameraModel {
         let task = Task { () -> CameraSessionError? in
             defer { finishViewfinderChange(change) }
             _ = await previous?.value
+            // The apply in flight (and the reset's) lands before the configure, never after it.
+            await manualApply?.value
             await Self.waitForAll(captures)
             guard generation == configureGeneration else { return nil }
             // Read before the configure and start, so an error handled while they are awaited still stops the confirmation.
@@ -863,10 +885,15 @@ extension CameraModel {
             adoptRanges(nil)
             return
         }
+        let applied = appliedManual
+        let wasApplying = !manualApplies.isIdle
         let latest = await configurator.currentReadouts()
         let ranges = await configurator.manualRanges()
         if latest != readouts { readouts = latest }
         adoptRanges(isConfigurePending ? nil : ranges)
+        if !canAdjustControls { closeControl() }
+        // A poll that began or ended during an apply may have read the camera before it landed.
+        if !wasApplying, manualApplies.isIdle, appliedManual == applied { followCameraControlBias(live: latest.exposureBias) }
     }
 
     /// The open slider's thumb crossed a detent; `feedback` is `private(set)`, so the count is made here.
@@ -922,6 +949,8 @@ extension CameraModel {
             isInterrupted = false
             clearNotice(from: .interruption)
             rewatchFrames()
+            // The camera may have dropped what was set while interrupted.
+            reapplyAllManual()
         case .runtimeError(let message) where Self.isMediaServicesReset(message):
             // Sets no notice; the phase says the camera stopped. The session restarts itself and `.restarted` follows, so no
             // pending confirmation may mark the camera ready and nothing here starts it meanwhile.
@@ -965,6 +994,9 @@ extension CameraModel {
             framesUnavailable()
         case .savedStartReleased:
             break
+        case .systemControlsFullscreen:
+            // The Camera Control's sliders have the screen; the app's own go, and the values stay.
+            closeControl()
         }
     }
 }
