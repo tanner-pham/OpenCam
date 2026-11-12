@@ -12,7 +12,7 @@ struct OpenCamApp: App {
     @State private var library: LibraryStore?
     /// Nil in the Simulator, which has no camera.
     @State private var session: CameraSession?
-    /// Nil on the device until a later change gives it one; the Audio section then shows nothing.
+    /// Drives the Audio section: simulated routes in the Simulator, the audio session on the device.
     @State private var audio: AudioModel?
     /// The Library's first read of the Captures folder, kept out of launch: it runs once, when the camera has started, when
     /// the Library is about to show, or a second after launch, whichever comes first.
@@ -48,8 +48,9 @@ struct OpenCamApp: App {
         let empty = CaptureCapabilities(lenses: [], videoOptions: [], photoOptions: [], osBuild: "", modelIdentifier: "")
         _model = State(initialValue: CameraModel(config: config, capabilities: empty, isSimulator: false, captureStore: captureStore,
                                                  isLibraryAvailable: library != nil, lookStore: looks))
-        _session = State(initialValue: CameraSession())
-        _audio = State(initialValue: nil)
+        let session = CameraSession()
+        _session = State(initialValue: session)
+        _audio = State(initialValue: AudioModel(device: SystemAudioDevice(capture: session)))
         #endif
     }
 
