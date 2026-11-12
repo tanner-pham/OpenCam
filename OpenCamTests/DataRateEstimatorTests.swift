@@ -6,10 +6,13 @@ import Testing
         VideoOption(lensID: "wide", codec: VideoCodec(family: f, quality: q, codecType: "x", bitrateTier: t), resolution: .named(width: w, height: h), frameRate: fps, colour: .rec709)
     }
     func mbps(_ o: VideoOption) -> Double { DataRateEstimator.megabitsPerSecond(for: o) }
-    @Test func proResScalesByPixelsAndFrameRate() {
-        #expect(abs(mbps(opt(.proRes, "422 HQ", nil, 1920, 1080, 30)) - 220.2202) < 0.001)
-        #expect(abs(mbps(opt(.proRes, "422 HQ", nil, 3840, 2160, 30)) - 880.8809) < 0.001)
-        #expect(abs(mbps(opt(.proRes, "422 Proxy", nil, 1920, 1080, 24)) - 36.0360) < 0.001)
+    @Test func proResUsesApplesTable() {
+        #expect(mbps(opt(.proRes, "422 HQ", nil, 1920, 1080, 30)) == 220)
+        #expect(mbps(opt(.proRes, "422 HQ", nil, 3840, 2160, 30)) == 884)
+        #expect(mbps(opt(.proRes, "422 HQ", nil, 1280, 720, 30)) == 110)
+        #expect(mbps(opt(.proRes, "422 Proxy", nil, 1920, 1080, 24)) == 36)
+        #expect(abs(mbps(opt(.proRes, "422 HQ", nil, 3840, 2160, 48)) - 1414.4) < 0.001)
+        #expect(abs(mbps(opt(.proRes, "422 HQ", nil, 1920, 1440, 30)) - 293.63) < 0.01)
     }
     @Test func hevcAndH264UseBitsPerPixel() {
         #expect(abs(mbps(opt(.hevc, "Max", .max, 3840, 2160, 30)) - 44.78976) < 0.0001)
@@ -18,10 +21,10 @@ import Testing
     }
     @Test func remainingTimeKeepsTheReserve() {
         let hq = opt(.proRes, "422 HQ", nil, 3840, 2160, 30)
-        #expect(abs(DataRateEstimator.gigabytesPerMinute(for: hq) - 6.6066) < 0.001)
-        #expect(DataRateEstimator.minutesRemaining(freeBytes: 141_000_000_000, option: hq) == 21)
+        #expect(abs(DataRateEstimator.gigabytesPerMinute(for: hq) - 6.63) < 0.001)
+        #expect(DataRateEstimator.minutesRemaining(freeBytes: 141_000_000_000, option: hq) == 20)
         #expect(DataRateEstimator.minutesRemaining(freeBytes: 1_500_000_000, option: hq) == 0)
-        #expect(DataRateEstimator.footer(for: hq, freeBytes: 141_000_000_000) == "About 881 Mb/s, 6.6 GB per minute. 21m left.")
+        #expect(DataRateEstimator.footer(for: hq, freeBytes: 141_000_000_000) == "About 884 Mb/s, 6.6 GB per minute. 20m left.")
         #expect(DataRateEstimator.isLowStorage(minutes: 4)); #expect(!DataRateEstimator.isLowStorage(minutes: 5))
     }
 
