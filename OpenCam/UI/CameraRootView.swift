@@ -41,7 +41,7 @@ struct CameraRootView: View {
                 .onCameraCaptureEvent { model.handleCaptureEvent(phase: $0.phase) }
         }
         .environment(\.isSliderForcedIntoPicture, isSliderForcedIntoPicture)
-        .onChange(of: scenePhase) { if scenePhase == .background { model.appEnteredBackground() } }
+        .onChange(of: scenePhase) { if scenePhase != .active { model.appStoppedBeingActive() } }
         // An import still running when the Library closed lands after the close read the last capture.
         .onChange(of: library?.importsFinished) { model.libraryImportFinished() }
         .fullScreenCover(isPresented: Binding(get: { model.isLibraryPresented && library != nil }, set: { model.isLibraryPresented = $0 }),

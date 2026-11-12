@@ -13,7 +13,9 @@ extension CameraModel {
 
     /// While a writer clip records, holds background time until its result arrives (or the time runs out), so the clip can be
     /// finished and saved. It never stops the clip: the session's interruption does, with `.interrupted`. One claim per clip.
-    func appEnteredBackground() {
+    /// Called as soon as the scene stops being active (`.inactive` or `.background`): a writer that is writing when the app enters
+    /// the background fails (AVAssetWriter.h), and SwiftUI reports `.background` only after that has happened.
+    func appStoppedBeingActive() {
         guard isRecording, recordingClip != nil, recorderPath == .writer, backgroundWork == nil else { return }
         backgroundWork = beginBackgroundWork("OpenCam clip")
     }
