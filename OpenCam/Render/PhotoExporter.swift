@@ -45,7 +45,10 @@ nonisolated struct PhotoExporter: Sendable {
         // found; `MaskImage` scales the mask up to the full picture.
         let subject: CIImage?
         if edit.masks.contains(where: { $0.shape.kind == .subject }) {
-            subject = await SubjectMasker.mask(for: SubjectMasker.searchImage(from: decoded, longSide: EditorModel.proxyLongSide))
+            switch await SubjectMasker.mask(for: SubjectMasker.searchImage(from: decoded, longSide: EditorModel.proxyLongSide)) {
+            case .found(let mask): subject = mask
+            case .notFound, .failed: subject = nil
+            }
         } else {
             subject = nil
         }

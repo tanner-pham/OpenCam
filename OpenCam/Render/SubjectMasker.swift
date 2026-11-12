@@ -4,6 +4,11 @@ import OSLog
 import Vision
 
 /// Finds the people and objects in the foreground of a photo with Vision's on-device segmentation.
+/// How a search for the subject ended: it found one, Vision found nothing in the picture, or the search itself failed.
+nonisolated enum SubjectSearch: Sendable {
+    case found(CIImage), notFound, failed
+}
+
 nonisolated enum SubjectMasker {
     private static let logger = Logger(subsystem: "local.opencam.app", category: "SubjectMasker")
 
@@ -17,24 +22,24 @@ nonisolated enum SubjectMasker {
         return image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
     }
 
-    /// A grayscale mask over `image.extent`, white on every foreground instance. Nil, with a log line, when Vision finds nothing
-    /// or fails; a subject mask then does nothing.
-    @concurrent static func mask(for image: CIImage) async -> CIImage? {
+    /// A grayscale mask over `image.extent`, white on every foreground instance. `.notFound` when Vision finds nothing and
+    /// `.failed` when it throws, each with a log line; a subject mask then does nothing.
+    @concurrent static func mask(for image: CIImage) async -> SubjectSearch {
         let handler = ImageRequestHandler(image)
         do {
             guard let observation = try await handler.perform(GenerateForegroundInstanceMaskRequest()),
                   !observation.allInstances.isEmpty else {
                 logger.info("[SubjectMasker:mask] Vision found no subject — {extent: \(image.extent.debugDescription, privacy: .public)}")
-                return nil
+                return .notFound
             }
             let buffer = try observation.generateScaledMask(for: observation.allInstances, scaledToImageFrom: handler)
-            return CIImage(cvPixelBuffer: buffer)
+            return .found(CIImage(cvPixelBuffer: buffer))
         } catch let error as VisionError {
             logger.error("[SubjectMasker:mask] Vision could not find the subject — {error: \(String(describing: error), privacy: .public)}")
-            return nil
+            return .failed
         } catch {
             logger.error("[SubjectMasker:mask] The subject could not be found — {error: \(error.localizedDescription, privacy: .public)}")
-            return nil
+            return .failed
         }
     }
 }

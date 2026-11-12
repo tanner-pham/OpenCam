@@ -28,7 +28,7 @@ import OSLog
     /// The preview render; `renderer.renderedCGImage` unless a test replaces it.
     private let renderPreview: @Sendable (CIImage, PhotoEdit, CIImage?) async -> CGImage?
     /// Finds the photo's subject on the proxy; `SubjectMasker.mask(for:)` unless a test replaces it.
-    private let findSubject: @Sendable (CIImage) async -> CIImage?
+    private let findSubject: @Sendable (CIImage) async -> SubjectSearch
     /// The histogram count; `PictureHistogram.make(from:)` unless a test replaces it.
     private let makeHistogram: @Sendable (CGImage) async -> PictureHistogram?
     /// The name of a look to apply, unsaved, once the photo has loaded (`-editorLook` for screenshots); nil for a tap.
@@ -141,7 +141,7 @@ import OSLog
     init(item: LibraryItem, edits: EditStore, looks: LookStore, group: EditorGroup = .light, renderer: LookRenderer = .shared,
          exporter: PhotoExporter = .appDefault(), renderPreview: (@Sendable (CIImage, PhotoEdit, CIImage?) async -> CGImage?)? = nil,
          makeHistogram: (@Sendable (CGImage) async -> PictureHistogram?)? = nil, launchLook: String? = nil,
-         findSubject: (@Sendable (CIImage) async -> CIImage?)? = nil, now: (@Sendable () -> Date)? = nil) {
+         findSubject: (@Sendable (CIImage) async -> SubjectSearch)? = nil, now: (@Sendable () -> Date)? = nil) {
         self.now = now ?? { Date() }
         self.item = item
         self.edits = edits
@@ -674,7 +674,7 @@ extension EditorModel {
 
 /// Where the search for the photo's subject stands.
 nonisolated enum SubjectState: Equatable, Sendable {
-    case notNeeded, finding, found, notFound
+    case notNeeded, finding, found, notFound, failed
 }
 
 extension EditorModel {
@@ -685,10 +685,17 @@ extension EditorModel {
         subjectState = .finding
         let find = findSubject
         subjectTask = Task {
-            let found = await find(proxy)
-            subject = found
-            subjectState = found == nil ? .notFound : .found
-            guard found != nil else { return }
+            switch await find(proxy) {
+            case .found(let mask):
+                subject = mask
+                subjectState = .found
+            case .notFound:
+                subjectState = .notFound
+                return
+            case .failed:
+                subjectState = .failed
+                return
+            }
             requestRender()
             requestMaskOverlay()
         }

@@ -112,6 +112,7 @@ struct MasksPanel: View {
         switch model.subjectState {
         case .finding: note("Finding the subject…")
         case .notFound: note("No subject was found in this photo.")
+        case .failed: note("Subject masks are not available on this device.")
         case .notNeeded, .found: EmptyView()
         }
     }
