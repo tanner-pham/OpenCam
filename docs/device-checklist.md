@@ -89,7 +89,36 @@ First make a look in the editor, such as "Warm fade".
 - [ ] Video with a look: shown while recording, absent from the clip, no dropped frames.
 - [ ] Battery and heat: ten minutes with a look against ten with None. Note both.
 
-## 8. Things to decide after holding it
+## 8. Manual controls
+
+Tap SHUTTER, ISO, EV, WB, TINT or FOCUS to open its slider. The folded phone shows it in the strip. The open phone shows it in a glass column at the edge of the picture. Everything is automatic at launch.
+
+- [ ] Shutter, ISO, EV, WB, tint and focus each change the picture and their readout when dragged.
+- [ ] Each slider moves to both ends on each of the five lenses with no crash.
+- [ ] Both front lenses offer no focus slider.
+- [ ] 24 fps video with the shutter at its slowest stops at 1/24. The clip's `.json` still reads 24 fps.
+- [ ] A video's frame rate in the clip's metadata (`mediainfo`) is unchanged after shutter and ISO were set by hand before the clip and during it.
+- [ ] Photo mode, shutter at 1 s, then at 1/60: the preview returns to full rate. Auto does the same.
+- [ ] A HEIF taken at a manual 1/1000 in a dim room is as dark as the viewfinder.
+- [ ] White balance set by hand before and during a ProRes RAW clip is still set after it.
+- [ ] Auto during a ProRes RAW clip changes nothing until the clip ends, then white balance is automatic.
+- [ ] While shutter or ISO is set by hand, EV reads `--`, is dimmed and does not open.
+- [ ] While shutter or ISO is set by hand, the Camera Control's EV is greyed out.
+- [ ] EV moved on the Camera Control shows in the app's EV readout.
+- [ ] A lens, mode or format change returns every readout to live values and closes the slider.
+- [ ] Background the app and return: the manual values are still set.
+- [ ] Quit the app after setting values by hand and launch it again: everything is automatic.
+- [ ] A drag gives a haptic tick at each step on the folded phone's strip.
+- [ ] Whether the step haptics are heard in a clip. Note it.
+- [ ] VoiceOver reads each slider in the strip as adjustable, and the Auto and close buttons by name.
+- [ ] With a slider open, bring up the Camera Control's full-screen controls: the app's slider closes.
+- [ ] Landscape photo shows the video readouts, so EV and FOCUS cannot be opened there. Decide whether it should show the photo readouts.
+- [ ] On the open phone, in portrait and landscape, video and photo, the column appears beside the strip when there is one, drags, and covers no readout, the format button or the shutter.
+- [ ] On the open phone, the column does not cover a camera notice.
+- [ ] On the open phone, tapping Lens or Mode with the column open closes it.
+- [ ] Whether `supportsExposureModeCustom(lensAperture:duration:iso:)` accepts a shutter with automatic ISO. Note the result for each lens.
+
+## 9. Things to decide after holding it
 
 - [ ] Where should the look's name live? The summary grows a line: a four-line pill in vertical video, and the open phone's photo picture shrinks a few points.
 - [ ] Do the folded phone's bottom controls sit too close to the home indicator? They reach into the 34 pt bottom inset by design (`isFoldedDisplay` in `CameraLayout.barInsets`).
