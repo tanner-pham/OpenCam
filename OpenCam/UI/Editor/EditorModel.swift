@@ -427,6 +427,13 @@ extension EditorModel {
         history.breakStep()
     }
 
+    /// Flips the selected mask's Invert as a step of its own, so it never merges into a slider move just before or after it.
+    func toggleSelectedMaskInverted() {
+        history.breakStep()
+        updateSelectedMask { $0.isInverted.toggle() }
+        history.breakStep()
+    }
+
     /// Changes the selected mask in one write to `masks`, so a drag renders once per move and coalesces like any slider.
     func updateSelectedMask(_ change: (inout LocalMask) -> Void) {
         guard let index = masks.firstIndex(where: { $0.id == selectedMaskID }) else { return }

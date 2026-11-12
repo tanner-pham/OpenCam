@@ -88,7 +88,7 @@ struct MasksPanel: View {
 
     @ViewBuilder
     private var actionButtons: some View {
-        toggleButton("Invert", isOn: model.selectedMask?.isInverted ?? false) { model.updateSelectedMask { $0.isInverted.toggle() } }
+        toggleButton("Invert", isOn: model.selectedMask?.isInverted ?? false) { model.toggleSelectedMaskInverted() }
         toggleButton("Show mask", isOn: model.isShowingMaskOverlay) { model.isShowingMaskOverlay.toggle() }
         Button(role: .destructive) { model.deleteSelectedMask() } label: {
             actionLabel("Delete")

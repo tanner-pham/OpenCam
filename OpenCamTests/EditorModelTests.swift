@@ -203,6 +203,17 @@ import Testing
         let look = try model.saveAsLook(named: "Mine")
         #expect(look.adjustments == model.adjustments); #expect(look.adjustments.exposure == 1); #expect(model.masks.count == 1)
     }
+    @Test func invertRightAfterASliderMoveIsItsOwnStep() async throws {
+        let clock = TestClock()
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })
+        model.addMask(.linear); clock.advance(0.1)
+        model.updateSelectedMask { $0.adjustments[.exposure] = 1 }; clock.advance(0.1)
+        model.toggleSelectedMaskInverted()
+        #expect(model.selectedMask?.isInverted == true)
+        model.undo()
+        #expect(model.selectedMask?.isInverted == false); #expect(model.selectedMask?.adjustments[.exposure] == 1)
+        model.undo(); #expect(model.selectedMask?.adjustments[.exposure] == 0)
+    }
     @Test func deletingAMaskIsOneUndoStep() async throws {
         let clock = TestClock()
         let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })
