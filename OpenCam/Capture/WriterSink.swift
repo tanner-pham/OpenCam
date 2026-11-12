@@ -99,7 +99,7 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
         // most the frame in hand is held; a late frame is refused in the first step, before it costs a render.
         guard let job = writerQueue.sync(execute: { routeVideo(sampleBuffer, arrival: arrival) }) else { return }
         let rendered = CMSampleBufferGetImageBuffer(sampleBuffer).flatMap { job.render.render($0) }
-        writerQueue.sync { receiveRendered(rendered, pts: job.pts, duration: job.duration) }
+        writerQueue.sync { receiveRendered(rendered, pts: job.pts, duration: job.duration, generation: job.generation) }
     }
 
     /// What the video queue renders: the render stage of this clip and the frame's times.
@@ -107,6 +107,8 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
         let render: RecordingRender
         let pts: CMTime
         let duration: CMTime
+        /// The clip the frame belongs to; a render that outlives its clip hands the frame back to a later one.
+        let generation: Int
     }
 
     /// Inside the writer queue. A clip that does not bake takes the frame here, whole; one that does admits it and hands back the
@@ -118,7 +120,7 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
         }
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         let duration = normalisedDuration(CMSampleBufferGetDuration(sampleBuffer))
-        return admitVideo(pts: pts, duration: duration, arrival: arrival) ? RenderJob(render: render, pts: pts, duration: duration) : nil
+        return admitVideo(pts: pts, duration: duration, arrival: arrival) ? RenderJob(render: render, pts: pts, duration: duration, generation: generation.value.withLock { $0 }) : nil
     }
 
     func captureOutput(_ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
@@ -282,8 +284,11 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
 
     /// Step three: appends the rendered frame through the adaptor. A frame that did not render (nil) is a counted `renderFailed`
     /// drop, and so is a writer that stopped being ready while it rendered; either can end the clip under "Stop recording".
-    func receiveRendered(_ buffer: CVPixelBuffer?, pts: CMTime, duration: CMTime) {
+    /// `generation` is the clip the frame was admitted for (nil: the current one); a frame of an earlier clip is dropped, and is not
+    /// counted against the current one.
+    func receiveRendered(_ buffer: CVPixelBuffer?, pts: CMTime, duration: CMTime, generation clip: Int? = nil) {
         guard phase == .recording else { return }
+        if let clip, clip != generation.value.withLock({ $0 }) { return }
         let arrival = ContinuousClock.now - origin
         if endIfWriterStopped() { return }
         let io: any WriterAppending = self
@@ -360,6 +365,9 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
         generation.value.withLock { $0 += 1 }
         return report
     }
+
+    /// The clip counter, for tests. Read inside the writer queue.
+    var currentGeneration: Int { generation.value.withLock { $0 } }
 
     /// True from `open` until the report is taken.
     var isInFlight: Bool { phase != .idle }
