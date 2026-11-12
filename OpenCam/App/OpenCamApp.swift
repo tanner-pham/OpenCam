@@ -18,6 +18,9 @@ struct OpenCamApp: App {
     /// The fallback look renderer warm-up, once the camera has started (or could not).
     @State private var rendererWarmUp = RunOnce()
     private static let libraryLoadDeadline = Duration.seconds(1)
+    /// `-recorderCheck`: the hidden diagnostic launch.
+    private static let isRecorderCheck = ProcessInfo.processInfo.arguments.contains("-recorderCheck")
+    @State private var isRecorderCheckFinished = false
 
     init() {
         let config = LaunchConfig.parse(ProcessInfo.processInfo.arguments)
@@ -52,7 +55,9 @@ struct OpenCamApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if let model {
+                if Self.isRecorderCheck {
+                    RecorderCheckView(isFinished: isRecorderCheckFinished)
+                } else if let model {
                     CameraRootView(model: model, library: library, launch: config)
                 } else {
                     Color.black
@@ -81,6 +86,13 @@ struct OpenCamApp: App {
             }
             .task {
                 guard let model, let session else { return }
+                // Diagnostic launch: the check needs the cameras to itself, so the camera is not started. This runs before
+                // `model.start`, the only place a saved start begins, so none has begun.
+                if Self.isRecorderCheck {
+                    await RecorderCheck.runAndWrite()
+                    isRecorderCheckFinished = true
+                    return
+                }
                 // The preview layer joins the session before it starts. Photo and file outputs defer their start by default
                 // (AVCaptureOutputBase.h) while a preview layer does not, and "every output having the same value is
                 // equivalent to not using deferred start" (AVCaptureVideoPreviewLayer.h). `CameraPreviewView` gets this view later.
