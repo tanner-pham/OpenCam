@@ -3,9 +3,14 @@ import Foundation
 import Testing
 @testable import OpenCam
 
-@Suite struct ManualSessionTests {
+@MainActor @Suite struct ManualSessionTests {
     private let full = ManualRanges(shutterSeconds: (1.0 / 8000)...(1.0 / 3), iso: 34...6400, bias: -2...2, hasWhiteBalance: true, hasFocus: true)
     private let live = LiveReadouts()
+
+    private func configuration() throws -> SessionConfiguration {
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
+        return try #require(model.sessionConfiguration)
+    }
 
     private func make(_ settings: ManualSettings, applied: ManualSettings? = .automatic, limits: ManualRanges? = nil,
                       isRAWClipRecording: Bool = false) throws(ManualControlError) -> ManualApplyPlan {
@@ -170,39 +175,75 @@ import Testing
                 == "[CameraSession:applyManual] Control not supported by this camera — {control: focus, lens: front}")
     }
 
-    @Test func theFakeRecordsEachApplyAndClampsLikeTheSession() async throws {
+    @Test func theFakeAndThePlanAgree() async throws {
         let fake = FakeSessionConfigurator(failingLensIDs: [])
-        await fake.setRanges(full)
-        await fake.setReadouts(LiveReadouts(iso: 200))
-        #expect(await fake.manualRanges() == full)
-        #expect(await fake.currentReadouts() == LiveReadouts(iso: 200))
-        var settings = ManualSettings()
-        settings.exposure = .manual(shutterSeconds: 9, iso: 90_000)
-        settings.focus = 3
-        let result = try await fake.applyManual(settings, reapplyingAll: false)
-        #expect(result == full.clamped(settings))
-        #expect(result.focus == 1)
-        _ = try await fake.applyManual(.automatic, reapplyingAll: true)
+        let limits = FakeSessionConfigurator.defaultRanges
+        #expect(await fake.manualRanges() == limits)
+        // An ISO above the range.
+        var high = ManualSettings()
+        high.exposure = .manual(shutterSeconds: 9, iso: 90_000)
+        let expected = try ManualApplyPlan.make(high, applied: nil, limits: limits, lens: "fake", isRAWClipRecording: false).applied
+        #expect(try await fake.applyManual(high, reapplyingAll: false) == expected)
+        #expect(expected.exposure == .manual(shutterSeconds: 1.0 / 3, iso: 6400))
+        // A bias sent while exposure is manual is held, not applied.
+        var biased = high
+        biased.bias = 1
+        let held = try ManualApplyPlan.make(biased, applied: expected, limits: limits, lens: "fake", isRAWClipRecording: false).applied
+        #expect(try await fake.applyManual(biased, reapplyingAll: false) == held)
+        #expect(held.bias == nil)
+        // A control the camera lacks throws what the plan throws.
+        var noFocus = limits
+        noFocus.hasFocus = false
+        await fake.setRanges(noFocus)
+        var focus = ManualSettings()
+        focus.focus = 0.4
+        await #expect(throws: ManualControlError.notSupported(control: "focus", lens: "fake")) { try await fake.applyManual(focus, reapplyingAll: false) }
         let applies = await fake.manualApplies
-        #expect(applies.map(\.settings) == [settings, .automatic])
-        #expect(applies.map(\.reapplyingAll) == [false, true])
-        #expect(await fake.calls == ["manual", "manual"])
-        await fake.setManualError(.noCamera)
+        #expect(applies.map(\.settings) == [high, biased, focus])
+        #expect(await fake.calls == ["manual", "manual done", "manual", "manual done", "manual", "manual done"])
+    }
+
+    @Test func theFakeRefusesWhereTheSessionWould() async throws {
+        let fake = FakeSessionConfigurator(failingLensIDs: [])
+        await fake.setReadouts(LiveReadouts(iso: 200))
+        #expect(await fake.currentReadouts() == LiveReadouts(iso: 200))
+        await fake.releaseCameras()
+        #expect(await fake.currentReadouts() == LiveReadouts())
+        #expect(await fake.manualRanges() == nil)
         await #expect(throws: ManualControlError.noCamera) { try await fake.applyManual(.automatic, reapplyingAll: false) }
-        await fake.setManualError(nil)
+        #expect(await fake.manualApplies.count == 1)
+        // Configured but not yet started: still stopped.
+        try await fake.configure(try configuration())
+        #expect(await fake.manualRanges() == nil)
+        await fake.start()
+        #expect(await fake.manualRanges() == FakeSessionConfigurator.defaultRanges)
+        // No ranges: no camera to adjust.
         await fake.setRanges(nil)
         #expect(await fake.manualRanges() == nil)
+        await #expect(throws: ManualControlError.noCamera) { try await fake.applyManual(.automatic, reapplyingAll: false) }
+    }
+
+    @Test func aConfigureReturnsTheFakeToAutomaticSoTheNextApplySetsEverything() async throws {
+        let fake = FakeSessionConfigurator(failingLensIDs: [])
+        var focus = ManualSettings()
+        focus.focus = 0.4
+        _ = try await fake.applyManual(focus, reapplyingAll: false)
+        #expect(await fake.appliedManual == focus)
+        try await fake.configure(try configuration())
+        #expect(await fake.appliedManual == nil)
     }
 
     @Test func aHeldApplyWaitsUntilItIsResumed() async throws {
         let fake = FakeSessionConfigurator(failingLensIDs: [])
-        await fake.setRanges(full)
         await fake.holdManual()
         let pending = Task { try await fake.applyManual(.automatic, reapplyingAll: false) }
         for _ in 0..<200 where await fake.manualApplies.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
         #expect(await fake.manualApplies.count == 1)
+        // Recorded at entry, but not finished: the held apply has not returned.
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(await fake.calls == ["manual"])
         await fake.resumeManual()
         _ = try await pending.value
-        #expect(await fake.manualApplies.count == 1)
+        #expect(await fake.calls == ["manual", "manual done"])
     }
 }

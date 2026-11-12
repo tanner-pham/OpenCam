@@ -199,7 +199,7 @@ import Testing
         await rig.model.manualApplyTask?.value
         #expect(!rig.model.isViewfinderChanging)
         #expect(await rig.fake.applied.isEmpty)
-        #expect(await rig.fake.calls.allSatisfy { $0 == "manual" })
+        #expect(await rig.fake.calls.allSatisfy { $0 == "manual" || $0 == "manual done" })
         #expect(SavedSelections.load(from: rig.defaults) == saved)
         let fresh = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: false, defaults: rig.defaults)
         #expect(fresh.manual == .automatic)
