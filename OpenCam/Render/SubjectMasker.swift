@@ -7,6 +7,16 @@ import Vision
 nonisolated enum SubjectMasker {
     private static let logger = Logger(subsystem: "local.opencam.app", category: "SubjectMasker")
 
+    /// `image` scaled down so its long side is `longSide`, as the editor's preview proxy is; an image already that small is
+    /// returned as it is. The subject search runs on this, so it never holds a full-resolution mask buffer, and the mask
+    /// that comes back is scaled to the picture by `MaskImage`, as in the preview.
+    static func searchImage(from image: CIImage, longSide: Int) -> CIImage {
+        let long = max(image.extent.width, image.extent.height)
+        guard long > CGFloat(longSide), long.isFinite else { return image }
+        let scale = CGFloat(longSide) / long
+        return image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+    }
+
     /// A grayscale mask over `image.extent`, white on every foreground instance. Nil, with a log line, when Vision finds nothing
     /// or fails; a subject mask then does nothing.
     @concurrent static func mask(for image: CIImage) async -> CIImage? {

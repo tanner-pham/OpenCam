@@ -41,8 +41,14 @@ nonisolated struct PhotoExporter: Sendable {
         let format = ExportFormat.of(source)
         let name = edit.adjustments.isIdentity && edit.masks.isEmpty ? item.stem : "\(item.stem)-edited"
         let url = directory.appending(path: "\(name).\(format.rawValue)", directoryHint: .notDirectory)
-        // Vision runs on the full-size picture only when a subject mask needs it.
-        let subject = edit.masks.contains(where: { $0.shape.kind == .subject }) ? await SubjectMasker.mask(for: decoded) : nil
+        // Vision runs only when a subject mask needs it, on the preview's proxy size so the export finds what the preview
+        // found; `MaskImage` scales the mask up to the full picture.
+        let subject: CIImage?
+        if edit.masks.contains(where: { $0.shape.kind == .subject }) {
+            subject = await SubjectMasker.mask(for: SubjectMasker.searchImage(from: decoded, longSide: EditorModel.proxyLongSide))
+        } else {
+            subject = nil
+        }
         let rendered = renderer.render(decoded, edit: edit, subject: subject)
         // Core Image would otherwise write the decoded image's properties as they are, including the original's pixel
         // dimensions and subject area; the export's metadata is chosen here instead.

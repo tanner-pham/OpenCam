@@ -26,6 +26,14 @@ import Testing
         return worst
     }
 
+    @Test func theSubjectSearchRunsAtProxySize() throws {
+        let big = CIImage(color: .gray).cropped(to: CGRect(x: 0, y: 0, width: 8000, height: 6000))
+        let scaled = SubjectMasker.searchImage(from: big, longSide: 2048)
+        #expect(abs(scaled.extent.width - 2048) < 1); #expect(abs(scaled.extent.height - 1536) < 1)
+        let small = CIImage(color: .gray).cropped(to: CGRect(x: 0, y: 0, width: 1000, height: 500))
+        #expect(SubjectMasker.searchImage(from: small, longSide: 2048).extent == small.extent)
+    }
+
     @Test func linearMaskBrightensFromStartToEnd() throws {
         let base = try grey()
         let shape = MaskShape.linear(start: MaskPoint(x: 0.5, y: 0), end: MaskPoint(x: 0.5, y: 0.5))

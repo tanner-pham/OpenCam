@@ -7,7 +7,7 @@ import OSLog
 /// One photo being edited: its saved edit, a screen-sized proxy of the original, and the preview rendered from that proxy.
 /// The original file is never rendered here and never rewritten; Done writes the edit beside it.
 @MainActor @Observable final class EditorModel {
-    static let proxyLongSide = 2048
+    nonisolated static let proxyLongSide = 2048
     private static let logger = Logger(subsystem: "local.opencam.app", category: "EditorModel")
 
     let item: LibraryItem
