@@ -2,7 +2,7 @@ import SwiftUI
 
 /// A row of system buttons, one per option with its full title, scrolling sideways when it is wider than the space; the
 /// selected one is filled. A drag that starts on a button scrolls the row (a segmented control would keep it), and the
-/// selection is kept in view. It reads as one control named `title`.
+/// selection is kept in view, centred where the row can scroll that far. It reads as one control named `title`.
 struct ScrollingPicker<Value: Hashable>: View {
     let title: String
     @Binding var selection: Value
@@ -32,9 +32,14 @@ struct ScrollingPicker<Value: Hashable>: View {
             .mask { Rectangle().padding(.vertical, -Theme.Space.l) }
             // The opening offset only: the end that holds the selection.
             .defaultScrollAnchor(isSelectionInLastHalf ? .trailing : .leading, for: .initialOffset)
-            .onAppear { proxy.scrollTo(selection) }
-            .onChange(of: selection) { _, chosen in
-                withAnimation { proxy.scrollTo(chosen) }
+            // Centred, so the selection never stops flush against or cut by the row's edge, as the least scroll would leave it.
+            .onAppear { centreSelection(proxy) }
+            // The scroll view keeps its offset when its width or its safe-area insets change (the editor settling beside the
+            // system strip, or turning), which left the selection, or the last groups, out of view.
+            .onScrollGeometryChange(for: CGSize.self, of: \.containerSize) { _, _ in centreSelection(proxy) }
+            .onScrollGeometryChange(for: EdgeInsets.self, of: \.contentInsets) { _, _ in centreSelection(proxy) }
+            .onChange(of: selection) { _, _ in
+                withAnimation { centreSelection(proxy) }
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -61,6 +66,10 @@ struct ScrollingPicker<Value: Hashable>: View {
     }
 
     private static var unselectedFill: Double { 0.18 }
+
+    private func centreSelection(_ proxy: ScrollViewProxy) {
+        proxy.scrollTo(selection, anchor: .center)
+    }
 
     private var isSelectionInLastHalf: Bool {
         guard let index = options.firstIndex(of: selection) else { return false }
