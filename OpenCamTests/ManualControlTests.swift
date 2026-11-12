@@ -210,6 +210,17 @@ import Testing
         #expect(rig.model.readout(for: .bias).accessibilityValue == "Not available while exposure is manual")
     }
 
+    @Test func aFailedApplyDoesNotCoverACaptureNotice() async throws {
+        let rig = try await rig()
+        rig.model.show("Photo not saved.", from: .capture)
+        await rig.fake.setManualError(.lockFailed(reason: "busy"))
+        rig.model.setControl(.focus, step: 30)
+        await rig.model.manualApplyTask?.value
+        #expect(rig.model.manual == .automatic)
+        #expect(rig.model.notice == "Photo not saved.")
+        #expect(rig.model.noticeSource == .capture)
+    }
+
     @Test func noCameraReturnsQuietly() async throws {
         let rig = try await rig()
         await rig.fake.setManualError(.noCamera)

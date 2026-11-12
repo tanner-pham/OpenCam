@@ -189,6 +189,7 @@ extension CameraModel {
         }
         guard generation == manualGeneration else { return }
         if manual == sent { manual = appliedManual }
-        if error != .noCamera { show(Self.controlFailedNotice, from: .control) }
+        // A capture result is not covered, as with an interruption.
+        if error != .noCamera, noticeSource != .capture { show(Self.controlFailedNotice, from: .control) }
     }
 }
