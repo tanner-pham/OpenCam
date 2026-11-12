@@ -46,4 +46,12 @@ import Testing
         history.record(edit(3), at: t0 + 0.1)
         #expect(history.canUndo)
     }
+    @Test func breakStepStartsANewStepInsideTheWindow() {
+        var history = EditHistory()
+        history.record(edit(1), at: t0)
+        history.breakStep()
+        history.record(edit(2), at: t0 + 0.1)
+        #expect(history.undo(from: edit(3)) == edit(2))
+        #expect(history.undo(from: edit(2)) == edit(1))
+    }
 }

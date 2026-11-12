@@ -240,8 +240,10 @@ import OSLog
 
     /// Also clears the look.
     func resetAll() {
+        history.breakStep()
         adjustments = Adjustments()
         lookName = nil
+        history.breakStep()
     }
 
     /// Writes the edit beside the original (an empty edit removes the file). False, with the phase saying why, when the photo is
@@ -332,14 +334,19 @@ extension EditorModel {
     /// An edit like any other: copies the look's values and name into the edit, which renders through the preview path.
     /// Nil clears the edit and the look.
     func applyLook(_ look: Look?) {
+        history.breakStep()
         adjustments = look?.adjustments ?? Adjustments()
         lookName = look?.name
+        history.breakStep()
     }
 
     /// Saves the current values as a new look, which the edit then names as its look.
     func saveAsLook(named name: String) throws(LookStoreError) -> Look {
         let look = try lookStore.save(name: name, adjustments: adjustments)
+        // Naming the edit changes no picture, so it is not an undo step.
+        isRestoring = true
         lookName = look.name
+        isRestoring = false
         refreshLooks()
         return look
     }

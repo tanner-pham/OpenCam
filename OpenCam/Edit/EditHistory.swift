@@ -38,6 +38,9 @@ nonisolated struct EditHistory: Sendable {
         return next
     }
 
+    /// Ends the current step, so the next change is a step of its own however soon it follows.
+    mutating func breakStep() { lastRecorded = nil }
+
     mutating func clear() {
         undoSteps.removeAll()
         redoSteps.removeAll()

@@ -113,6 +113,31 @@ import Testing
         #expect(model.lookName == "Warm")
         model.undo(); #expect(model.adjustments.isIdentity); #expect(model.lookName == nil); #expect(!model.canUndo)
     }
+    @Test func resetAllIsOneUndoStep() async throws {
+        let clock = TestClock()
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })
+        model.adjustments.exposure = 10; clock.advance(0.1)
+        model.resetAll(); clock.advance(0.1)
+        #expect(model.adjustments.isIdentity)
+        model.undo(); #expect(model.adjustments.exposure == 10)
+        model.undo(); #expect(model.adjustments.exposure == 0); #expect(!model.canUndo)
+    }
+    @Test func aLookTappedRightAfterADragIsItsOwnStep() async throws {
+        let clock = TestClock()
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })
+        model.adjustments.exposure = 10; clock.advance(0.1); model.adjustments.exposure = 20; clock.advance(0.2)
+        model.applyLook(Look(id: UUID(), name: "Warm", adjustments: Adjustments().setting(.contrast, to: 20), createdAt: Date()))
+        model.undo(); #expect(model.adjustments.exposure == 20); #expect(model.adjustments.contrast == 0); #expect(model.lookName == nil)
+        model.undo(); #expect(model.adjustments.exposure == 0); #expect(!model.canUndo)
+    }
+    @Test func savingALookIsNotAnUndoStep() async throws {
+        let clock = TestClock()
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })
+        model.adjustments.exposure = 10; clock.advance(2)
+        _ = try model.saveAsLook(named: "Mine")
+        #expect(model.lookName == "Mine")
+        model.undo(); #expect(model.adjustments.exposure == 0); #expect(!model.canUndo)
+    }
 }
 
 nonisolated final class TestClock: @unchecked Sendable {
