@@ -8,8 +8,6 @@ struct PhotoInfoLine: View {
     static let height: CGFloat = 36
 
     @State private var isShowingInfo = false
-    /// The list's content plus the bar and bottom inset above and below it, as the list reports it; 0 until it has.
-    @State private var listHeight: CGFloat = 0
 
     var body: some View {
         Button { isShowingInfo = true } label: {
@@ -27,24 +25,18 @@ struct PhotoInfoLine: View {
         .frame(height: Self.height)
         .accessibilityLabel("Photo info")
         .accessibilityValue(facts.summary(designation))
-        .popover(isPresented: $isShowingInfo) { info }
+        .sheet(isPresented: $isShowingInfo) { info }
     }
 
-    /// Sized from the list's own scroll geometry, so the title and every row fit at any text size. The popover caps the
-    /// height to the space it has, and the list scrolls when the content is taller.
+    /// A full-height sheet: the medium detent cut off the last row on the folded display, and a popover has even less room: a popover opens below the line and has too little room for seven rows and a title.
     private var info: some View {
-        let rows = facts.rows(designation)
-        return NavigationStack {
-            List(rows, id: \.title) { row in
+        NavigationStack {
+            List(facts.rows(designation), id: \.title) { row in
                 LabeledContent(row.title, value: row.value)
-            }
-            .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height + $0.contentInsets.top + $0.contentInsets.bottom } action: { _, height in
-                listHeight = height
             }
             .navigationTitle("Photo info")
             .navigationBarTitleDisplayMode(.inline)
         }
-        .frame(width: 320, height: listHeight > 0 ? listHeight : CGFloat(rows.count) * Theme.Size.minTarget + 120)
-        .presentationCompactAdaptation(.popover)
+        .presentationDetents([.large])
     }
 }
