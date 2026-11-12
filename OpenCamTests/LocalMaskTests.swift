@@ -34,7 +34,7 @@ import Testing
 
     @Test func anEditWithoutMasksWritesNoMasksKey() throws {
         let plain = try jsonObject(PhotoEdit(adjustments: Adjustments().setting(.exposure, to: 1), lookName: "Warm fade"))
-        #expect(plain["masks"] == nil); #expect(plain["lookName"] as? String == "Warm fade"); #expect(plain["version"] as? Int == PhotoEdit.currentVersion); #expect(plain["adjustments"] != nil)
+        #expect(plain["masks"] == nil); #expect(plain["lookName"] as? String == "Warm fade"); #expect(plain["version"] as? Int == PhotoEdit.versionWithoutMasks); #expect(plain["adjustments"] != nil)
         #expect(try jsonObject(PhotoEdit(masks: [LocalMask(shape: .subject)]))["masks"] != nil)
     }
 
@@ -44,6 +44,16 @@ import Testing
         #expect(PhotoEdit.currentVersion == 3)
         #expect(try JSONDecoder().decode(EditFileVersion.self, from: Data(contentsOf: store.url(forStem: "OC_0001"))).version == 3)
         #expect(try store.load(stem: "OC_0001").masks.count == 1)
+    }
+
+    @Test func anEditWithoutMasksSavesAsVersionTwo() throws {
+        let dir = try TestFiles.directory(), store = EditStore(directory: dir), url = store.url(forStem: "OC_0001")
+        func stored() throws -> Int? { try JSONDecoder().decode(EditFileVersion.self, from: Data(contentsOf: url)).version }
+        var edit = PhotoEdit(adjustments: Adjustments().setting(.exposure, to: 1), lookName: "Warm fade", masks: [LocalMask(shape: .subject)])
+        try store.save(edit, stem: "OC_0001"); #expect(try stored() == 3)
+        edit.masks = []; try store.save(edit, stem: "OC_0001"); #expect(try stored() == 2)
+        let reloaded = try store.load(stem: "OC_0001")
+        #expect(reloaded.adjustments == edit.adjustments); #expect(reloaded.lookName == "Warm fade"); #expect(reloaded.masks == [])
     }
 
     @Test func maskKindTitlesAndDefaults() {

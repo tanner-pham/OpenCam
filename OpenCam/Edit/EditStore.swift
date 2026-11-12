@@ -37,10 +37,10 @@ nonisolated struct EditStore: Sendable {
         if edit.isIdentity { return try remove(stem: stem) }
         let url = url(forStem: stem)
         if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) { try refuseUnwritable(url) }
-        // Every write is current, whatever version the edit was loaded with: a build that predates the current tools must
-        // see the file as newer and open it read-only instead of dropping their values on its next save.
+        // Every write stamps the version the edit needs, whatever it was loaded with: a build that cannot read part of it
+        // must see the file as newer and open it read-only instead of dropping those values on its next save.
         var stamped = edit
-        stamped.version = PhotoEdit.currentVersion
+        stamped.version = edit.savedVersion
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {

@@ -54,10 +54,10 @@ import Testing
         #expect(CaptureStore.nextSequence(existingNames: ["OC_0001.HEIC", "OC_0009.edit.json"]) == 10)
     }
 
-    @Test func resavingAnOldEditStampsTheCurrentVersion() throws {   // Review Focus 1
+    @Test func resavingAnOldEditStampsANewerVersion() throws {   // Review Focus 1
         let dir = try TestFiles.directory(), store = EditStore(directory: dir); #expect(PhotoEdit.currentVersion == 3)
         for (stem, json) in [("OC_0006", #"{"version": 1, "adjustments": {"exposure": 1}}"#), ("OC_0007", #"{"adjustments": {"exposure": 1}}"#)] {
             let url = dir.appending(path: "\(stem).edit.json"); try Data(json.utf8).write(to: url); var edit = try store.load(stem: stem)
             #expect(edit.version == 1); #expect(edit.adjustments == Adjustments().setting(.exposure, to: 1))
-            edit.adjustments.exposure = 2; try store.save(edit, stem: stem); #expect(try JSONDecoder().decode(EditFileVersion.self, from: Data(contentsOf: url)).version == PhotoEdit.currentVersion); #expect(try store.load(stem: stem).version == PhotoEdit.currentVersion) } }
+            edit.adjustments.exposure = 2; try store.save(edit, stem: stem); #expect(try JSONDecoder().decode(EditFileVersion.self, from: Data(contentsOf: url)).version == PhotoEdit.versionWithoutMasks); #expect(try store.load(stem: stem).version == PhotoEdit.versionWithoutMasks) } }
 }
