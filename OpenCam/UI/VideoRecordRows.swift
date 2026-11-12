@@ -34,6 +34,7 @@ struct VideoRecordRows: View {
                         .font(.footnote)
                         .foregroundStyle(Theme.recordRed)
                 }
+                AudioSection(columns: verticalSizeClass == .compact ? 5 : 3)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, verticalSizeClass == .compact ? 0 : Theme.Space.l)

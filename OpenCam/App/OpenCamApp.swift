@@ -12,6 +12,8 @@ struct OpenCamApp: App {
     @State private var library: LibraryStore?
     /// Nil in the Simulator, which has no camera.
     @State private var session: CameraSession?
+    /// Nil on the device until a later change gives it one; the Audio section then shows nothing.
+    @State private var audio: AudioModel?
     /// The Library's first read of the Captures folder, kept out of launch: it runs once, when the camera has started, when
     /// the Library is about to show, or a second after launch, whichever comes first.
     @State private var libraryLoad = RunOnce()
@@ -40,12 +42,14 @@ struct OpenCamApp: App {
             _model = State(initialValue: nil)
         }
         _session = State(initialValue: nil)
+        _audio = State(initialValue: AudioModel(device: SimulatedAudioDevice(config: config)))
         #else
         // On the device nothing is known until the scan or the cache provides it.
         let empty = CaptureCapabilities(lenses: [], videoOptions: [], photoOptions: [], osBuild: "", modelIdentifier: "")
         _model = State(initialValue: CameraModel(config: config, capabilities: empty, isSimulator: false, captureStore: captureStore,
                                                  isLibraryAvailable: library != nil, lookStore: looks))
         _session = State(initialValue: CameraSession())
+        _audio = State(initialValue: nil)
         #endif
     }
 
@@ -62,6 +66,8 @@ struct OpenCamApp: App {
             }
             .preferredColorScheme(.dark)
             .environment(\.previewSource, session?.previewSource)
+            .environment(audio)
+            .modifier(AudioLifecycle(model: model, audio: audio))
             .task { forceOrientation() }
             // Nothing the first camera frame does not need runs before it. The Library's first read of the Captures folder
             // waits until the camera has started (or could not), the Library is about to show, or a second has passed. The look
