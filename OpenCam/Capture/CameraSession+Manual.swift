@@ -43,7 +43,47 @@ extension CameraSession {
             setFocus(focus, on: device)
         }
         appliedManual = plan.applied
+        if plan.exposure != nil {
+            setExposureBiasControls(enabled: CameraControlPlan.enablesExposureBias(for: plan.applied.exposure))
+        }
         return result
+    }
+
+    /// Returns the camera to automatic after a configure or a restart: continuous exposure, bias 0, continuous white balance and
+    /// continuous autofocus, each behind its support check, and forgets what was applied. Does nothing without a camera.
+    /// A lock failure is logged and never fails the configure.
+    func resetManual() {
+        appliedManual = nil
+        guard let device = videoInput?.device else { return }
+        do {
+            try device.lockForConfiguration()
+        } catch {
+            Self.logger.error("[CameraSession:resetManual] Cannot lock the camera for configuration — {lens: \(self.lastWorkingConfiguration?.lens.id ?? "unknown", privacy: .public), reason: \(String(describing: error), privacy: .public)}")
+            return
+        }
+        defer { device.unlockForConfiguration() }
+        if device.isExposureModeSupported(.continuousAutoExposure) {
+            device.exposureMode = .continuousAutoExposure
+        }
+        // Bias 0 is inside the device's limits only when they bracket it (AVCaptureDevice.h: the setter raises otherwise).
+        if device.minExposureTargetBias <= 0, device.maxExposureTargetBias >= 0 {
+            device.setExposureTargetBias(0, completionHandler: nil)
+        }
+        if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+            device.whiteBalanceMode = .continuousAutoWhiteBalance
+        }
+        if device.isFocusModeSupported(.continuousAutoFocus) {
+            device.focusMode = .continuousAutoFocus
+        }
+        setExposureBiasControls(enabled: true)
+    }
+
+    /// The Camera Control's exposure bias sliders follow whether exposure is automatic.
+    private func setExposureBiasControls(enabled isEnabled: Bool) {
+        for control in session.controls {
+            guard let slider = control as? AVCaptureSystemExposureBiasSlider else { continue }
+            slider.isEnabled = isEnabled
+        }
     }
 
     // MARK: Limits

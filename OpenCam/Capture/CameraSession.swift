@@ -144,6 +144,8 @@ actor CameraSession: SessionConfigurator {
             try applyPresetPhoto(configuration, to: device)
         }
         pressureObservation = Self.observePressure(of: device, continuation: continuation)
+        // Every configure returns the camera to automatic, in step with the model, which does the same when it queues one.
+        resetManual()
     }
 
     /// One configuration change, committed on return also when it throws. Returns whether photo mode is on the photo
@@ -236,6 +238,8 @@ actor CameraSession: SessionConfigurator {
             continuation.yield(.runtimeError(RuntimeErrorText.restartFailedMessage(applied: appliedConfiguration.withLock { $0 })))
             return
         }
+        // The device may have come back with settings of its own, so manual values are not assumed to hold.
+        resetManual()
         continuation.yield(.restarted)
     }
 
@@ -575,7 +579,9 @@ extension CameraSession {
         guard device.activeFormat.supportedMaxPhotoDimensions.contains(where: { $0.width == maximum.width && $0.height == maximum.height }) else {
             throw .captureFailed(reason: "photo size \(maximum.width) x \(maximum.height) not offered by the active format")
         }
-        return try await photoCapturer.capture(format: format, deviceZoom: Double(device.videoZoomFactor), dngURL: dngURL, heicURL: heicURL)
+        // A manual exposure is kept in the photo only with the speed prioritization (AVCaptureDevice.h, `exposureMode`).
+        return try await photoCapturer.capture(format: format, deviceZoom: Double(device.videoZoomFactor),
+                                               isExposureManual: device.exposureMode == .custom, dngURL: dngURL, heicURL: heicURL)
     }
 }
 
@@ -591,6 +597,8 @@ extension CameraSession {
         guard let device = videoInput?.device, session.outputs.contains(recorder.output) else { throw .outputNotAttached }
         if option.codec.family == .raw {
             try lockWhiteBalance(on: device)
+            // Until `restoreWhiteBalance`, an automatic white balance asked for by hand waits for the clip to end.
+            isRAWClipRecording = true
         }
         allowHapticsWhileRecording()
         do throws(RecordingError) {
@@ -631,7 +639,9 @@ extension CameraSession {
     }
 
     /// Returns white balance to the mode a ProRes RAW clip replaced; a failure is logged and recording carries on.
+    /// The clip is over for manual white balance either way, so the flag is cleared even when there is nothing to restore.
     private func restoreWhiteBalance() {
+        isRAWClipRecording = false
         guard let restore = whiteBalanceRestore else { return }
         whiteBalanceRestore = nil
         let (device, mode) = restore

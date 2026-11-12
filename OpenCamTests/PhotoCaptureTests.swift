@@ -20,4 +20,11 @@ import Testing
         #expect(try PhotoSettingsPlan.make(format: .heif, availableRawFormats: [bayer], isBayer: { $0 == bayer }, zoomFactor: 2)
                 == PhotoSettingsPlan(rawPixelFormat: nil, wantsProcessedHEIF: true, prioritizesSpeed: false))
     }
+    @Test func aManualExposurePhotoPrioritizesSpeed() throws {
+        // Balanced prioritization may override a manual ISO and shutter (AVCaptureDevice.h, exposureMode).
+        #expect(try PhotoSettingsPlan.make(format: .heif, availableRawFormats: [bayer], isBayer: { $0 == bayer }, zoomFactor: 1, isExposureManual: true)
+                == PhotoSettingsPlan(rawPixelFormat: nil, wantsProcessedHEIF: true, prioritizesSpeed: true))
+        #expect(try PhotoSettingsPlan.make(format: .heif, availableRawFormats: [bayer], isBayer: { $0 == bayer }, zoomFactor: 1, isExposureManual: false)
+                == PhotoSettingsPlan(rawPixelFormat: nil, wantsProcessedHEIF: true, prioritizesSpeed: false))
+    }
 }

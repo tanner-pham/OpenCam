@@ -9,4 +9,10 @@ nonisolated enum CameraControlPlan {
         if mode == .photo, photoFormat.includesRAW { return [.exposureBias] }
         return [.zoom, .exposureBias]
     }
+
+    /// The Camera Control's exposure bias slider is disabled while exposure is manual, because bias then only affects metering
+    /// (AVCaptureDevice.h, `exposureTargetBias`). `AVCaptureControl.isEnabled` needs no session configuration.
+    static func enablesExposureBias(for exposure: ManualSettings.Exposure) -> Bool {
+        exposure == .automatic
+    }
 }

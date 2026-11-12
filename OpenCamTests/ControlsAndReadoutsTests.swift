@@ -16,6 +16,8 @@ import Testing
         #expect(CameraControlPlan.kinds(supportsControls: true, mode: .video, photoFormat: .raw) == [.zoom, .exposureBias])
         #expect(CameraControlPlan.kinds(supportsControls: true, mode: .photo, photoFormat: .rawPlusHEIF) == [.exposureBias])
         #expect(CameraControlPlan.kinds(supportsControls: true, mode: .photo, photoFormat: .heif) == [.zoom, .exposureBias])
+        #expect(CameraControlPlan.enablesExposureBias(for: .automatic))
+        #expect(!CameraControlPlan.enablesExposureBias(for: .manual(shutterSeconds: nil, iso: 400)))
     }
     @Test func formatting() {
         #expect(ReadoutFormatter.shutter(1.0 / 60) == "1/60"); #expect(ReadoutFormatter.shutter(0.5) == "1/2"); #expect(ReadoutFormatter.shutter(2.5) == "2.5s")
