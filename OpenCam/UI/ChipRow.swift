@@ -22,7 +22,7 @@ struct ChipRow: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: Theme.Space.s) {
                             ForEach(chips) { chip in
-                                ChipButton(chip: chip, isSelected: chip.id == selectedID, isSingleLine: true) { onSelect(chip.id) }
+                                ChipButton(chip: chip, isSelected: chip.id == selectedID) { onSelect(chip.id) }
                                     .frame(minWidth: 2 * Theme.Size.minTarget, maxWidth: Theme.Size.lookChipMax)
                             }
                         }

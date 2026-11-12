@@ -3,19 +3,21 @@ import SwiftUI
 struct ChipButton: View {
     let chip: Chip
     let isSelected: Bool
-    var isSingleLine = false
     let action: () -> Void
+
+    /// Every line of a chip stays on one line and shrinks to this before it would grow into its neighbour or wrap.
+    private static let minimumScale: CGFloat = 0.75
 
     var body: some View {
         let button = Button(action: action) {
             VStack(spacing: 0) {
-                Text(chip.title).font(.footnote.weight(.semibold)).lineLimit(isSingleLine ? 1 : nil)
+                Text(chip.title).font(.footnote.weight(.semibold)).lineLimit(1).minimumScaleFactor(Self.minimumScale)
                 if let detail = chip.detail {
-                    Text(detail).font(.caption2).monospacedDigit().foregroundStyle(isSelected ? .black.opacity(0.7) : .secondary)
+                    Text(detail).font(.caption2).monospacedDigit().lineLimit(1).minimumScaleFactor(Self.minimumScale).foregroundStyle(isSelected ? .black.opacity(0.7) : .secondary)
                 }
                 if let estimate = chip.estimate {
                     ForEach([estimate.rate, estimate.time], id: \.self) { line in
-                        Text(line).font(.caption2).monospacedDigit().lineLimit(1).fixedSize()
+                        Text(line).font(.caption2).monospacedDigit().lineLimit(1).minimumScaleFactor(Self.minimumScale)
                             .foregroundStyle(isSelected ? .black.opacity(0.7) : .secondary)
                     }
                 }
