@@ -19,6 +19,8 @@ import OSLog
     private let exporter: PhotoExporter
     /// The preview render; `renderer.renderedCGImage` unless a test replaces it.
     private let renderPreview: @Sendable (CIImage, Adjustments) async -> CGImage?
+    /// The histogram count; `PictureHistogram.make(from:)` unless a test replaces it.
+    private let makeHistogram: @Sendable (CGImage) async -> PictureHistogram?
 
     var adjustments = Adjustments() {
         didSet { if adjustments != oldValue { requestRender() } }
@@ -46,6 +48,8 @@ import OSLog
     private(set) var lastRenderPixelSize: CGSize?
     /// Completed preview renders, the first one included.
     private(set) var previewRenderCount = 0
+    /// The histogram of the newest preview counted so far; nil until the first count finishes.
+    private(set) var histogram: PictureHistogram?
 
     /// The edit as it was loaded or last saved.
     private var savedEdit = PhotoEdit()
@@ -53,6 +57,9 @@ import OSLog
     private var renders = RenderCoalescer<Adjustments>()
     private var renderTask: Task<Void, Never>?
     private var shownGeneration = 0
+    private var histograms = RenderCoalescer<CGImage>()
+    private var histogramTask: Task<Void, Never>?
+    private var countedGeneration = 0
 
     /// The unedited proxy at `tileLongSide`, which every look tile is rendered from.
     private var tileSource: CIImage?
@@ -61,9 +68,10 @@ import OSLog
     /// The tile render started last; the next one waits for it, so tiles draw one at a time.
     private var lastTile: Task<CGImage?, Never>?
 
-    /// `renderPreview` is a test seam for a render that fails; the app never passes it.
+    /// `renderPreview` is a test seam for a render that fails, `makeHistogram` one for a slow count; the app never passes either.
     init(item: LibraryItem, edits: EditStore, looks: LookStore, group: EditorGroup = .light, renderer: LookRenderer = .shared,
-         exporter: PhotoExporter = .appDefault(), renderPreview: (@Sendable (CIImage, Adjustments) async -> CGImage?)? = nil) {
+         exporter: PhotoExporter = .appDefault(), renderPreview: (@Sendable (CIImage, Adjustments) async -> CGImage?)? = nil,
+         makeHistogram: (@Sendable (CGImage) async -> PictureHistogram?)? = nil) {
         self.item = item
         self.edits = edits
         self.lookStore = looks
@@ -71,6 +79,7 @@ import OSLog
         self.renderer = renderer
         self.exporter = exporter
         self.renderPreview = renderPreview ?? { image, adjustments in await renderer.renderedCGImage(image, adjustments: adjustments) }
+        self.makeHistogram = makeHistogram ?? { image in await PictureHistogram.make(from: image) }
     }
 
     var hasChanges: Bool { !adjustments.matches(savedEdit.adjustments) || lookName != savedEdit.lookName }
@@ -145,6 +154,13 @@ import OSLog
         }
     }
 
+    /// Returns when no histogram count is running or waiting.
+    func waitForHistogram() async {
+        while !histograms.isIdle, let task = histogramTask {
+            await task.value
+        }
+    }
+
     func reset(_ key: AdjustmentKey) {
         adjustments[key] = 0
     }
@@ -209,6 +225,28 @@ import OSLog
         renderedAdjustments = rendered
         lastRenderPixelSize = CGSize(width: image.width, height: image.height)
         previewRenderCount += 1
+        requestHistogram(of: image)
+    }
+
+    /// Counts the newest preview at a lower priority; the preview path never awaits it, and a count still waiting is replaced.
+    private func requestHistogram(of image: CGImage) {
+        guard let job = histograms.request(image) else { return }
+        histogramTask = Task(priority: .utility) { await runHistograms(from: job) }
+    }
+
+    private func runHistograms(from first: (generation: Int, value: CGImage)) async {
+        var job: (generation: Int, value: CGImage)? = first
+        while let current = job {
+            if let counted = await makeHistogram(current.value) {
+                if current.generation > countedGeneration {
+                    countedGeneration = current.generation
+                    histogram = counted
+                }
+            } else {
+                Self.logger.error("[EditorModel:runHistograms] The histogram could not be counted — {stem: \(self.item.stem, privacy: .public)}")
+            }
+            job = histograms.finish()
+        }
     }
 }
 
