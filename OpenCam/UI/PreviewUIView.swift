@@ -99,7 +99,7 @@ final class PreviewUIView: UIView {
         // session starts, with its layer in no window yet; the same-device guard below would then keep a coordinator built
         // too early. `didMoveToWindow` calls this again, which builds it once the view is shown, as before the early attach.
         guard window != nil else { return }
-        guard let previewLayer,let device = Self.videoDevice(of: previewLayer) else { return }
+        guard let previewLayer, let device = Self.videoDevice(of: previewLayer) else { return }
         guard rotationCoordinator?.device?.uniqueID != device.uniqueID else { return }
         let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: previewLayer)
         rotationCoordinator = coordinator
