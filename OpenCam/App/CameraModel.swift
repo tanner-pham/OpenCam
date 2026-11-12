@@ -320,13 +320,6 @@ final class CameraModel {
 
     /// Live values while there is a camera (the Simulator's are simulated); otherwise every readout reads `--`.
     var shownReadouts: LiveReadouts { hasCamera ? readouts : LiveReadouts() }
-    // Kept until the views read `readout(for:)` (the readout buttons task).
-    var shutterText: String { readoutText(for: .shutter) }
-    var isoText: String { readoutText(for: .iso) }
-    var whiteBalanceText: String { readoutText(for: .temperature) }
-    var tintText: String { readoutText(for: .tint) }
-    var exposureBiasText: String { readoutText(for: .bias) }
-    var focusText: String { readoutText(for: .focus) }
 
     private var minutesRemaining: Int {
         currentVideoOption.map { DataRateEstimator.minutesRemaining(freeBytes: freeBytes, option: $0) } ?? 0

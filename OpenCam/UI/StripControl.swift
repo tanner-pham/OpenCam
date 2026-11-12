@@ -39,6 +39,12 @@ struct StripControl: View {
             .disabled(!model.canChangeLensOrMode)
         case .library:
             LibraryThumbnail(model: model, library: library)
+        case .slider:
+            ControlSlider(model: model)
+        case .auto:
+            ControlAutoButton(model: model)
+        case .close:
+            ControlCloseButton(model: model)
         }
     }
 }

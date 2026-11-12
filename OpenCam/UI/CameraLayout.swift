@@ -8,12 +8,7 @@ struct CameraLayout: View {
 
     /// The side of the system's vertical bar; nil where the system draws its bars across the top and bottom instead.
     @Environment(\.toolbarVerticalEdge) private var stripEdge
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
-
-    /// The folded phone's outer display is compact in one direction in either orientation; the open phone's inner display
-    /// is regular in both.
-    private var isFoldedDisplay: Bool { horizontalSizeClass == .compact || verticalSizeClass == .compact }
+    @Environment(\.isFoldedDisplay) private var isFoldedDisplay
 
     var body: some View {
         // The outer reader stays inside the safe area, so it reports the bars' insets; the layout itself spans the full

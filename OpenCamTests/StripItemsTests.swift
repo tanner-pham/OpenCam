@@ -10,8 +10,24 @@ import Testing
     }
 
     /// The format button opens Record settings, so the strip no longer offers it.
-    @Test func recordSettingsIsNoLongerAStripItem() {
-        #expect(StripToolbar.Item.allCases == [.mode, .lens, .library])
+    @Test func theStripShowsTheThreeItemsWhenNoControlIsOpen() throws {
+        #expect(StripToolbar.items(open: nil, isLandscape: false) == [.mode, .lens, .library])
+        #expect(StripToolbar.items(open: nil, isLandscape: true) == [.library, .lens, .mode])
+        // Closing the slider returns them.
+        let model = try model()
+        model.openControl = .iso
+        model.closeControl()
+        #expect(StripToolbar.items(open: model.openControl, isLandscape: false) == [.mode, .lens, .library])
+    }
+
+    @Test func anOpenControlSwapsInSliderAutoAndClose() {
+        for control in ManualControl.allCases where control != .bias {
+            #expect(StripToolbar.items(open: control, isLandscape: false) == [.slider, .auto, .close])
+            #expect(StripToolbar.items(open: control, isLandscape: true) == [.close, .auto, .slider])
+        }
+        // EV has no automatic state, so no Auto.
+        #expect(StripToolbar.items(open: .bias, isLandscape: false) == [.slider, .close])
+        #expect(StripToolbar.items(open: .bias, isLandscape: true) == [.close, .slider])
     }
 
     @Test func theModeToggleSwitchesBetweenTheTwoModes() throws {
