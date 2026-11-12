@@ -153,6 +153,7 @@ actor CameraSession: SessionConfigurator {
             // After the commit, so the preset's format is the active one.
             try applyPresetPhoto(configuration, to: device)
         }
+        try preparePixelFormat(configuration)
         pressureObservation = Self.observePressure(of: device, continuation: continuation)
         // Every configure returns the camera to automatic, in step with the model, which does the same when it queues one.
         resetManual()
@@ -176,7 +177,6 @@ actor CameraSession: SessionConfigurator {
                                                      needsFrames: configuration.needsFrames, hasMicrophone: audioInput != nil)
         detachOutputs(SessionOutputPlan.make(attached: attachedOutputs(), wanted: wantedOutputs).removals)
         try attachPhotoOutput(wantedOutputs.contains(.photo))
-        let isVideo = configuration.mode == .video
         try attachMovieOutput(wantedOutputs.contains(.movie))
         try attachWriterOutputs(wantedOutputs.contains(.writerVideo))
         attachFrameOutput(wantedOutputs.contains(.lookFrames))
@@ -191,14 +191,20 @@ actor CameraSession: SessionConfigurator {
             return true
         }
         try applyFormat(configuration, to: device)
-        if isVideo, configuration.recorder == .writer, let option = configuration.video {
-            // After the camera's format is set, which decides the pixel formats the output offers.
-            guard writerRecorder.preparePixelFormat(for: option.colour) else { throw .cannotAddOutput(name: "record frames") }
-        }
         if configuration.mode == .photo {
             try applyPhotoDimensions(configuration.photo, format: device.activeFormat)
         }
         return false
+    }
+
+    /// The writer path's pixel format, chosen after the commit that set the camera's format and added the output: the list the
+    /// output offers is only right once both are in force (the diagnostic that ran on the phone set the format, committed, then read
+    /// the list). Its own begin/commit batches the change. A format the output does not offer fails the configure.
+    private func preparePixelFormat(_ configuration: SessionConfiguration) throws(CameraSessionError) {
+        guard configuration.mode == .video, configuration.recorder == .writer, let option = configuration.video else { return }
+        session.beginConfiguration()
+        defer { session.commitConfiguration() }
+        guard writerRecorder.preparePixelFormat(for: option.colour) else { throw .cannotAddOutput(name: "record frames") }
     }
 
     /// Photo mode on the photo preset, after the configuration that selected it was committed: the lens's zoom and the
