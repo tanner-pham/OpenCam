@@ -158,6 +158,10 @@ final class CameraModel {
     @ObservationIgnored var recordingStartTask: Task<Void, Never>?
     /// The clip being recorded, from the press until its result; a stop or restart that finds no result coming ends it.
     @ObservationIgnored var recordingClip: (url: URL, option: VideoOption)?
+    /// Frames missing from the clip being recorded on the writer path; 0 at each start. Follows `.framesDropped` for that clip only.
+    private(set) var droppedFrames = 0
+    /// What the writer recorder does when a frame is missing. Keep recording until the setting exists.
+    var dropPolicy = DropPolicy.keepRecording
     /// Clips the model ended without their result, by `CaptureStore.clipKey`; a result that still arrives changes no
     /// recording state.
     @ObservationIgnored var unreportedClips: Set<String> = []
@@ -286,8 +290,13 @@ final class CameraModel {
     var sessionConfiguration: SessionConfiguration? {
         guard let currentLens else { return nil }
         return SessionConfiguration.make(lens: currentLens, mode: mode, video: currentVideoOption, photo: currentPhotoOption, access: access,
-                                         needsFrames: needsFrames)
+                                         needsFrames: needsFrames, recorder: recorderPath)
     }
+
+    func resetDroppedFrames() { droppedFrames = 0 }
+
+    /// The recorder the selection needs: the system's outside video mode, else the one that records the selected option.
+    var recorderPath: RecorderPath { mode == .video ? recordResolver.recorder(for: record) : .system }
 
     /// The current options as the screen may name them: none while formats are being read, and none the device has not reported.
     /// Only a working camera, or the Simulator's labelled stand-in, names a format or a measurement.
@@ -992,6 +1001,11 @@ extension CameraModel {
         case .systemControlsFullscreen:
             // The Camera Control's sliders have the screen; the app's own go, and the values stay.
             closeControl()
+        case .framesDropped(let clip, let total):
+            // Only the clip being recorded, and never a sweep clip.
+            guard isRecording, let recordingClip, !sweepClips.contains(clip),
+                  CaptureStore.clipKey(for: recordingClip.url) == clip else { break }
+            droppedFrames = total
         }
     }
 }

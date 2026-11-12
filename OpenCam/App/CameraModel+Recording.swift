@@ -15,6 +15,8 @@ extension CameraModel {
         let pendingConfigure = configureTask
         isRecording = true
         recordingClip = (url, option)
+        resetDroppedFrames()
+        let dropPolicy = dropPolicy
         let task = Task {
             if let configureError = await pendingConfigure?.value {
                 // The session went back to its last working format, which is not the one the press was for.
@@ -22,7 +24,7 @@ extension CameraModel {
                 return
             }
             do throws(RecordingError) {
-                try await configurator.startRecording(option: option, url: url, minFreeBytes: minFreeBytes)
+                try await configurator.startRecording(option: option, url: url, minFreeBytes: minFreeBytes, dropPolicy: dropPolicy)
                 // A clip that ended as it started has already reported; the idle timecode must not keep a start time.
                 guard isRecording, let recordingClip, CaptureStore.clipKey(for: recordingClip.url) == CaptureStore.clipKey(for: url) else { return }
                 recordingStart = Date()

@@ -17,13 +17,13 @@ extension CameraModel {
         selectionChanged()
     }
 
-    var isLookOffered: Bool { LookAvailability.isOffered(mode: mode, colour: record.colour) }
-    var lookChips: [Chip] { LookAvailability.chips(looks: looks, isOffered: isLookOffered) }
+    var isLookOffered: Bool { LookAvailability.isOffered(mode: mode, colour: record.colour, recorder: recorderPath) }
+    var lookChips: [Chip] { LookAvailability.chips(looks: looks, isOffered: isLookOffered, recorder: recorderPath) }
     var lookChipID: String { cameraLook?.id.uuidString ?? LookAvailability.noneID }
     /// In video, while the viewfinder cannot show the look, it applies nowhere, so the row says that instead.
     var lookReason: String? {
         if mode == .video, cameraLook != nil, isLookViewfinderUnavailable { return Self.framesUnavailableNotice }
-        return LookAvailability.reasonLine(mode: mode, isOffered: isLookOffered, hasLook: cameraLook != nil)
+        return LookAvailability.reasonLine(mode: mode, isOffered: isLookOffered, hasLook: cameraLook != nil, recorder: recorderPath)
     }
 
     /// A choice from the Look row: None, or a look's id. Choosing clears the look's own notice.
@@ -50,7 +50,7 @@ extension CameraModel {
     func settleLook() {
         guard !isSweeping, cameraLook != nil, !isLookOffered else { return }
         cameraLook = nil
-        showLookNotice(LookAvailability.turnedOff)
+        showLookNotice(recorderPath == .writer ? LookAvailability.turnedOffForRecorder : LookAvailability.turnedOff)
     }
 
     /// The look's own notices are shown only when there is no notice or the current one is the look's, so a capture or

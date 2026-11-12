@@ -15,11 +15,12 @@ import Testing
 
     /// A record and the selections it was saved with.
     private func make(mode: CaptureMode = .video, colour: ColourMode = .rec709, includesAudio: Bool = true,
-                      needsFrames: Bool = false, scanVersion: Int = CaptureCapabilities.currentScanVersion) throws -> (SavedStart, SavedSelections) {
+                      needsFrames: Bool = false, recorder: RecorderPath = .system, scanVersion: Int = CaptureCapabilities.currentScanVersion) throws -> (SavedStart, SavedSelections) {
         var (configuration, record, photo) = try base()
         configuration.mode = mode
         configuration.includesAudio = includesAudio
         configuration.needsFrames = needsFrames
+        configuration.recorder = recorder
         record.colour = colour
         let start = SavedStart(configuration: configuration, record: record, photo: photo, osBuild: Self.build, modelIdentifier: Self.device, scanVersion: scanVersion)
         return (start, SavedSelections(mode: mode, lensID: configuration.lens.id, record: record, photo: photo))
@@ -28,6 +29,29 @@ import Testing
     private func use(_ start: SavedStart, _ saved: SavedSelections?, access: CaptureAccess = SavedStartTests.authorized, hasLook: Bool = false,
                      build: String = SavedStartTests.build, device: String = SavedStartTests.device) -> SessionConfiguration? {
         start.configuration(for: saved, access: access, hasLook: hasLook, osBuild: build, modelIdentifier: device)
+    }
+
+    @Test func aStartSavedBeforeRecorderPathsDecodesAsSystem() throws {
+        let (start, _) = try make()
+        let data = try JSONEncoder().encode(start)
+        var json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var configuration = try #require(json["configuration"] as? [String: Any])
+        #expect(configuration["recorder"] != nil)
+        configuration.removeValue(forKey: "recorder")
+        json["configuration"] = configuration
+        let old = try JSONSerialization.data(withJSONObject: json)
+        let decoded = try JSONDecoder().decode(SavedStart.self, from: old)
+        #expect(decoded.configuration.recorder == .system)
+        #expect(decoded.configuration == start.configuration)
+    }
+
+    @Test func aWriterStartKeepsItsFramesRule() throws {
+        // Looks are never drawn with the writer, so a saved writer start asks for no frames even when a look is chosen.
+        let (start, saved) = try make(colour: .rec709, needsFrames: false, recorder: .writer)
+        #expect(use(start, saved, hasLook: true) == start.configuration)
+        #expect(use(start, saved, hasLook: false) == start.configuration)
+        let (framed, framedSaved) = try make(colour: .rec709, needsFrames: true, recorder: .writer)
+        #expect(use(framed, framedSaved, hasLook: true) == nil)
     }
 
     @Test func aRecordRoundTripsThroughDefaults() throws {

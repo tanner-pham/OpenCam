@@ -83,10 +83,19 @@ actor FakeSessionConfigurator: SessionConfigurator {
         releaseCameras()
     }
 
-    func startRecording(option: VideoOption, url: URL, minFreeBytes: Int64) async throws(RecordingError) {
+    // MARK: Recorder path (the protocol's startRecording, with the writer's drop policy). Kept in one block so other
+    // protocol additions merge beside it, not through it.
+
+    /// Every start, with the drop policy it carried; `recordingURLs` keeps just the URLs.
+    private(set) var recordings: [(url: URL, option: VideoOption, dropPolicy: DropPolicy)] = []
+
+    func startRecording(option: VideoOption, url: URL, minFreeBytes: Int64, dropPolicy: DropPolicy) async throws(RecordingError) {
         recordingURLs.append(url)
+        recordings.append((url, option, dropPolicy))
         await onStartRecording(url, option)
     }
+
+    // MARK: End of the recorder path block
 
     func stopRecording() -> Bool {
         stopRecordingCount += 1

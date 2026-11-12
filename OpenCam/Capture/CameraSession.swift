@@ -596,7 +596,8 @@ extension CameraSession {
     /// Starts recording `option`, which the session must already be configured for, to `url`. Recording stops on its own
     /// when free space falls to `minFreeBytes`. ProRes RAW records with white balance locked, and the earlier mode returns
     /// when that clip finishes, however it ends; other codecs leave white balance alone.
-    func startRecording(option: VideoOption, url: URL, minFreeBytes: Int64) throws(RecordingError) {
+    /// `dropPolicy` is read by the writer path only; this path ignores it until the writer exists.
+    func startRecording(option: VideoOption, url: URL, minFreeBytes: Int64, dropPolicy: DropPolicy) throws(RecordingError) {
         guard session.isRunning else { throw .sessionNotRunning }
         guard let device = videoInput?.device, session.outputs.contains(recorder.output) else { throw .outputNotAttached }
         if option.codec.family == .raw {
