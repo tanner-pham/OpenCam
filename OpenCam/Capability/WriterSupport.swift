@@ -13,8 +13,9 @@ nonisolated struct WriterSupport: OptionSet, Sendable {
     static let all: WriterSupport = [.proRes, .proResSDR, .log]
 
     /// What this build can record. The Simulator records nothing and lists everything. A flag joins the device's set in the task
-    /// that makes the recording work.
+    /// that makes the recording work: ProRes in HLG and in Rec. 709 are recorded by the writer path; the baked Log profile is not
+    /// recorded yet.
     static func shipped(isSimulator: Bool) -> WriterSupport {
-        isSimulator ? .all : []
+        isSimulator ? .all : [.proRes, .proResSDR]
     }
 }

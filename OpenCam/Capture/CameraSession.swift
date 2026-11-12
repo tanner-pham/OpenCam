@@ -13,8 +13,15 @@ actor CameraSession: SessionConfigurator {
     let session: AVCaptureSession
     private let continuation: AsyncStream<SessionEvent>.Continuation
     private let recordingContinuation: AsyncStream<RecordingResult>.Continuation
-    /// Its output is attached in video mode only.
+    /// Its output is attached in video mode on the system recorder path only.
     let recorder: MovieRecorder
+    /// The writer path's outputs, queues and sink. Made the first time the writer path is used, so a session that only records
+    /// with the movie output never builds them and its outputs are exactly as they always were; see `writerRecorder`.
+    private(set) var writerRecorderStorage: WriterRecorder?
+    /// Reads free space once a second while a writer clip records, and ends the clip when it falls to the minimum.
+    private var storageWatch: Task<Void, Never>?
+    /// Ends the wait for a writer clip's file when the writer never reports it finished; see `armFinishTimeout`.
+    private var finishTimeout: Task<Void, Never>?
     /// Registered on the first `start()`, because the runtime-error observer needs a reference to this actor.
     private var notificationTokens: [any NSObjectProtocol] = []
     var videoInput: AVCaptureDeviceInput?
@@ -106,7 +113,7 @@ actor CameraSession: SessionConfigurator {
     /// Refused while recording, because changing the format or outputs ends the clip.
     /// The Camera Control's system controls are installed last, for the device and mode now applied.
     func configure(_ configuration: SessionConfiguration) throws(CameraSessionError) {
-        guard !recorder.output.isRecording else { throw .recordingInProgress }
+        guard !recorder.output.isRecording, writerRecorderStorage?.isClipInFlight != true else { throw .recordingInProgress }
         // A configure that fails with no restore leaves the camera in a state nothing tracks, so nothing is assumed to hold.
         appliedManual = nil
         let timing = (start: ContinuousClock.now, previous: lastWorkingConfiguration)
@@ -164,7 +171,9 @@ actor CameraSession: SessionConfigurator {
         try attachVideo(device, lensID: configuration.lens.id)
         attachAudio(configuration.includesAudio)
         try attachPhotoOutput(configuration.mode == .photo)
-        try attachMovieOutput(configuration.mode == .video)
+        let isVideo = configuration.mode == .video
+        try attachMovieOutput(isVideo && configuration.recorder == .system)
+        try attachWriterOutputs(isVideo && configuration.recorder == .writer)
         attachFrameOutput(configuration.needsFrames)
         // Photo mode takes the photo preset when the session allows it: only there does the Duo offer Bayer RAW (measured
         // 2026-11-10). The preset picks the format, so neither the format nor the colour space is set by hand, and the
@@ -177,6 +186,10 @@ actor CameraSession: SessionConfigurator {
             return true
         }
         try applyFormat(configuration, to: device)
+        if isVideo, configuration.recorder == .writer, let option = configuration.video {
+            // After the camera's format is set, which decides the pixel formats the output offers.
+            guard writerRecorder.preparePixelFormat(for: option.colour) else { throw .cannotAddOutput(name: "record frames") }
+        }
         if configuration.mode == .photo {
             try applyPhotoDimensions(configuration.photo, format: device.activeFormat)
         }
@@ -248,6 +261,8 @@ actor CameraSession: SessionConfigurator {
 
     func stop() {
         isMeantToRun = false
+        // A clip being written ends at its last frame; with the camera stopped no frame would ever end it otherwise.
+        endWriterClip(.cameraStopped)
         guard session.isRunning else { return }
         session.stopRunning()
     }
@@ -355,6 +370,46 @@ actor CameraSession: SessionConfigurator {
         }
         guard session.canAddOutput(output) else { throw .cannotAddOutput(name: "movie") }
         session.addOutput(output)
+    }
+
+    /// The writer path's outputs: full-size video frames and, with the microphone attached, its sound. Both are detached on any
+    /// other path. The video connection is made neutral here, inside the configuration change, like the look's frame output, so
+    /// buffers arrive in the sensor's own orientation, unmirrored, and the clip's track carries the rotation.
+    private func attachWriterOutputs(_ isAttached: Bool) throws(CameraSessionError) {
+        guard isAttached else {
+            guard let writerRecorderStorage else { return }
+            for output in [writerRecorderStorage.videoOutput, writerRecorderStorage.audioOutput] where session.outputs.contains(output) {
+                session.removeOutput(output)
+            }
+            return
+        }
+        let writer = writerRecorder
+        let video = writer.videoOutput
+        if !session.outputs.contains(video) {
+            guard session.canAddOutput(video) else { throw .cannotAddOutput(name: "record frames") }
+            session.addOutput(video)
+        }
+        if let connection = video.connection(with: .video) {
+            if connection.videoRotationAngle != 0, connection.isVideoRotationAngleSupported(0) {
+                connection.videoRotationAngle = 0
+            }
+            if connection.isVideoMirroringSupported {
+                connection.automaticallyAdjustsVideoMirroring = false
+                connection.isVideoMirrored = false
+            }
+        }
+        let sound = writer.audioOutput
+        if audioInput != nil {
+            if !session.outputs.contains(sound) {
+                if session.canAddOutput(sound) {
+                    session.addOutput(sound)
+                } else {
+                    continuation.yield(.microphoneUnavailable("[CameraSession:configure] Cannot add output — {output: record sound}"))
+                }
+            }
+        } else if session.outputs.contains(sound) {
+            session.removeOutput(sound)
+        }
     }
 
     /// Attached only while a look needs frames; detached otherwise, so a configuration without a look has the outputs it
@@ -502,9 +557,11 @@ actor CameraSession: SessionConfigurator {
         of session: AVCaptureSession, owner: CameraSession, continuation: AsyncStream<SessionEvent>.Continuation
     ) -> [any NSObjectProtocol] {
         let center = NotificationCenter.default
-        let interrupted = center.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: session, queue: nil) { notification in
+        let interrupted = center.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: session, queue: nil) { [weak owner] notification in
             let rawReason = notification.userInfo?[AVCaptureSessionInterruptionReasonKey] as? Int ?? 0
             continuation.yield(.interrupted(InterruptionReason(avReason: rawReason)))
+            // Backgrounding is an interruption too. A writer clip ends at its last frame; the writer fails in the background.
+            Task { await owner?.endWriterClip(.interrupted) }
         }
         let ended = center.addObserver(forName: AVCaptureSession.interruptionEndedNotification, object: session, queue: nil) { _ in
             continuation.yield(.interruptionEnded)
@@ -512,6 +569,7 @@ actor CameraSession: SessionConfigurator {
         let runtimeError = center.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: session, queue: nil) { [weak owner] notification in
             let error = notification.userInfo?[AVCaptureSessionErrorKey] as? NSError
             continuation.yield(.runtimeError(RuntimeErrorText.message(for: error, applied: owner?.appliedConfiguration.withLock { $0 })))
+            Task { await owner?.endWriterClip(.cameraStopped) }
             // AVError.h: AVErrorMediaServicesWereReset (-11819) in AVFoundationErrorDomain.
             if let error, error.domain == AVFoundationErrorDomain, error.code == AVError.Code.mediaServicesWereReset.rawValue {
                 Task { await owner?.restartAfterMediaServicesReset() }
@@ -596,8 +654,12 @@ extension CameraSession {
     /// Starts recording `option`, which the session must already be configured for, to `url`. Recording stops on its own
     /// when free space falls to `minFreeBytes`. ProRes RAW records with white balance locked, and the earlier mode returns
     /// when that clip finishes, however it ends; other codecs leave white balance alone.
-    /// `dropPolicy` is read by the writer path only; this path ignores it until the writer exists.
+    /// `dropPolicy` is read by the writer path only. The applied configuration's recorder picks the path.
     func startRecording(option: VideoOption, url: URL, minFreeBytes: Int64, dropPolicy: DropPolicy) throws(RecordingError) {
+        if lastWorkingConfiguration?.recorder == .writer {
+            try startWriterRecording(option: option, url: url, minFreeBytes: minFreeBytes, dropPolicy: dropPolicy)
+            return
+        }
         guard session.isRunning else { throw .sessionNotRunning }
         guard let device = videoInput?.device, session.outputs.contains(recorder.output) else { throw .outputNotAttached }
         if option.codec.family == .raw {
@@ -619,11 +681,15 @@ extension CameraSession {
 
     /// Returns whether a clip was in flight; false means no recording result will follow.
     func stopRecording() -> Bool {
-        recorder.stop()
+        if let writer = writerRecorderStorage, writer.isClipInFlight || writer.hasResultPending {
+            return endWriterClip(.user)
+        }
+        return recorder.stop()
     }
 
     /// Levels 0...1 per microphone channel; empty without a microphone or outside video mode.
     func audioLevels() -> [Double] {
+        if let writer = writerRecorderStorage, session.outputs.contains(writer.audioOutput) { return writer.audioLevels() }
         guard session.outputs.contains(recorder.output) else { return [] }
         return recorder.audioLevels()
     }
@@ -721,5 +787,94 @@ extension CameraSession {
             }
             session.addControl(control)
         }
+    }
+}
+
+extension CameraSession {
+    /// How long a writer clip's file may take to finish after the clip ends, before the app reports it as it is.
+    private static let finishTimeoutSeconds = 10
+
+    /// The writer path, made on first use. Its finish handler comes back to this actor to collect the clip.
+    private var writerRecorder: WriterRecorder {
+        if let writerRecorderStorage { return writerRecorderStorage }
+        let made = WriterRecorder(results: recordingContinuation, events: continuation) { [weak self] in
+            guard let self else { return }
+            Task { await self.writerClipFinished() }
+        }
+        writerRecorderStorage = made
+        return made
+    }
+
+    /// Opens the writer for `option`, which the session must already be configured for on the writer path, and starts a once-a-second
+    /// watch on free space. Nothing is left running when this throws.
+    private func startWriterRecording(option: VideoOption, url: URL, minFreeBytes: Int64, dropPolicy: DropPolicy) throws(RecordingError) {
+        guard session.isRunning else { throw .sessionNotRunning }
+        let writer = writerRecorder
+        guard let device = videoInput?.device, session.outputs.contains(writer.videoOutput) else { throw .writerNotAttached }
+        guard !writer.isClipInFlight else { throw .alreadyRecording }
+        allowHapticsWhileRecording()
+        let recordsSound = session.outputs.contains(writer.audioOutput) && writer.audioOutput.connection(with: .audio)?.isActive == true
+        try writer.start(option: option, url: url, minFreeBytes: minFreeBytes, policy: dropPolicy, device: device, recordsSound: recordsSound)
+        watchStorage()
+    }
+
+    /// Ends the writer clip for `end`. Returns whether a result will follow. A clip that does not report its file finished within
+    /// ten seconds is collected as it is.
+    @discardableResult
+    func endWriterClip(_ end: WriterEnd) -> Bool {
+        guard let writer = writerRecorderStorage else { return false }
+        let willFollow = writer.end(end)
+        if writer.isClipInFlight { armFinishTimeout() }
+        return willFollow
+    }
+
+    /// The writer reported the clip's file finished.
+    private func writerClipFinished() {
+        collectWriterClip(timedOut: false)
+    }
+
+    private func collectWriterClip(timedOut: Bool) {
+        guard let writer = writerRecorderStorage else { return }
+        writer.collect(timedOut: timedOut)
+        guard !writer.isClipInFlight else { return }
+        storageWatch?.cancel()
+        storageWatch = nil
+        finishTimeout?.cancel()
+        finishTimeout = nil
+    }
+
+    private func armFinishTimeout() {
+        guard finishTimeout == nil else { return }
+        finishTimeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.finishTimeoutSeconds))
+            guard !Task.isCancelled, let self else { return }
+            await self.finishTimedOut()
+        }
+    }
+
+    private func finishTimedOut() {
+        guard !Task.isCancelled else { return }
+        if let writer = writerRecorderStorage, writer.isClipInFlight {
+            let message = "[CameraSession:finishTimedOut] The writer did not finish the clip in time — {seconds: \(Self.finishTimeoutSeconds)}"
+            Self.logger.error("\(message, privacy: .public)")
+            ErrorJournal.record(message)
+        }
+        collectWriterClip(timedOut: true)
+    }
+
+    /// Reads free space once a second and passes it to the clip, which ends at its last frame when it falls to the minimum.
+    private func watchStorage() {
+        storageWatch?.cancel()
+        storageWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled, let self else { return }
+                await self.checkStorage()
+            }
+        }
+    }
+
+    private func checkStorage() {
+        writerRecorderStorage?.storage(freeBytes: FreeSpace.availableBytes())
     }
 }
