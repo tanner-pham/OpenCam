@@ -164,19 +164,28 @@ import Testing
     @Test func theResetSetsEachAutomaticModeOnlyWhereSupportedAndBiasZeroOnlyInsideTheLimits() {
         let full = ManualDeviceRequest.resetting(limits())
         #expect(full.exposure == .continuous && full.bias == 0 && full.whiteBalance == .continuous && full.focus == .continuous)
-        #expect(!full.resetsFrameDuration && full.restore == .leave)
+        #expect(full.restore == .leave)
         var none = limits()
         none.supportsContinuousExposure = false
         none.supportsContinuousWhiteBalance = false
         none.supportsContinuousFocus = false
         none.minBias = 1
         let empty = ManualDeviceRequest.resetting(none)
-        #expect(empty == ManualDeviceRequest())
+        // Photo limits: the frame duration is restored even where no mode is.
+        #expect(empty == ManualDeviceRequest(resetsFrameDuration: true))
         none.minBias = -1
         none.maxBias = -0.5
         #expect(ManualDeviceRequest.resetting(none).bias == nil)
         none.minBias = .nan
         #expect(ManualDeviceRequest.resetting(none).bias == nil)
+    }
+
+    @Test func theResetRestoresThePhotoFrameDurationOnly() {
+        #expect(ManualDeviceRequest.resetting(limits(isVideo: false)).resetsFrameDuration)
+        #expect(!ManualDeviceRequest.resetting(limits(isVideo: true, frame: frame)).resetsFrameDuration)
+        var automatic = limits(isVideo: false)
+        automatic.isAutoFrameRateEnabled = true
+        #expect(!ManualDeviceRequest.resetting(automatic).resetsFrameDuration)
     }
 
     @Test func theResultReportsWhatTheCameraHasNotWhatWasAsked() {

@@ -125,9 +125,11 @@ nonisolated struct ManualDeviceRequest: Sendable, Equatable {
     }
 
     /// The automatic state a configure or a restart returns the camera to: continuous exposure, bias 0 (only when the device's
-    /// limits bracket it), continuous white balance and continuous autofocus, each only where supported.
+    /// limits bracket it), continuous white balance and continuous autofocus, each only where supported. In photo the frame
+    /// duration a long manual shutter lengthened is restored too (not while auto video frame rate is on, which throws).
     static func resetting(_ limits: DeviceLimits) -> ManualDeviceRequest {
         var request = ManualDeviceRequest()
+        request.resetsFrameDuration = !limits.isVideo && !limits.isAutoFrameRateEnabled
         if limits.supportsContinuousExposure { request.exposure = .continuous }
         if limits.minBias <= 0, limits.maxBias >= 0 { request.bias = 0 }
         if limits.supportsContinuousWhiteBalance { request.whiteBalance = .continuous }
