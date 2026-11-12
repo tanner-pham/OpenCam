@@ -17,6 +17,7 @@ struct MasksPanel: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     actions
+                    if model.selectedMask?.shape.kind == .subject { subjectNote }
                     if case let .radial(_, _, feather)? = model.selectedMask?.shape { featherSlider(feather) }
                     if model.selectedMask?.shape.kind == .brush { brushControls }
                     ForEach(LocalMask.keys, id: \.self) { key in
@@ -85,6 +86,23 @@ struct MasksPanel: View {
         }
         // The first slider's reset target reaches up over the gap above its name row; the padding keeps it off the buttons.
         .padding(.bottom, AdjustmentSlider.reachUp - Self.rowGap)
+    }
+
+    /// What the search for the subject is doing, while it has nothing to show.
+    @ViewBuilder
+    private var subjectNote: some View {
+        switch model.subjectState {
+        case .finding: note("Finding the subject…")
+        case .notFound: note("No subject was found in this photo.")
+        case .notNeeded, .found: EmptyView()
+        }
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Filled in the accent with dark text when on, the faint neutral fill when off, as the picker's buttons are.

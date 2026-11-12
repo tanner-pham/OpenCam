@@ -26,7 +26,9 @@ import OSLog
     private let renderer: LookRenderer
     private let exporter: PhotoExporter
     /// The preview render; `renderer.renderedCGImage` unless a test replaces it.
-    private let renderPreview: @Sendable (CIImage, PhotoEdit) async -> CGImage?
+    private let renderPreview: @Sendable (CIImage, PhotoEdit, CIImage?) async -> CGImage?
+    /// Finds the photo's subject on the proxy; `SubjectMasker.mask(for:)` unless a test replaces it.
+    private let findSubject: @Sendable (CIImage) async -> CIImage?
     /// The histogram count; `PictureHistogram.make(from:)` unless a test replaces it.
     private let makeHistogram: @Sendable (CGImage) async -> PictureHistogram?
     /// The name of a look to apply, unsaved, once the photo has loaded (`-editorLook` for screenshots); nil for a tap.
@@ -49,8 +51,11 @@ import OSLog
             record(PhotoEdit(adjustments: adjustments, lookName: lookName, masks: oldValue))
             requestRender()
             requestMaskOverlay()
+            requestSubject()
         }
     }
+    /// Whether the photo's subject has been looked for: `.notNeeded` until a subject mask first exists, then once per open.
+    private(set) var subjectState: SubjectState = .notNeeded
     /// The brush's size, 1...100, and whether it erases; editor settings, neither saved nor undoable.
     var brushSize = 30.0
     var isErasing = false
@@ -104,6 +109,8 @@ import OSLog
     private var strokeMaskID: UUID?
     private let now: @Sendable () -> Date
     private var proxy: CIImage?
+    private var subject: CIImage?
+    private var subjectTask: Task<Void, Never>?
     private var renders = RenderCoalescer<PhotoEdit>()
     private var renderTask: Task<Void, Never>?
     private var overlays = RenderCoalescer<MaskOverlayKey?>()
@@ -121,12 +128,13 @@ import OSLog
     /// The tile render started last; the next one waits for it, so tiles draw one at a time.
     private var lastTile: Task<CGImage?, Never>?
 
-    /// `renderPreview` is a test seam for a render that fails, `makeHistogram` one for a slow count; the app never passes either.
+    /// `renderPreview` is a test seam for a render that fails, `makeHistogram` one for a slow count and `findSubject` one for
+    /// a subject that Vision would not find in a drawn test picture; the app passes none of them.
     /// `launchLook` names a look in `looks` that is applied through `applyLook(_:)`, unsaved, after a successful load.
     init(item: LibraryItem, edits: EditStore, looks: LookStore, group: EditorGroup = .light, renderer: LookRenderer = .shared,
-         exporter: PhotoExporter = .appDefault(), renderPreview: (@Sendable (CIImage, PhotoEdit) async -> CGImage?)? = nil,
+         exporter: PhotoExporter = .appDefault(), renderPreview: (@Sendable (CIImage, PhotoEdit, CIImage?) async -> CGImage?)? = nil,
          makeHistogram: (@Sendable (CGImage) async -> PictureHistogram?)? = nil, launchLook: String? = nil,
-         now: (@Sendable () -> Date)? = nil) {
+         findSubject: (@Sendable (CIImage) async -> CIImage?)? = nil, now: (@Sendable () -> Date)? = nil) {
         self.now = now ?? { Date() }
         self.item = item
         self.edits = edits
@@ -134,7 +142,8 @@ import OSLog
         self.group = group
         self.renderer = renderer
         self.exporter = exporter
-        self.renderPreview = renderPreview ?? { image, edit in await renderer.renderedCGImage(image, edit: edit) }
+        self.renderPreview = renderPreview ?? { image, edit, subject in await renderer.renderedCGImage(image, edit: edit, subject: subject) }
+        self.findSubject = findSubject ?? { image in await SubjectMasker.mask(for: image) }
         self.makeHistogram = makeHistogram ?? { image in await PictureHistogram.make(from: image) }
         self.launchLook = launchLook
     }
@@ -226,6 +235,7 @@ import OSLog
         proxy = decoded
         proxySize = decoded.extent.size
         requestMaskOverlay()
+        requestSubject()
         original = unedited
         tileSource = await Self.makeTileSource(from: unedited)
         requestRender()
@@ -250,6 +260,13 @@ import OSLog
         while !renders.isIdle, let task = renderTask {
             await task.value
         }
+    }
+
+    /// Returns when the subject search and the renders it leads to have finished.
+    func waitForSubject() async {
+        await subjectTask?.value
+        await waitForPreview()
+        await waitForMaskOverlay()
     }
 
     /// Returns when no mask overlay render is running or waiting.
@@ -335,7 +352,7 @@ import OSLog
     private func runRenders(from first: (generation: Int, value: PhotoEdit)) async {
         var job: (generation: Int, value: PhotoEdit)? = first
         while let current = job {
-            if let proxy, let image = await renderPreview(proxy, current.value) {
+            if let proxy, let image = await renderPreview(proxy, current.value, subject) {
                 show(image, edit: current.value, generation: current.generation)
             } else {
                 Self.logger.error("[EditorModel:runRenders] The preview could not be rendered — {stem: \(self.item.stem, privacy: .public)}")
@@ -579,13 +596,15 @@ extension EditorModel {
 private nonisolated struct MaskOverlayKey: Equatable, Sendable {
     let shape: MaskShape
     let isInverted: Bool
+    /// A subject mask draws once the subject is found.
+    let hasSubject: Bool
 }
 
 extension EditorModel {
     /// Renders the overlay for the selected mask when it differs from the last one asked for, one render at a time.
     fileprivate func requestMaskOverlay() {
         let wanted: MaskOverlayKey? = group == .masks && isShowingMaskOverlay
-            ? selectedMask.map { MaskOverlayKey(shape: $0.shape, isInverted: $0.isInverted) } : nil
+            ? selectedMask.map { MaskOverlayKey(shape: $0.shape, isInverted: $0.isInverted, hasSubject: subject != nil) } : nil
         guard wanted != requestedOverlay else { return }
         // Recorded only once it can start: a request made before the proxy decodes is asked for again when the proxy is ready.
         guard let proxy else { return }
@@ -599,22 +618,47 @@ extension EditorModel {
     fileprivate func runOverlays(from first: (generation: Int, value: MaskOverlayKey?), extent: CGRect) async {
         var job: (generation: Int, value: MaskOverlayKey?)? = first
         while let current = job {
-            let image = await renderOverlay(current.value, extent: extent)
+            let image = await renderOverlay(current.value, extent: extent, subject: subject)
             // Only the newest request decides what is shown, so a stale result never replaces a clear.
             if current.value == requestedOverlay { maskOverlay = image }
             job = overlays.finish()
         }
     }
 
-    private func renderOverlay(_ key: MaskOverlayKey?, extent: CGRect) async -> CGImage? {
+    private func renderOverlay(_ key: MaskOverlayKey?, extent: CGRect, subject: CIImage?) async -> CGImage? {
         guard let key else { return nil }
         let mask = LocalMask(shape: key.shape, isInverted: key.isInverted)
         let renderer = renderer
-        return await Self.overlayImage(renderer: renderer, mask: mask, extent: extent)
+        return await Self.overlayImage(renderer: renderer, mask: mask, extent: extent, subject: subject)
     }
 
-    @concurrent private static func overlayImage(renderer: LookRenderer, mask: LocalMask, extent: CGRect) async -> CGImage? {
-        guard let overlay = renderer.maskOverlay(for: mask, extent: extent, subject: nil) else { return nil }
+    @concurrent private static func overlayImage(renderer: LookRenderer, mask: LocalMask, extent: CGRect, subject: CIImage?) async -> CGImage? {
+        guard let overlay = renderer.maskOverlay(for: mask, extent: extent, subject: subject) else { return nil }
         return await renderer.cgImage(overlay)
+    }
+}
+
+// MARK: - Subject
+
+/// Where the search for the photo's subject stands.
+nonisolated enum SubjectState: Equatable, Sendable {
+    case notNeeded, finding, found, notFound
+}
+
+extension EditorModel {
+    /// Looks for the subject on the proxy, off the main actor, the first time any subject mask exists. Once per open: a photo
+    /// where nothing was found is not searched again. A found subject brings the preview and the overlay up to date.
+    fileprivate func requestSubject() {
+        guard subjectState == .notNeeded, let proxy, masks.contains(where: { $0.shape.kind == .subject }) else { return }
+        subjectState = .finding
+        let find = findSubject
+        subjectTask = Task {
+            let found = await find(proxy)
+            subject = found
+            subjectState = found == nil ? .notFound : .found
+            guard found != nil else { return }
+            requestRender()
+            requestMaskOverlay()
+        }
     }
 }

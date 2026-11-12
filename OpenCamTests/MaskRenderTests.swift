@@ -104,6 +104,15 @@ import Testing
         #expect(try PixelReader.rgb(out, x: 100, y: 198).x - PixelReader.rgb(out, x: 100, y: 5).x > 0.1)
     }
 
+    @Test func exportWithASubjectMaskWritesThePhotoEvenWhenNothingIsFound() async throws {
+        let captures = try TestFiles.directory()
+        _ = try TestFiles.writeJPEG(width: 200, height: 200, rgb: SIMD3(0.4, 0.4, 0.4), to: captures.appending(path: "OC_0001.JPG"))
+        let item = try #require(LibraryScanner.items(in: captures).first)
+        let url = try await PhotoExporter(directory: try TestFiles.directory()).export(item, edit: edit(bright(.subject)))
+        let out = try PictureDecoder.full(at: url)
+        #expect(abs(try PixelReader.rgb(out, x: 100, y: 100).x - PixelReader.rgb(out, x: 5, y: 5).x) < 0.02)
+    }
+
     @Test func thumbnailKeyChangesWithMasks() {
         let date = Date(timeIntervalSince1970: 1_800_000_000)
         let plain = ThumbnailCache.key(fileName: "a.JPG", modified: date, edit: PhotoEdit())
