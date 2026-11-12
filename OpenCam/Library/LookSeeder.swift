@@ -31,12 +31,14 @@ nonisolated enum LookSeeder {
 nonisolated extension LookSeeder {
     static let colourStudyName = "Colour study"
 
-    /// An S curve with lifted blacks and dimmed whites, and blue lifted in the blacks.
+    /// An S curve with lifted blacks and dimmed whites, blue lifted in the blacks, and a few colour bands moved.
     static let colourStudy: Adjustments = {
         var adjustments = Adjustments()
         adjustments.curves.master = ToneCurve(points: [CurvePoint(x: 0, y: 0.06), CurvePoint(x: 0.25, y: 0.2),
                                                        CurvePoint(x: 0.75, y: 0.82), CurvePoint(x: 1, y: 0.97)])
         adjustments.curves.blue = ToneCurve(points: [CurvePoint(x: 0, y: 0.04), CurvePoint(x: 1, y: 1)])
+        adjustments[.mixRedHue] = 15; adjustments[.mixRedSaturation] = 30; adjustments[.mixGreenHue] = -20
+        adjustments[.mixBlueSaturation] = 20; adjustments[.mixBlueLuminance] = -30
         return adjustments
     }()
 

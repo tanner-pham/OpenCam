@@ -13,6 +13,7 @@ struct EditorPanel: View {
             switch model.group {
             case .looks: LooksPanel(model: model)
             case .curve: CurvePanel(model: model)
+            case .mix: MixPanel(model: model)
             case .light, .colour, .detail, .effects: sliders
             }
         }

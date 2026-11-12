@@ -44,4 +44,49 @@ nonisolated enum ColourBand: String, CaseIterable, Sendable {
         case .magenta: 7
         }
     }
+
+    /// The three keys of this band's sliders, in the order they are shown.
+    var hueKey: AdjustmentKey {
+        switch self {
+        case .red: .mixRedHue
+        case .orange: .mixOrangeHue
+        case .yellow: .mixYellowHue
+        case .green: .mixGreenHue
+        case .aqua: .mixAquaHue
+        case .blue: .mixBlueHue
+        case .purple: .mixPurpleHue
+        case .magenta: .mixMagentaHue
+        }
+    }
+
+    var saturationKey: AdjustmentKey {
+        switch self {
+        case .red: .mixRedSaturation
+        case .orange: .mixOrangeSaturation
+        case .yellow: .mixYellowSaturation
+        case .green: .mixGreenSaturation
+        case .aqua: .mixAquaSaturation
+        case .blue: .mixBlueSaturation
+        case .purple: .mixPurpleSaturation
+        case .magenta: .mixMagentaSaturation
+        }
+    }
+
+    var luminanceKey: AdjustmentKey {
+        switch self {
+        case .red: .mixRedLuminance
+        case .orange: .mixOrangeLuminance
+        case .yellow: .mixYellowLuminance
+        case .green: .mixGreenLuminance
+        case .aqua: .mixAquaLuminance
+        case .blue: .mixBlueLuminance
+        case .purple: .mixPurpleLuminance
+        case .magenta: .mixMagentaLuminance
+        }
+    }
+
+    var keys: [AdjustmentKey] { [hueKey, saturationKey, luminanceKey] }
+
+    /// The colour of this band's button: the band's hue at a fixed saturation and value, Display P3-encoded.
+    var swatch: SIMD3<Float> { ColourMath.rgb(hue: centre, saturation: 0.8, value: 0.9) }
 }

@@ -12,10 +12,11 @@ nonisolated enum EditorLayout: Equatable, Sendable {
     }
 
     /// Stacked, the picture never takes so much height that less than this is left for the panel below the info line.
-    /// Curve needs room for its square canvas under the group and channel pickers.
+    /// Curve needs room for its square canvas under the group and channel pickers; Mix for its band buttons and the first
+    /// slider rows.
     static func minPanelHeight(for group: EditorGroup) -> CGFloat {
         switch group {
-        case .curve: 340
+        case .curve, .mix: 340
         case .light, .colour, .detail, .effects, .looks: 240
         }
     }

@@ -4,6 +4,15 @@ import Foundation
 nonisolated enum AdjustmentKey: String, CaseIterable, Sendable {
     case exposure, contrast, highlights, shadows, whites, blacks, temperature, tint
     case vibrance, saturation, sharpening, noiseReduction, grain, vignette
+    /// The colour mixer: hue, saturation and luminance of each `ColourBand`, in that order.
+    case mixRedHue, mixRedSaturation, mixRedLuminance,
+         mixOrangeHue, mixOrangeSaturation, mixOrangeLuminance,
+         mixYellowHue, mixYellowSaturation, mixYellowLuminance,
+         mixGreenHue, mixGreenSaturation, mixGreenLuminance,
+         mixAquaHue, mixAquaSaturation, mixAquaLuminance,
+         mixBlueHue, mixBlueSaturation, mixBlueLuminance,
+         mixPurpleHue, mixPurpleSaturation, mixPurpleLuminance,
+         mixMagentaHue, mixMagentaSaturation, mixMagentaLuminance
 
     var title: String {
         switch self {
@@ -21,6 +30,30 @@ nonisolated enum AdjustmentKey: String, CaseIterable, Sendable {
         case .noiseReduction: "Noise reduction"
         case .grain: "Grain"
         case .vignette: "Vignette"
+        case .mixRedHue: "Red hue"
+        case .mixRedSaturation: "Red saturation"
+        case .mixRedLuminance: "Red luminance"
+        case .mixOrangeHue: "Orange hue"
+        case .mixOrangeSaturation: "Orange saturation"
+        case .mixOrangeLuminance: "Orange luminance"
+        case .mixYellowHue: "Yellow hue"
+        case .mixYellowSaturation: "Yellow saturation"
+        case .mixYellowLuminance: "Yellow luminance"
+        case .mixGreenHue: "Green hue"
+        case .mixGreenSaturation: "Green saturation"
+        case .mixGreenLuminance: "Green luminance"
+        case .mixAquaHue: "Aqua hue"
+        case .mixAquaSaturation: "Aqua saturation"
+        case .mixAquaLuminance: "Aqua luminance"
+        case .mixBlueHue: "Blue hue"
+        case .mixBlueSaturation: "Blue saturation"
+        case .mixBlueLuminance: "Blue luminance"
+        case .mixPurpleHue: "Purple hue"
+        case .mixPurpleSaturation: "Purple saturation"
+        case .mixPurpleLuminance: "Purple luminance"
+        case .mixMagentaHue: "Magenta hue"
+        case .mixMagentaSaturation: "Magenta saturation"
+        case .mixMagentaLuminance: "Magenta luminance"
         }
     }
 
@@ -28,7 +61,7 @@ nonisolated enum AdjustmentKey: String, CaseIterable, Sendable {
         switch self {
         case .exposure: -5...5
         case .sharpening, .noiseReduction, .grain: 0...100
-        default: -100...100
+        default: -100...100   // the mixer's keys among them
         }
     }
 
@@ -46,7 +79,11 @@ nonisolated enum AdjustmentKey: String, CaseIterable, Sendable {
     /// Said per key, so a key added later is placed on purpose rather than by its position in `allCases`.
     var isColour: Bool {
         switch self {
-        case .exposure, .contrast, .highlights, .shadows, .whites, .blacks, .temperature, .tint, .vibrance, .saturation: true
+        case .exposure, .contrast, .highlights, .shadows, .whites, .blacks, .temperature, .tint, .vibrance, .saturation,
+             .mixRedHue, .mixRedSaturation, .mixRedLuminance, .mixOrangeHue, .mixOrangeSaturation, .mixOrangeLuminance,
+             .mixYellowHue, .mixYellowSaturation, .mixYellowLuminance, .mixGreenHue, .mixGreenSaturation, .mixGreenLuminance,
+             .mixAquaHue, .mixAquaSaturation, .mixAquaLuminance, .mixBlueHue, .mixBlueSaturation, .mixBlueLuminance,
+             .mixPurpleHue, .mixPurpleSaturation, .mixPurpleLuminance, .mixMagentaHue, .mixMagentaSaturation, .mixMagentaLuminance: true
         case .sharpening, .noiseReduction, .grain, .vignette: false
         }
     }
@@ -55,6 +92,10 @@ nonisolated enum AdjustmentKey: String, CaseIterable, Sendable {
         switch self {
         case .exposure, .contrast, .highlights, .shadows, .whites, .blacks: .light
         case .temperature, .tint, .vibrance, .saturation: .colour
+        case .mixRedHue, .mixRedSaturation, .mixRedLuminance, .mixOrangeHue, .mixOrangeSaturation, .mixOrangeLuminance,
+             .mixYellowHue, .mixYellowSaturation, .mixYellowLuminance, .mixGreenHue, .mixGreenSaturation, .mixGreenLuminance,
+             .mixAquaHue, .mixAquaSaturation, .mixAquaLuminance, .mixBlueHue, .mixBlueSaturation, .mixBlueLuminance,
+             .mixPurpleHue, .mixPurpleSaturation, .mixPurpleLuminance, .mixMagentaHue, .mixMagentaSaturation, .mixMagentaLuminance: .mix
         case .sharpening, .noiseReduction: .detail
         case .grain, .vignette: .effects
         }

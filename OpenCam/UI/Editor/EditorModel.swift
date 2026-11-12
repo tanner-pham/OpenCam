@@ -14,6 +14,8 @@ import OSLog
     var group: EditorGroup
     /// The curve the Curve group shows and edits.
     var curveChannel: CurveChannel = .master
+    /// The colour band the Mix group shows; never saved, so an edit opens on Red.
+    var mixBand: ColourBand = .red
     var isShowingOriginal = false
     private let edits: EditStore
     private let lookStore: LookStore

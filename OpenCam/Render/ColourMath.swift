@@ -23,7 +23,7 @@ nonisolated enum ColourMath {
     /// 1 linear light and exposure, 2 white balance, 3 encoded and contrast, 4 tones (highlights, shadows, whites, blacks),
     /// 5 point curves (the RGB curve, then the channel's own curve; each identity curve is skipped, so four identity curves
     /// change nothing),
-    /// 6 vibrance, 7 saturation, 8 clamp.
+    /// 6 vibrance, 7 saturation, 8 colour mixer (skipped when every mixer value is 0), 9 clamp.
     static func apply(_ adjustments: Adjustments, to rgb: SIMD3<Float>) -> SIMD3<Float> {
         func t(_ key: AdjustmentKey) -> Float { Float(adjustments[key]) / 100 }
 
@@ -73,7 +73,16 @@ nonisolated enum ColourMath {
         y = luma(x)
         x = SIMD3(repeating: y) + (x - SIMD3(repeating: y)) * (1 + t(.saturation))
 
-        // 8: clamp.
+        // 8: colour mixer. Skipped outright when no mixer value is set, which is the cheapest check there is; the vectors are
+        // written out per band, in `ColourBand.allCases` order, because this runs at every lattice point of a table.
+        if adjustments.hasMixerValues {
+            x = mix(x,
+                    hue: SIMD8(t(.mixRedHue), t(.mixOrangeHue), t(.mixYellowHue), t(.mixGreenHue), t(.mixAquaHue), t(.mixBlueHue), t(.mixPurpleHue), t(.mixMagentaHue)),
+                    saturation: SIMD8(t(.mixRedSaturation), t(.mixOrangeSaturation), t(.mixYellowSaturation), t(.mixGreenSaturation), t(.mixAquaSaturation), t(.mixBlueSaturation), t(.mixPurpleSaturation), t(.mixMagentaSaturation)),
+                    luminance: SIMD8(t(.mixRedLuminance), t(.mixOrangeLuminance), t(.mixYellowLuminance), t(.mixGreenLuminance), t(.mixAquaLuminance), t(.mixBlueLuminance), t(.mixPurpleLuminance), t(.mixMagentaLuminance)))
+        }
+
+        // 9: clamp.
         return clamp01(x)
     }
 

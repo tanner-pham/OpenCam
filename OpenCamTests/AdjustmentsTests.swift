@@ -15,13 +15,13 @@ import Testing
         #expect(a.exposure == 5); #expect(a.contrast == -100); #expect(a.saturation == 40); #expect(a.shadows == 0); #expect(a.grain == 0)
     }
     @Test func keysCarryTitlesRangesGroupsAndText() {
-        #expect(AdjustmentKey.allCases.map(\.title) == ["Exposure", "Contrast", "Highlights", "Shadows", "Whites", "Blacks", "Temperature", "Tint",
+        #expect(AdjustmentKey.allCases.prefix(14).map(\.title) == ["Exposure", "Contrast", "Highlights", "Shadows", "Whites", "Blacks", "Temperature", "Tint",
                                                          "Vibrance", "Saturation", "Sharpening", "Noise reduction", "Grain", "Vignette"])
         #expect(AdjustmentKey.exposure.range == -5...5); #expect(AdjustmentKey.grain.range == 0...100); #expect(AdjustmentKey.vignette.range == -100...100)
         #expect(EditorGroup.light.keys == [.exposure, .contrast, .highlights, .shadows, .whites, .blacks])
         #expect(EditorGroup.colour.keys == [.temperature, .tint, .vibrance, .saturation])
         #expect(EditorGroup.detail.keys == [.sharpening, .noiseReduction]); #expect(EditorGroup.effects.keys == [.grain, .vignette])
-        #expect(EditorGroup.looks.keys.isEmpty); #expect(EditorGroup.allCases.map(\.title) == ["Light", "Colour", "Curve", "Detail", "Effects", "Looks"])
+        #expect(EditorGroup.looks.keys.isEmpty); #expect(EditorGroup.allCases.map(\.title) == ["Light", "Colour", "Curve", "Mix", "Detail", "Effects", "Looks"])
         #expect(AdjustmentKey.exposure.valueText(0.5) == "+0.5"); #expect(AdjustmentKey.exposure.valueText(0) == "0.0")
         #expect(AdjustmentKey.exposure.valueText(-1.3) == "-1.3")
         #expect(AdjustmentKey.contrast.valueText(-35) == "-35"); #expect(AdjustmentKey.contrast.valueText(20) == "+20"); #expect(AdjustmentKey.grain.valueText(20) == "20")
@@ -39,9 +39,12 @@ import Testing
         var b = a; b.curves.blue = .identity; #expect(b == Adjustments()); #expect(a.setting(.grain, to: 40).colourPart == a); #expect(a.colourPart.curves == a.curves)
     }
     @Test func theEncoderWritesExactlyTheFourteenE1Keys() throws {
-        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
-        let keys = Set(AdjustmentKey.allCases.map(\.rawValue))
-        let object = try JSONSerialization.jsonObject(with: encoder.encode(Adjustments()))
-        #expect((object as? [String: Double]).map { Set($0.keys) } == keys)
+        let e1Keys: Set<String> = ["exposure", "contrast", "highlights", "shadows", "whites", "blacks", "temperature", "tint",
+                                   "vibrance", "saturation", "sharpening", "noiseReduction", "grain", "vignette"]
+        let written = try JSONDecoder().decode([String: Double].self, from: JSONEncoder().encode(Adjustments()))
+        #expect(Set(written.keys) == e1Keys)
+    }
+    @Test func aMalformedCurvesValueMakesTheEditUnreadable() {
+        #expect(throws: DecodingError.self) { try JSONDecoder().decode(Adjustments.self, from: Data(#"{"curves": {"master": {}}}"#.utf8)) }
     }
 }
