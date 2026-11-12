@@ -346,6 +346,17 @@ import Testing
         #expect(try pixel(try #require(model.preview), x: 50, y: 150) == before)
     }
 
+    @Test func closingTheEditorCancelsTheSubjectSearch() async throws {
+        let model = try await subjectModel { image in
+            try? await Task.sleep(for: .milliseconds(200))
+            return .found(CIImage(color: .white).cropped(to: image.extent))
+        }
+        model.addMask(.subject)
+        model.cancelSubjectSearch()
+        await model.waitForSubject()
+        #expect(model.subjectState == .finding)   // the late result was dropped
+    }
+
     @Test func theSubjectIsFoundOncePerOpen() async throws {
         let calls = Counter()
         let model = try await subjectModel { _ in calls.increment(); return .notFound }
