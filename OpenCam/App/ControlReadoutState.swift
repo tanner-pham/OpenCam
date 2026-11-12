@@ -13,4 +13,6 @@ nonisolated struct ControlReadoutState: Sendable, Equatable {
     /// Drawn dimmed: only for a lasting reason (exposure is manual and this is EV, or the camera's ranges are known and it has no
     /// scale for this control). Unknown ranges never dim, since they are only unknown while the camera changes.
     var isDimmed: Bool
+    /// What VoiceOver says for the readout as a whole: the value and whether it is set by hand.
+    var accessibilityValue: String
 }

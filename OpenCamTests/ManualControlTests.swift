@@ -186,6 +186,30 @@ import Testing
         #expect(rig.model.notice == nil)
     }
 
+    @Test func theSpokenValueSaysAutomaticOnlyForAControlThatHasAnAutomaticState() async throws {
+        let rig = try await rig()
+        // A control with Auto.
+        #expect(rig.model.readout(for: .shutter).accessibilityValue == "1/60 second, automatic")
+        rig.model.setControl(.shutter, step: 12)
+        await rig.model.manualApplyTask?.value
+        #expect(rig.model.readout(for: .shutter).accessibilityValue.hasSuffix(", set by hand"))
+        #expect(!rig.model.readout(for: .shutter).accessibilityValue.contains("automatic"))
+        rig.model.setAutomatic(.shutter)
+        await rig.model.manualApplyTask?.value
+        #expect(rig.model.readout(for: .shutter).accessibilityValue == "1/60 second, automatic")
+        // EV at zero is the value alone; away from zero it is set by hand.
+        #expect(rig.model.readout(for: .bias).accessibilityValue == "0.0 EV")
+        let scale = try #require(rig.model.scale(for: .bias))
+        rig.model.setControl(.bias, step: scale.step(nearest: 1))
+        await rig.model.manualApplyTask?.value
+        #expect(rig.model.readout(for: .bias).accessibilityValue == "\(rig.model.readout(for: .bias).spoken), set by hand")
+        #expect(rig.model.readout(for: .bias).accessibilityValue == "+1.0 EV, set by hand")
+        // While exposure is manual EV cannot be adjusted.
+        rig.model.setControl(.iso, step: 6)
+        await rig.model.manualApplyTask?.value
+        #expect(rig.model.readout(for: .bias).accessibilityValue == "Not available while exposure is manual")
+    }
+
     @Test func noCameraReturnsQuietly() async throws {
         let rig = try await rig()
         await rig.fake.setManualError(.noCamera)

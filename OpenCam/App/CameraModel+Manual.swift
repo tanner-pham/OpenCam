@@ -38,8 +38,19 @@ extension CameraModel {
             isSet: isMarkedSet(control, value: value),
             isOpen: openControl == control,
             isAvailable: canAdjustControls && manual.isAdjustable(control) && scale(for: control) != nil,
-            isDimmed: !manual.isAdjustable(control) || (manualRanges != nil && scale(for: control) == nil)
+            isDimmed: !manual.isAdjustable(control) || (manualRanges != nil && scale(for: control) == nil),
+            accessibilityValue: accessibilityValue(of: control, value: value)
         )
+    }
+
+    /// What VoiceOver says for a readout. EV has no automatic state: its value alone at zero, "set by hand" away from zero, and
+    /// a plain reason while exposure is manual.
+    private func accessibilityValue(of control: ManualControl, value: Double?) -> String {
+        guard manual.isAdjustable(control) else { return "Not available while exposure is manual" }
+        let spoken = control.spoken(value)
+        let isSet = isMarkedSet(control, value: value)
+        if !control.hasAutomatic { return isSet ? "\(spoken), set by hand" : spoken }
+        return "\(spoken), \(isSet ? "set by hand" : "automatic")"
     }
 
     var openSlider: OpenSlider? {

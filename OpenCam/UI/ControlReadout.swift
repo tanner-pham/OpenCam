@@ -18,7 +18,7 @@ struct ControlReadout: View {
         .buttonStyle(.plain)
         .disabled(!state.isAvailable)
         .accessibilityLabel(control.name)
-        .accessibilityValue("\(state.spoken), \(state.isSet ? "set by hand" : "automatic")")
+        .accessibilityValue(state.accessibilityValue)
         .accessibilityHint(state.isOpen ? "Closes the slider." : "Opens the slider.")
         .accessibilityAddTraits(state.isOpen ? .isSelected : [])
     }
