@@ -130,6 +130,24 @@ import Testing
         #expect(model.canRescanCapabilities)
     }
 
+    @Test func aRescanClearsTheSavedStart() async throws {
+        let hook = ScanHook(), formats = [descriptor], lenses = [wide]
+        let source = CapabilitySource(cacheDirectory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), documentsDirectory: nil,
+                                      discoverLenses: { lenses }, scan: { _ in await hook.run(); return formats })
+        let defaults = try Fixture.freshDefaults()
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: false, defaults: defaults, capabilitySource: source)
+        model.phase = .ready
+        let configuration = try #require(model.sessionConfiguration)
+        model.attachSession(FakeSessionConfigurator(failingLensIDs: []), configuredWith: configuration, selection: model.currentSelection)
+        SavedStart(configuration: configuration, record: model.record, photo: model.photo, osBuild: model.capabilities.osBuild,
+                   modelIdentifier: model.capabilities.modelIdentifier, scanVersion: model.capabilities.scanVersion).save(to: defaults)
+        #expect(SavedStart.load(from: defaults) != nil)
+        var isClearedDuringScan = false
+        hook.action = { isClearedDuringScan = SavedStart.load(from: defaults) == nil }
+        await model.rescanCapabilities()
+        #expect(isClearedDuringScan)
+    }
+
     @Test func rescanIsUnavailableWhileRecording() async throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let model = CameraModel(config: .parse(["app", "-recording", "on"]), capabilities: try Fixture.load(), isSimulator: false,

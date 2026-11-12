@@ -155,6 +155,9 @@ final class CameraModel {
     @ObservationIgnored var frameWatch: Task<Void, Never>?
     /// True while a rescan holds the session stopped, until it runs again; no frame watch starts meanwhile.
     @ObservationIgnored var isSessionStoppedForRescan = false
+    /// True from the release of a saved start until `.savedStartReleased` reaches `apply`: the events before it belong to
+    /// a start the model did not keep, and none of them says anything about the session that runs now.
+    @ObservationIgnored var isIgnoringEventsUntilSavedStartReleased = false
     /// The launch phases, journalled once when the session first runs.
     @ObservationIgnored var launchTimeline = LaunchTimeline()
 
@@ -596,6 +599,25 @@ final class CameraModel {
         currentSelection.save(to: defaults)
     }
 
+    /// Keeps a confirmed configuration as the next launch's start. Called only where a configuration is confirmed.
+    func saveStart(_ working: (configuration: SessionConfiguration, selection: SavedSelections)) {
+        guard !isScripted else { return }
+        SavedStart(configuration: working.configuration, record: working.selection.record, photo: working.selection.photo,
+                   osBuild: capabilities.osBuild, modelIdentifier: capabilities.modelIdentifier, scanVersion: capabilities.scanVersion).save(to: defaults)
+    }
+
+    func clearSavedStart() {
+        SavedStart.clear(from: defaults)
+    }
+
+    /// The configuration the saved start may begin with, for the access decided now. Nil on a scripted launch or when the
+    /// record's rules say no (`SavedStart.configuration(for:...)`). A look counts only as whether frames are drawn.
+    func savedStartConfiguration(access: CaptureAccess) -> SessionConfiguration? {
+        guard !isScripted, let start = SavedStart.load(from: defaults) else { return nil }
+        return start.configuration(for: SavedSelections.load(from: defaults), access: access, hasLook: cameraLook != nil,
+                                   osBuild: DeviceIdentity.osBuild(), modelIdentifier: DeviceIdentity.modelIdentifier())
+    }
+
     /// Hands the model a session already running `configuration`, which was built from `selection`;
     /// later selection changes reconfigure it. The caller arms its confirmation once the session's start has returned.
     func attachSession(_ configurator: any SessionConfigurator, configuredWith configuration: SessionConfiguration, selection: SavedSelections) {
@@ -748,56 +770,24 @@ extension CameraModel {
     /// then follows its events for as long as the calling task runs.
     /// File and device reads run off the main actor, so the screen stays responsive while the camera starts.
     func start(session: CameraSession) async {
+        launchTimeline.mark("start")
+        // With access already granted and a configuration the last run confirmed, the session starts from it at once, on its
+        // own queue, while the rest of the sequence runs. The model joins it in `startCamera`, where it would configure.
+        let savedStart = savedStartConfiguration(access: CameraSession.currentAccess()).map { session.startSaved($0) }
+        // The look renderer's warm-up overlapped `startRunning` on a normal start; the saved start's session is already running
+        // at the join, so it starts now. The call in `startCamera` stays and does nothing once the renderer exists.
+        if savedStart != nil { Task(priority: .utility) { await LookRenderer.warmUp() } }
         refreshFreeBytes()
         failedCombinations = await Self.loadFailedCombinations(from: capabilitySource)
         access = await CameraSession.requestAccess()
+        launchTimeline.mark("access")
         guard access.canUseCamera else {
+            if let savedStart { await discardSavedStart(savedStart, on: session, reason: "camera access") }
             phase = access.camera == .restricted ? .cameraRestricted : .cameraDenied
             return
         }
-        let lenses = await Self.discoverLenses(with: capabilitySource)
-        guard !lenses.isEmpty else {
-            Self.logger.error("[CameraModel:start] No camera found — {lenses: 0}")
-            phase = .failed("The camera could not start.")
-            return
-        }
-        await loadCapabilities(lenses: lenses)
-        if case .failed = phase { return }
-        launchTimeline.mark("capabilities")
-        guard let configuration = sessionConfiguration else {
-            Self.logger.error("[CameraModel:start] No lens selected — {lenses: \(lenses.count)}")
-            phase = .failed("The camera could not start.")
-            return
-        }
-        let selection = currentSelection
-        // Read before the configure and start, so an error handled while they are awaited is not lost.
-        let errors = runtimeErrorCount
-        do {
-            try await session.configure(configuration)
-        } catch {
-            Self.logger.error("\(error.description, privacy: .public)")
-            ErrorJournal.record(error.description)
-            phase = .failed(Self.formatSetupFailed)
-            return
-        }
-        launchTimeline.mark("configured")
-        // The look renderer's Metal device and CIContext are made now, off the main actor and at low priority, while the
-        // session starts on its own queue: a look's frame view, which reads the renderer on the main actor, can exist only
-        // once the phase is ready below, after the start has returned. Not awaited, so it never delays the first frame.
-        Task(priority: .utility) { await LookRenderer.warmUp() }
-        attachSession(session, configuredWith: configuration, selection: selection)
         cameraSession = session
-        await session.start()
-        launchTimeline.mark("running")
-        ErrorJournal.record(launchTimeline.line)
-        isResettingMediaServices = false
-        watchFrames(for: configuration)
-        phase = .ready
-        // Timed only once the start has returned, so a slow start never drops it, and for whatever the session last applied:
-        // a selection changed during the first configure was applied by the chain before the phase was ready, so it armed
-        // nothing itself. One the chain has still to apply arms its own once it has.
-        if let lastWorking { confirmWhenRunning(lastWorking.configuration, since: errors) }
-        releaseIfLibraryOpen()
+        guard await startCamera(on: session, savedStart: savedStart) else { return }
         await withDiscardingTaskGroup { group in
             group.addTask { await self.followRecordings(of: session) }
             group.addTask { await self.pollMeters(of: session) }
@@ -811,11 +801,6 @@ extension CameraModel {
 
     @concurrent nonisolated private static func loadFailedCombinations(from source: CapabilitySource) async -> FailedCombinations {
         FailedCombinations.load(directory: source.cacheDirectory, osBuild: DeviceIdentity.osBuild())
-    }
-
-    /// The discovery sessions are created off the main actor.
-    @concurrent nonisolated private static func discoverLenses(with source: CapabilitySource) async -> [Lens] {
-        source.discoverLenses()
     }
 
     /// Ten times a second; the levels stay empty without a microphone.
@@ -882,6 +867,10 @@ extension CameraModel {
     }
 
     func apply(_ event: SessionEvent) {
+        if isIgnoringEventsUntilSavedStartReleased {
+            if event == .savedStartReleased { isIgnoringEventsUntilSavedStartReleased = false }
+            return
+        }
         switch event {
         case .interrupted(let reason):
             isInterrupted = true
@@ -934,6 +923,8 @@ extension CameraModel {
             isThermalPressure = isThermal
         case .framesUnavailable:
             framesUnavailable()
+        case .savedStartReleased:
+            break
         }
     }
 }

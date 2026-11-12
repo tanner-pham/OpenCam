@@ -2,7 +2,8 @@ import Darwin
 import Foundation
 
 /// When each launch phase finished, counted from the process start, for one `[timing] launch ...` journal line per launch:
-/// `[timing] launch model 140 ms, capabilities 310 ms, configured 820 ms, running 1290 ms`.
+/// `[timing] launch model 140 ms, start 210 ms, access 215 ms, lenses 250 ms, cache 300 ms, capabilities 310 ms, configured 320 ms, running 1290 ms`.
+/// Notes (`note`) sit among the marks in order.
 nonisolated struct LaunchTimeline: Sendable {
     let processStart: Date
     private(set) var phases: [String] = []
@@ -14,6 +15,11 @@ nonisolated struct LaunchTimeline: Sendable {
     /// Notes that `phase` finished now.
     mutating func mark(_ phase: String, at date: Date = .now) {
         phases.append("\(phase) \(Int((date.timeIntervalSince(processStart) * 1_000).rounded())) ms")
+    }
+
+    /// Appends `text` as written, in order with the marks.
+    mutating func note(_ text: String) {
+        phases.append(text)
     }
 
     var line: String { "[timing] launch " + phases.joined(separator: ", ") }

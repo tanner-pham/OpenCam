@@ -75,6 +75,11 @@ actor FakeSessionConfigurator: SessionConfigurator {
         calls.append("release")
     }
 
+    /// Records "release" exactly as `releaseCameras()` does; a test feeds `.savedStartReleased` to the model itself.
+    func releaseSavedStart() {
+        releaseCameras()
+    }
+
     func startRecording(option: VideoOption, url: URL, minFreeBytes: Int64) async throws(RecordingError) {
         recordingURLs.append(url)
         await onStartRecording(url, option)

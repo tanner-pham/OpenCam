@@ -27,6 +27,9 @@ actor CameraSession: SessionConfigurator {
     /// Attached only while the applied configuration's `needsFrames` is true, so with no look the outputs are as before.
     private let frameOutput: AVCaptureVideoDataOutput
     private var pressureObservation: NSKeyValueObservation?
+    /// The session's own part of the launch, written as one journal line when the first `start()` returns, then nil.
+    /// Its clock is the process start, like the model's line.
+    private var launchMarks: LaunchTimeline? = LaunchTimeline()
     /// True while a media-services-reset restart runs, so a reset during that restart is not retried; cleared when it
     /// ends, whether it worked or not.
     private var isRestartingAfterReset = false
@@ -43,7 +46,7 @@ actor CameraSession: SessionConfigurator {
     private var whiteBalanceRestore: (device: AVCaptureDevice, mode: AVCaptureDevice.WhiteBalanceMode)?
     /// Held here because the session does not keep its controls delegate alive.
     private let controlsDelegate = CameraControlsDelegate()
-    private static let logger = Logger(subsystem: "local.opencam.app", category: "CameraSession")
+    static let logger = Logger(subsystem: "local.opencam.app", category: "CameraSession")
 
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
@@ -82,15 +85,14 @@ actor CameraSession: SessionConfigurator {
 
     /// Asks for the camera, then the microphone. The microphone is only asked for once the camera is allowed.
     nonisolated static func requestAccess() async -> CaptureAccess {
-        var camera = AccessState(AVCaptureDevice.authorizationStatus(for: .video))
-        if camera == .notDetermined {
-            camera = await AVCaptureDevice.requestAccess(for: .video) ? .authorized : .denied
+        var access = currentAccess()
+        if access.camera == .notDetermined {
+            access.camera = await AVCaptureDevice.requestAccess(for: .video) ? .authorized : .denied
         }
-        var microphone = AccessState(AVCaptureDevice.authorizationStatus(for: .audio))
-        if camera == .authorized, microphone == .notDetermined {
-            microphone = await AVCaptureDevice.requestAccess(for: .audio) ? .authorized : .denied
+        if access.camera == .authorized, access.microphone == .notDetermined {
+            access.microphone = await AVCaptureDevice.requestAccess(for: .audio) ? .authorized : .denied
         }
-        return CaptureAccess(camera: camera, microphone: microphone)
+        return access
     }
 
     /// On failure the last configuration that worked is applied again, so the session keeps running as it was,
@@ -100,7 +102,11 @@ actor CameraSession: SessionConfigurator {
     func configure(_ configuration: SessionConfiguration) throws(CameraSessionError) {
         guard !recorder.output.isRecording else { throw .recordingInProgress }
         let timing = (start: ContinuousClock.now, previous: lastWorkingConfiguration)
-        defer { TimingJournal.configure(configuration, after: timing.previous, since: timing.start) }
+        launchMarks?.mark("session configure")
+        defer {
+            launchMarks?.mark("session configured")
+            TimingJournal.configure(configuration, after: timing.previous, since: timing.start)
+        }
         do throws(CameraSessionError) {
             try apply(configuration)
             lastWorkingConfiguration = configuration
@@ -193,8 +199,23 @@ actor CameraSession: SessionConfigurator {
             notificationTokens = Self.observeNotifications(of: session, owner: self, continuation: continuation)
         }
         guard !session.isRunning else { return }
+        launchMarks?.mark("session startRunning")
         session.startRunning()
+        launchMarks?.mark("session running")
         allowHapticsWhileRecording()
+        writeLaunchLine()
+    }
+
+    /// The session's launch line, once, after the first start: the marks, then what was applied and whether a preview layer
+    /// was already connected (`preview yes` means the layer joined before the session started).
+    private func writeLaunchLine() {
+        guard var marks = launchMarks else { return }
+        marks.mark("session started")
+        if let applied = lastWorkingConfiguration { marks.note("\(applied.mode.rawValue) \(applied.lens.label)") }
+        marks.note("audio \(audioInput != nil ? "yes" : "no")")
+        marks.note("preview \(session.connections.contains { $0.videoPreviewLayer != nil } ? "yes" : "no")")
+        launchMarks = nil
+        ErrorJournal.record(marks.line)
     }
 
     /// After `AVError.Code.mediaServicesWereReset` the session is restarted once, if it is meant to run; `.restarted`
@@ -231,6 +252,12 @@ actor CameraSession: SessionConfigurator {
         session.removeInput(videoInput)
         session.commitConfiguration()
         self.videoInput = nil
+    }
+
+    /// Releases a saved start's camera and marks, in one actor turn so no event lands between them, where its events end.
+    func releaseSavedStart() {
+        releaseCameras()
+        continuation.yield(.savedStartReleased)
     }
 
     // MARK: Inputs

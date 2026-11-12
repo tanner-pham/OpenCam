@@ -12,4 +12,6 @@ nonisolated enum SessionEvent: Sendable, Equatable {
     case pressure(PressureLevel, isThermal: Bool)
     /// The data output that draws the look could not be added; the viewfinder keeps the preview layer.
     case framesUnavailable
+    /// Everything before this in the stream belongs to a saved start that was released; the model ignores it.
+    case savedStartReleased
 }

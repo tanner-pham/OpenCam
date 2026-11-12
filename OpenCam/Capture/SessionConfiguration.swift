@@ -2,7 +2,7 @@ import Foundation
 
 /// What the session should capture. `video == nil` keeps the device's default format. `needsFrames` attaches the data
 /// output that draws a look on the viewfinder; false (no look) leaves the session's outputs as they always were.
-nonisolated struct SessionConfiguration: Sendable, Equatable {
+nonisolated struct SessionConfiguration: Codable, Sendable, Equatable {
     var lens: Lens
     var mode: CaptureMode
     var video: VideoOption?
