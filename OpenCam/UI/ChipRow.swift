@@ -30,7 +30,7 @@ struct ChipRow: View {
                     .scrollClipDisabled()
                 } else {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.Space.s), count: columns),
-                              spacing: Theme.Space.xs) {
+                              spacing: Theme.Space.s) {
                         ForEach(chips) { chip in
                             ChipButton(chip: chip, isSelected: chip.id == selectedID) { onSelect(chip.id) }
                         }
