@@ -607,6 +607,14 @@ final class CameraModel {
         SavedStart.clear(from: defaults)
     }
 
+    /// The configuration the saved start may begin with, for the access decided now. Nil on a scripted launch or when the
+    /// record's rules say no (`SavedStart.configuration(for:...)`). A look counts only as whether frames are drawn.
+    func savedStartConfiguration(access: CaptureAccess) -> SessionConfiguration? {
+        guard !isScripted, let start = SavedStart.load(from: defaults) else { return nil }
+        return start.configuration(for: SavedSelections.load(from: defaults), access: access, hasLook: cameraLook != nil,
+                                   osBuild: DeviceIdentity.osBuild(), modelIdentifier: DeviceIdentity.modelIdentifier())
+    }
+
     /// Hands the model a session already running `configuration`, which was built from `selection`;
     /// later selection changes reconfigure it. The caller arms its confirmation once the session's start has returned.
     func attachSession(_ configurator: any SessionConfigurator, configuredWith configuration: SessionConfiguration, selection: SavedSelections) {
@@ -760,16 +768,23 @@ extension CameraModel {
     /// File and device reads run off the main actor, so the screen stays responsive while the camera starts.
     func start(session: CameraSession) async {
         launchTimeline.mark("start")
+        // With access already granted and a configuration the last run confirmed, the session starts from it at once, on its
+        // own queue, while the rest of the sequence runs. The model joins it in `startCamera`, where it would configure.
+        let savedStart = savedStartConfiguration(access: CameraSession.currentAccess()).map { session.startSaved($0) }
+        // The look renderer's warm-up overlapped `startRunning` on a normal start; the saved start's session is already running
+        // at the join, so it starts now. The call in `startCamera` stays and does nothing once the renderer exists.
+        if savedStart != nil { Task(priority: .utility) { await LookRenderer.warmUp() } }
         refreshFreeBytes()
         failedCombinations = await Self.loadFailedCombinations(from: capabilitySource)
         access = await CameraSession.requestAccess()
         launchTimeline.mark("access")
         guard access.canUseCamera else {
+            if let savedStart { await discardSavedStart(savedStart, on: session, reason: "camera access") }
             phase = access.camera == .restricted ? .cameraRestricted : .cameraDenied
             return
         }
         cameraSession = session
-        guard await startCamera(on: session, savedStart: nil) else { return }
+        guard await startCamera(on: session, savedStart: savedStart) else { return }
         await withDiscardingTaskGroup { group in
             group.addTask { await self.followRecordings(of: session) }
             group.addTask { await self.pollMeters(of: session) }

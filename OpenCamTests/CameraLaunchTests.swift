@@ -96,4 +96,151 @@ import Testing
         #expect(rig.model.phase == .ready)
         #expect(CapabilityCache(directory: rig.directory).load(osBuild: DeviceIdentity.osBuild(), modelIdentifier: DeviceIdentity.modelIdentifier()) != nil)
     }
+
+    // MARK: A saved start
+
+    private static let stop = "[CameraSession:runtimeError] Session stopped — {domain: AVFoundationErrorDomain, code: -11800, The operation could not be completed}"
+
+    /// A field of the configuration a saved start can disagree about.
+    enum Field: CaseIterable {
+        case mode, lens, video, photo, includesAudio, needsFrames
+
+        func changing(_ configuration: SessionConfiguration) -> SessionConfiguration {
+            var changed = configuration
+            switch self {
+            case .mode: changed.mode = configuration.mode == .video ? .photo : .video
+            case .lens: changed.lens = Lens(id: "other", kind: .wide, deviceUniqueID: "other", zoomFactor: 1, label: "1x")
+            case .video: changed.video = nil
+            case .photo: changed.photo = nil
+            case .includesAudio: changed.includesAudio.toggle()
+            case .needsFrames: changed.needsFrames.toggle()
+            }
+            return changed
+        }
+    }
+
+    @Test func aSavedStartThatMatchesIsAdoptedWithoutAConfigure() async throws {
+        let rig = try rig()
+        let expected = rig.expected
+        #expect(await rig.model.startCamera(on: rig.fake, savedStart: Task { expected }))
+        #expect(await rig.fake.calls == ["start"])
+        #expect(await rig.fake.applied.isEmpty)
+        #expect(rig.model.lastWorking?.configuration == expected)
+        #expect(rig.model.lastWorking?.selection == rig.model.currentSelection)
+        #expect(rig.model.requestedConfiguration == expected)
+        #expect(rig.model.phase == .ready)
+        #expect(rig.model.notice == nil)
+    }
+
+    @Test func aSavedStartIsConfirmedOnlyAfterTheDelay() async throws {
+        let rig = try rig(delay: .milliseconds(300))
+        let expected = rig.expected
+        #expect(SavedStart.load(from: rig.defaults) == nil)
+        #expect(await rig.model.startCamera(on: rig.fake, savedStart: Task { expected }))
+        #expect(rig.model.confirmed == nil)
+        #expect(SavedStart.load(from: rig.defaults) == nil)
+        #expect(await eventually { rig.model.confirmed?.configuration == expected })
+        #expect(SavedStart.load(from: rig.defaults)?.configuration == expected)
+    }
+
+    @Test func aStopRightAfterASavedStartRecoversLikeANormalStart() async throws {
+        let rig = try rig(delay: .milliseconds(300))
+        let expected = rig.expected
+        #expect(await rig.model.startCamera(on: rig.fake, savedStart: Task { expected }))
+        let selection = rig.model.currentSelection
+        rig.model.apply(.runtimeError(Self.stop))
+        await rig.model.waitForQueuedConfigures()
+        #expect(await rig.fake.calls == ["start", "configure", "start"])
+        #expect(await rig.fake.applied == [expected])
+        #expect(rig.model.currentSelection == selection)
+        #expect(rig.model.notice == nil)
+        #expect(await eventually { rig.model.phase == .ready })
+        #expect(await eventually { rig.model.confirmed?.configuration == expected })
+    }
+
+    @Test(arguments: Field.allCases) func aSavedStartThatDiffersIsDiscardedNotPatched(field: Field) async throws {
+        let rig = try rig()
+        let differing = field.changing(rig.expected)
+        #expect(differing != rig.expected)
+        #expect(await rig.model.startCamera(on: rig.fake, savedStart: Task { differing }))
+        #expect(await rig.fake.calls == ["release", "configure", "start"])
+        #expect(await rig.fake.applied == [rig.expected])
+        #expect(rig.model.phase == .ready)
+        #expect(rig.model.notice == nil)
+    }
+
+    @Test func aSavedStartThatCouldNotBeConfiguredIsSilent() async throws {
+        let rig = try rig()
+        let before = SavedSelections.load(from: rig.defaults)
+        #expect(before != nil)
+        #expect(await rig.model.startCamera(on: rig.fake, savedStart: Task { nil }))
+        #expect(await rig.fake.calls == ["release", "configure", "start"])
+        #expect(await rig.fake.applied == [rig.expected])
+        #expect(rig.model.notice == nil)
+        #expect(rig.model.phase == .ready)
+        #expect(SavedSelections.load(from: rig.defaults) == before)
+    }
+
+    @Test func aSavedStartIsReleasedBeforeTheScan() async throws {
+        let rig = try rig(.scanned)
+        let expected = rig.expected
+        var ranDuringScan = true, heldCameraDuringScan = true
+        let fake = rig.fake
+        rig.hook.action = {
+            ranDuringScan = await fake.isRunning
+            heldCameraDuringScan = await fake.holdsCamera
+        }
+        #expect(await rig.model.startCamera(on: fake, savedStart: Task { expected }))
+        #expect(!ranDuringScan); #expect(!heldCameraDuringScan)
+        #expect(await fake.calls == ["release", "configure", "start"])
+    }
+
+    /// Ways the start can fail once a saved start began.
+    enum Failure: CaseIterable {
+        case noLens, scanThrows, configureThrows
+
+        var phase: CameraPhase {
+            switch self {
+            case .noLens, .scanThrows: .failed("The camera could not start.")
+            case .configureThrows: .failed("This format could not be set up.")
+            }
+        }
+    }
+
+    @Test(arguments: Failure.allCases) func aStartThatFailsAfterASavedStartLeavesNoCameraRunning(failure: Failure) async throws {
+        let rig: Rig
+        switch failure {
+        case .noLens: rig = try self.rig(.noLens)
+        case .scanThrows: rig = try self.rig(.scanFails)
+        case .configureThrows: rig = try self.rig(failsConfigure: true)
+        }
+        let saved = failure == .configureThrows ? Field.mode.changing(rig.expected) : rig.expected
+        #expect(await !rig.model.startCamera(on: rig.fake, savedStart: Task { saved }))
+        #expect(await rig.fake.calls == ["release"])
+        #expect(await !rig.fake.isRunning); #expect(await !rig.fake.holdsCamera)
+        #expect(rig.model.phase == failure.phase)
+        #expect(rig.model.configurator == nil)
+    }
+
+    @Test func aScriptedLaunchNeverStartsFromTheRecord() throws {
+        let defaults = try Fixture.freshDefaults()
+        let capabilities = try Fixture.load()
+        let first = CameraModel(config: LaunchConfig(), capabilities: capabilities, isSimulator: false, defaults: defaults)
+        first.currentSelection.save(to: defaults)
+        var configuration = try #require(first.sessionConfiguration)
+        configuration.includesAudio = true
+        SavedStart(configuration: configuration, record: first.record, photo: first.photo, osBuild: DeviceIdentity.osBuild(),
+                   modelIdentifier: DeviceIdentity.modelIdentifier(), scanVersion: CaptureCapabilities.currentScanVersion).save(to: defaults)
+        let access = CaptureAccess(camera: .authorized, microphone: .authorized)
+
+        let scripted = CameraModel(config: LaunchConfig.parse(["-mode", "video"]), capabilities: capabilities, isSimulator: false, defaults: defaults)
+        #expect(scripted.savedStartConfiguration(access: access) == nil)
+        let normal = CameraModel(config: LaunchConfig(), capabilities: capabilities, isSimulator: false, defaults: defaults)
+        #expect(normal.savedStartConfiguration(access: access) == configuration)
+    }
+
+    @Test func aSavedStartForAMissingCameraIsNil() async throws {
+        let rig = try rig()
+        #expect(await CameraSession().startSaved(rig.expected).value == nil)
+    }
 }

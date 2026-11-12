@@ -46,7 +46,7 @@ actor CameraSession: SessionConfigurator {
     private var whiteBalanceRestore: (device: AVCaptureDevice, mode: AVCaptureDevice.WhiteBalanceMode)?
     /// Held here because the session does not keep its controls delegate alive.
     private let controlsDelegate = CameraControlsDelegate()
-    private static let logger = Logger(subsystem: "local.opencam.app", category: "CameraSession")
+    static let logger = Logger(subsystem: "local.opencam.app", category: "CameraSession")
 
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
@@ -85,15 +85,14 @@ actor CameraSession: SessionConfigurator {
 
     /// Asks for the camera, then the microphone. The microphone is only asked for once the camera is allowed.
     nonisolated static func requestAccess() async -> CaptureAccess {
-        var camera = AccessState(AVCaptureDevice.authorizationStatus(for: .video))
-        if camera == .notDetermined {
-            camera = await AVCaptureDevice.requestAccess(for: .video) ? .authorized : .denied
+        var access = currentAccess()
+        if access.camera == .notDetermined {
+            access.camera = await AVCaptureDevice.requestAccess(for: .video) ? .authorized : .denied
         }
-        var microphone = AccessState(AVCaptureDevice.authorizationStatus(for: .audio))
-        if camera == .authorized, microphone == .notDetermined {
-            microphone = await AVCaptureDevice.requestAccess(for: .audio) ? .authorized : .denied
+        if access.camera == .authorized, access.microphone == .notDetermined {
+            access.microphone = await AVCaptureDevice.requestAccess(for: .audio) ? .authorized : .denied
         }
-        return CaptureAccess(camera: camera, microphone: microphone)
+        return access
     }
 
     /// On failure the last configuration that worked is applied again, so the session keeps running as it was,

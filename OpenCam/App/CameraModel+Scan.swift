@@ -3,7 +3,8 @@ import Foundation
 extension CameraModel {
     /// Uses the cached capabilities when they were written on this OS build and model and all their lenses are present
     /// (lenses a scan skipped stay out until `rescanCapabilities`); otherwise scans.
-    func loadCapabilities(lenses: [Lens]) async {
+    /// `beforeScan` runs after a cache miss and before the scan, which needs the cameras to itself.
+    func loadCapabilities(lenses: [Lens], beforeScan: () async -> Void = {}) async {
         let cache = CapabilityCache(directory: capabilitySource.cacheDirectory)
         let started = ContinuousClock.now
         let cached = await Self.loadCache(cache)
@@ -13,6 +14,7 @@ extension CameraModel {
             replaceCapabilities(adopted)
             return
         }
+        await beforeScan()
         phase = .scanning
         guard let capabilities = await scanCapabilities(lenses: lenses) else {
             phase = .failed("The camera could not start.")
