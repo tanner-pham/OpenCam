@@ -9,6 +9,15 @@ struct CameraRootView: View {
 
     private var isLandscape: Bool { verticalSizeClass == .compact }
 
+    /// Only the Simulator, which has the folded display alone, honours `-sliderPlacement picture`.
+    private var isSliderForcedIntoPicture: Bool {
+        #if targetEnvironment(simulator)
+        launch.forcesPictureSlider
+        #else
+        false
+        #endif
+    }
+
     init(model: CameraModel, library: LibraryStore?, launch: LaunchConfig) {
         self.model = model
         self.library = library
@@ -30,6 +39,7 @@ struct CameraRootView: View {
                 // found by bisection on the folded Simulator, where moving only this line brought the taps back.
                 .onCameraCaptureEvent { model.handleCaptureEvent(phase: $0.phase) }
         }
+        .environment(\.isSliderForcedIntoPicture, isSliderForcedIntoPicture)
         // An import still running when the Library closed lands after the close read the last capture.
         .onChange(of: library?.importsFinished) { model.libraryImportFinished() }
         .fullScreenCover(isPresented: Binding(get: { model.isLibraryPresented && library != nil }, set: { model.isLibraryPresented = $0 }),

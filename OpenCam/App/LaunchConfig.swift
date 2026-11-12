@@ -16,7 +16,8 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
     var showsShutterDemo = false            // -shutterDemo on: the shutter blink runs once a second (honoured in the Simulator only)
     var cameraLookName: String?             // -cameraLook <name>: the look of that name is selected, or None when there is none
     var openControl: ManualControl?         // -control shutter|iso|ev|wb|tint|focus: that slider starts open (honoured in the Simulator only)
-    /// True when -orientation, -mode, -screen, -recording, -state, -editorGroup, -cameraLook, -control or an "on" flag among -seedSamples,
+    var forcesPictureSlider = false         // -sliderPlacement picture: the slider is drawn in the picture on the folded display (honoured in the Simulator only)
+    /// True when -orientation, -mode, -screen, -recording, -state, -editorGroup, -cameraLook, -control, -sliderPlacement or an "on" flag among -seedSamples,
     /// -seedLook, -librarySelect and -shutterDemo parsed to a valid value; such launches never restore or save selections.
     var isScripted = false
 
@@ -72,6 +73,10 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
         }
         if let control = value("-control").flatMap(ManualControl.init(rawValue:)) {
             config.openControl = control
+            config.isScripted = true
+        }
+        if value("-sliderPlacement") == "picture" {
+            config.forcesPictureSlider = true
             config.isScripted = true
         }
         config.freeSpaceMarginMB = value("-freeSpaceMarginMB").flatMap { Int($0) }

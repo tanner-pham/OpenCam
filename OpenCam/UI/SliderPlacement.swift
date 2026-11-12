@@ -6,9 +6,10 @@ nonisolated enum SliderPlacement: Sendable, Equatable {
     case picture(edge: HorizontalEdge)
 
     /// The folded display with a strip swaps the strip's items. Anywhere else the slider goes in the picture, beside the
-    /// strip when there is one and at the trailing edge when there is not.
-    static func resolve(isFoldedDisplay: Bool, stripEdge: HorizontalEdge?) -> SliderPlacement {
-        isFoldedDisplay && stripEdge != nil ? .strip : .picture(edge: stripEdge ?? .trailing)
+    /// strip when there is one and at the trailing edge when there is not. `isForcedIntoPicture` puts it in the picture on
+    /// the folded display too, which is how the Simulator, which only has the folded display, shows that placement.
+    static func resolve(isFoldedDisplay: Bool, stripEdge: HorizontalEdge?, isForcedIntoPicture: Bool = false) -> SliderPlacement {
+        isFoldedDisplay && stripEdge != nil && !isForcedIntoPicture ? .strip : .picture(edge: stripEdge ?? .trailing)
     }
 }
 
@@ -17,7 +18,11 @@ extension EnvironmentValues {
     /// is regular in both.
     var isFoldedDisplay: Bool { horizontalSizeClass == .compact || verticalSizeClass == .compact }
 
+    /// Set once, at the root, from `-sliderPlacement picture` in the Simulator; false everywhere else.
+    @Entry var isSliderForcedIntoPicture = false
+
     var sliderPlacement: SliderPlacement {
-        SliderPlacement.resolve(isFoldedDisplay: isFoldedDisplay, stripEdge: toolbarVerticalEdge)
+        SliderPlacement.resolve(isFoldedDisplay: isFoldedDisplay, stripEdge: toolbarVerticalEdge,
+                                isForcedIntoPicture: isSliderForcedIntoPicture)
     }
 }

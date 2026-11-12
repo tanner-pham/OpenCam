@@ -9,6 +9,7 @@ struct CameraLayout: View {
     /// The side of the system's vertical bar; nil where the system draws its bars across the top and bottom instead.
     @Environment(\.toolbarVerticalEdge) private var stripEdge
     @Environment(\.isFoldedDisplay) private var isFoldedDisplay
+    @Environment(\.sliderPlacement) private var placement
 
     var body: some View {
         // The outer reader stays inside the safe area, so it reports the bars' insets; the layout itself spans the full
@@ -26,6 +27,17 @@ struct CameraLayout: View {
             }
             .ignoresSafeArea(.container, edges: [.top, .bottom])
         }
+        .overlay(alignment: pictureColumnAlignment) {
+            // Built only where the strip is not used. Inside the safe area, so it keeps clear of the strip and the bars.
+            if case .picture = placement {
+                PictureSliderColumn(model: model)
+                    .padding(Theme.Space.s)
+            }
+        }
+    }
+
+    private var pictureColumnAlignment: Alignment {
+        if case .picture(.leading) = placement { .leading } else { .trailing }
     }
 
     /// What the controls keep clear of at the top and bottom; the leading and trailing safe area (the side bar) is never

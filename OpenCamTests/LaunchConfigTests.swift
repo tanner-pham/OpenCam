@@ -28,5 +28,11 @@ import Testing
         #expect(LaunchConfig.parse(["app", "-control", "aperture"]) == LaunchConfig())
         #expect(LaunchConfig.parse(["app"]).openControl == nil)
     }
+    @Test func parsesSliderPlacementFlag() {
+        let c = LaunchConfig.parse(["app", "-sliderPlacement", "picture"])
+        #expect(c.forcesPictureSlider); #expect(c.isScripted)
+        #expect(!LaunchConfig.parse(["app"]).forcesPictureSlider)
+        #expect(LaunchConfig.parse(["app", "-sliderPlacement", "strip"]) == LaunchConfig())
+    }
     @Test func unknownValuesFallBack() { #expect(LaunchConfig.parse(["app", "-mode", "cinema", "-screen", "monitor"]) == LaunchConfig()) }
 }

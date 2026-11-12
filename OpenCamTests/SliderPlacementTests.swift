@@ -16,4 +16,10 @@ import Testing
         // No strip to swap, even on the folded display.
         #expect(SliderPlacement.resolve(isFoldedDisplay: true, stripEdge: nil) == .picture(edge: .trailing))
     }
+
+    @Test func aForcedPlacementUsesThePictureOnTheFoldedDisplay() {
+        #expect(SliderPlacement.resolve(isFoldedDisplay: true, stripEdge: .trailing, isForcedIntoPicture: true) == .picture(edge: .trailing))
+        #expect(SliderPlacement.resolve(isFoldedDisplay: true, stripEdge: .leading, isForcedIntoPicture: true) == .picture(edge: .leading))
+        #expect(SliderPlacement.resolve(isFoldedDisplay: true, stripEdge: .trailing, isForcedIntoPicture: false) == .strip)
+    }
 }
