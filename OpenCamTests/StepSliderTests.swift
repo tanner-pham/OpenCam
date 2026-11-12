@@ -25,4 +25,13 @@ import Testing
         #expect(StepSlider.step(from: 5, translation: -80, travel: 0, stepCount: 21) == 5)
         #expect(StepSlider.step(from: 0, translation: -80, travel: 200, stepCount: 0) == 0)
     }
+
+    /// A drag that goes up and comes back to the step it started on sends that step again; a touch alone sends nothing,
+    /// and the same step is never sent twice in a row.
+    @Test func aDragBackToItsStartIsSent() {
+        #expect(!StepSlider.sends(10, start: 10, lastSent: nil))
+        #expect(StepSlider.sends(12, start: 10, lastSent: nil))
+        #expect(!StepSlider.sends(12, start: 10, lastSent: 12))
+        #expect(StepSlider.sends(10, start: 10, lastSent: 12))
+    }
 }

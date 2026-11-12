@@ -18,6 +18,8 @@ struct StepSlider: View {
 
     /// The step the current drag started from; nil between drags.
     @State private var dragStart: Int?
+    /// The step this drag last sent; nil until it sends one.
+    @State private var lastSent: Int?
 
     private let trackWidth: CGFloat = 6
 
@@ -38,6 +40,12 @@ struct StepSlider: View {
         let moved = (-translation / travel * CGFloat(stepCount - 1)).rounded()
         guard abs(moved) < CGFloat(stepCount) else { return moved > 0 ? stepCount - 1 : 0 }
         return clamped(start + Int(moved), stepCount: stepCount)
+    }
+
+    /// Whether a drag now at `next` sends it: only when it differs from the last step this drag sent, or from the step it
+    /// started on when it has sent none. So a touch alone sends nothing, and dragging back to the start step sends it.
+    nonisolated static func sends(_ next: Int, start: Int, lastSent: Int?) -> Bool {
+        next != (lastSent ?? start)
     }
 
     nonisolated private static func clamped(_ step: Int, stepCount: Int) -> Int {
@@ -66,9 +74,14 @@ struct StepSlider: View {
                     let start = dragStart ?? shownStep
                     dragStart = start
                     let next = Self.step(from: start, translation: drag.translation.height, travel: travel, stepCount: stepCount)
-                    if next != start, next != step { onChange(next) }
+                    guard Self.sends(next, start: start, lastSent: lastSent) else { return }
+                    lastSent = next
+                    onChange(next)
                 }
-                .onEnded { _ in dragStart = nil }
+                .onEnded { _ in
+                    dragStart = nil
+                    lastSent = nil
+                }
         )
         .accessibilityElement()
         .accessibilityLabel(label)
