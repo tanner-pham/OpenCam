@@ -15,6 +15,14 @@ import Testing
         try #require(ManualScale.make(for: control, ranges: ranges))
     }
 
+    @Test func aBiasRangeWithANonFiniteBoundHasNoScale() {
+        for bound in [-Float.infinity...2, -2...Float.infinity, -Float.infinity...Float.infinity] {
+            var ranges = photoRanges()
+            ranges.bias = bound
+            #expect(ManualScale.make(for: .bias, ranges: ranges) == nil)
+        }
+    }
+
     @Test func shutterStopsStayInsideTheFormat() throws {
         let values = try scale(.shutter, photoRanges()).values
         #expect(values == values.sorted())

@@ -32,7 +32,8 @@ extension ManualRanges {
             ranges.shutterSeconds = shortest.seconds...max(shortest.seconds, upper)
             ranges.iso = limits.minISO...limits.maxISO
         }
-        if let recommended = limits.recommendedBias {
+        // A recommended range with an infinite end is as good as none: the device's own limits stand in for it.
+        if let recommended = limits.recommendedBias, recommended.lowerBound.isFinite, recommended.upperBound.isFinite {
             ranges.bias = recommended
         } else if limits.minBias.isFinite, limits.maxBias.isFinite, limits.minBias <= limits.maxBias {
             ranges.bias = limits.minBias...limits.maxBias

@@ -222,6 +222,17 @@ import Testing
         #expect(unreadable.isVideo && unreadable.frameSeconds == nil && unreadable.shutterSeconds == (1.0 / 8000)...(1.0 / 3))
     }
 
+    @Test func aRecommendedBiasRangeThatIsNotFiniteIsTreatedAsAbsent() {
+        var device = limits()
+        device.recommendedBias = -Float.infinity...2
+        #expect(ManualRanges.make(from: device).bias == -8...8)
+        device.recommendedBias = -2...Float.infinity
+        #expect(ManualRanges.make(from: device).bias == -8...8)
+        // With the device's own limits unusable too, there is no bias range at all.
+        device.minBias = -Float.infinity
+        #expect(ManualRanges.make(from: device).bias == nil)
+    }
+
     @Test func rangesLeaveOutWhatTheCameraCannotDo() {
         var none = limits(isVideo: true, frame: frame)
         none.supportsCustomExposure = false

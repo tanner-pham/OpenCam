@@ -20,7 +20,8 @@ nonisolated struct ManualScale: Sendable, Equatable {
             guard let range = ranges.iso else { return nil }
             return scale(isoValues(in: Double(range.lowerBound)...Double(range.upperBound)), detent: 1, adjust: 1, log: true)
         case .bias:
-            guard let range = ranges.bias else { return nil }
+            // Converting an infinite bound to an Int traps.
+            guard let range = ranges.bias, range.lowerBound.isFinite, range.upperBound.isFinite else { return nil }
             let low = Int((Double(range.lowerBound) * 3 - 1e-6).rounded(.up))
             let high = Int((Double(range.upperBound) * 3 + 1e-6).rounded(.down))
             guard low <= high else { return nil }
