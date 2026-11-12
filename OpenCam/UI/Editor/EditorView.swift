@@ -49,9 +49,14 @@ struct EditorView: View {
         switch EditorLayout.choose(horizontal: horizontalSizeClass, vertical: verticalSizeClass) {
         case .sideBySide:
             HStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    EditorPicture(model: model)
-                    PhotoInfoLine(designation: model.designation, facts: model.facts)
+                // The picture at its fitted height with the line touching its bottom edge, the pair centred in the column.
+                GeometryReader { geo in
+                    VStack(spacing: 0) {
+                        EditorPicture(model: model)
+                            .frame(height: max(0, min(fittedHeight(forWidth: geo.size.width), geo.size.height - PhotoInfoLine.height)))
+                        PhotoInfoLine(designation: model.designation, facts: model.facts)
+                    }
+                    .frame(width: geo.size.width, height: geo.size.height)
                 }
                 EditorPanel(model: model)
                     .frame(width: EditorLayout.panelWidth)
@@ -120,8 +125,12 @@ struct EditorView: View {
 
     /// The picture's fitted height at the full width, held so the panel keeps `minPanelHeight` below the info line.
     private func pictureHeight(in size: CGSize) -> CGFloat {
+        max(0, min(fittedHeight(forWidth: size.width), size.height - Self.minPanelHeight - PhotoInfoLine.height))
+    }
+
+    /// The picture's height when it fills `width`.
+    private func fittedHeight(forWidth width: CGFloat) -> CGFloat {
         let aspect = model.proxySize.map { $0.width / max($0.height, 1) } ?? Self.defaultAspect
-        let fitted = size.width / aspect
-        return max(0, min(fitted, size.height - Self.minPanelHeight - PhotoInfoLine.height))
+        return width / aspect
     }
 }

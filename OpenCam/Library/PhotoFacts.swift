@@ -12,33 +12,39 @@ nonisolated struct PhotoFacts: Sendable, Equatable {
 
     static let none = PhotoFacts()
 
-    /// Exif of image 0; a missing file, no Exif, or a value that is absent, not a number or not above 0 leaves that fact nil.
+    /// Exif of image 0; a missing file, no Exif, or a value that is absent, not a number or outside its sane range leaves that
+    /// fact nil (exposure time 1e-6...3600 s, aperture 0.5...64, focal lengths above 0 up to 2000 mm, ISO 1...10 000 000).
     @concurrent static func read(at url: URL) async -> PhotoFacts {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any]
         else { return .none }
-        func number(_ key: CFString) -> Double? {
-            guard let value = exif[key] as? Double, value > 0 else { return nil }
+        func number(_ key: CFString, in range: ClosedRange<Double>) -> Double? {
+            guard let value = exif[key] as? Double, value.isFinite, range.contains(value) else { return nil }
             return value
         }
         var facts = PhotoFacts()
         if let model = exif[kCGImagePropertyExifLensModel] as? String, !model.isEmpty { facts.lensModel = model }
-        facts.focalLength = number(kCGImagePropertyExifFocalLength)
-        facts.equivalentFocalLength = (exif[kCGImagePropertyExifFocalLenIn35mmFilm] as? Int).flatMap { $0 > 0 ? $0 : nil }
-        facts.aperture = number(kCGImagePropertyExifFNumber)
-        facts.exposureTime = number(kCGImagePropertyExifExposureTime)
-        facts.iso = (exif[kCGImagePropertyExifISOSpeedRatings] as? [Int])?.first.flatMap { $0 > 0 ? $0 : nil }
+        facts.focalLength = number(kCGImagePropertyExifFocalLength, in: 0.001...2000)
+        facts.equivalentFocalLength = (exif[kCGImagePropertyExifFocalLenIn35mmFilm] as? Int).flatMap { (1...2000).contains($0) ? $0 : nil }
+        facts.aperture = number(kCGImagePropertyExifFNumber, in: 0.5...64)
+        facts.exposureTime = number(kCGImagePropertyExifExposureTime, in: 1e-6...3600)
+        facts.iso = (exif[kCGImagePropertyExifISOSpeedRatings] as? [Int])?.first.flatMap { (1...10_000_000).contains($0) ? $0 : nil }
         return facts
     }
 
     /// 1.8 "f/1.8", 2.0 "f/2".
     static func apertureText(_ f: Double) -> String { "f/" + oneDecimal(f) }
 
-    /// Below 1 second "1/<round(1/t)> s"; else one decimal with ".0" dropped: "2 s", "2.5 s".
+    /// Below 1 second "1/<n> s" with n = round(1/t) when 1/t is within 5% of n (and n is at least 2); otherwise one decimal with
+    /// ".0" dropped: "1/120 s", "0.8 s", "2 s", "2.5 s". Never traps, whatever the value.
     static func shutterText(seconds: Double) -> String {
-        guard seconds < 1 else { return oneDecimal(seconds) + " s" }
-        return "1/\(Int((1 / seconds).rounded())) s"
+        guard seconds > 0, seconds < 1 else { return oneDecimal(seconds) + " s" }
+        let reciprocal = 1 / seconds
+        if let n = Int(exactly: reciprocal.rounded()), n >= 2, abs(reciprocal - Double(n)) <= 0.05 * reciprocal {
+            return "1/\(n) s"
+        }
+        return oneDecimal(seconds) + " s"
     }
 
     /// 6.86 "6.9 mm", 24 "24 mm".

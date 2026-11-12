@@ -23,13 +23,6 @@ import UniformTypeIdentifiers
         return 4
     }
 
-    /// The sample Exif: lens, focal lengths, aperture, shutter and ISO.
-    private static var sampleExif: [CFString: Any] {
-        [kCGImagePropertyExifLensModel: "Sample lens 6.9mm f/1.8", kCGImagePropertyExifFocalLength: 6.9,
-         kCGImagePropertyExifFocalLenIn35mmFilm: 24, kCGImagePropertyExifFNumber: 1.8,
-         kCGImagePropertyExifExposureTime: 1.0 / 120, kCGImagePropertyExifISOSpeedRatings: [100]]
-    }
-
     private static func renderedScene(function: String, path: String) throws(LibraryError) -> CGImage {
         let renderer = ImageRenderer(content: ViewfinderStandIn(showsCaption: false).frame(width: size.width, height: size.height))
         renderer.scale = scale
@@ -38,19 +31,23 @@ import UniformTypeIdentifiers
     }
 
     private static func writeJPEG(_ image: CGImage, to url: URL, function: String) throws(LibraryError) {
-        try encode(image, as: .jpeg, properties: [:], to: url, function: function)
+        try encode(image, as: .jpeg, properties: [:] as CFDictionary, to: url, function: function)
     }
 
     private static func writeSampleHEIC(_ image: CGImage, to url: URL, function: String) throws(LibraryError) {
-        try encode(image, as: .heic, properties: [kCGImagePropertyExifDictionary: sampleExif], to: url, function: function)
+        // The sample Exif: lens, focal lengths, aperture, shutter and ISO.
+        let exif: [CFString: Any] = [kCGImagePropertyExifLensModel: "Sample lens 6.9mm f/1.8", kCGImagePropertyExifFocalLength: 6.9,
+                                     kCGImagePropertyExifFocalLenIn35mmFilm: 24, kCGImagePropertyExifFNumber: 1.8,
+                                     kCGImagePropertyExifExposureTime: 1.0 / 120, kCGImagePropertyExifISOSpeedRatings: [100]]
+        try encode(image, as: .heic, properties: [kCGImagePropertyExifDictionary: exif] as CFDictionary, to: url, function: function)
     }
 
-    private static func encode(_ image: CGImage, as type: UTType, properties: [CFString: Any], to url: URL, function: String) throws(LibraryError) {
+    private static func encode(_ image: CGImage, as type: UTType, properties: CFDictionary, to url: URL, function: String) throws(LibraryError) {
         let path = url.path(percentEncoded: false)
         guard let destination = CGImageDestinationCreateWithURL(url as CFURL, type.identifier as CFString, 1, nil) else {
             throw .seedFailed(function: function, path: path, reason: "No encoder for \(type.identifier)")
         }
-        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+        CGImageDestinationAddImage(destination, image, properties)
         guard CGImageDestinationFinalize(destination) else {
             throw .seedFailed(function: function, path: path, reason: "The picture could not be encoded")
         }
