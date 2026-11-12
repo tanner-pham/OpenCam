@@ -42,4 +42,47 @@ import Testing
     @Test func defaultIsHEVCHigh4K30() throws {
         #expect(try resolver("wide").defaultSelection() == RecordSelection(family: .hevc, quality: "High", resolution: uhd, frameRate: 30, colour: .rec709))
     }
+
+    private let free: Int64 = 141_000_000_000
+    private func estimateText(_ resolver: RecordSelectionResolver, _ row: RecordRow, _ chipID: String, in selection: RecordSelection) throws -> ChipEstimate {
+        let settled = try #require(resolver.select(row, chipID: chipID, in: selection))
+        let option = try #require(resolver.option(for: settled))
+        return DataRateEstimator.estimate(for: option, freeBytes: free)
+    }
+    @Test func availableCodecAndQualityChipsCarryTheSettledEstimate() throws {
+        let wide = try resolver("wide")
+        let s = RecordSelection(family: .hevc, quality: "High", resolution: uhd, frameRate: 30, colour: .rec709)
+        for row in [RecordRow.codec, .quality] {
+            let chips = wide.chips(row, for: s, freeBytes: free)
+            #expect(chips.contains { $0.isAvailable })
+            for chip in chips {
+                if chip.isAvailable {
+                    #expect(chip.estimate == (try estimateText(wide, row, chip.id, in: s)))
+                } else {
+                    #expect(chip.estimate == nil)
+                }
+            }
+        }
+        for row in [RecordRow.resolution, .frameRate, .colour] {
+            #expect(wide.chips(row, for: s, freeBytes: free).allSatisfy { $0.estimate == nil })
+            #expect(wide.chips(row, for: s, freeBytes: free) == wide.chips(row, for: s))
+        }
+    }
+    @Test func withoutFreeSpaceNothingChanges() throws {
+        let wide = try resolver("wide")
+        let s = RecordSelection(family: .hevc, quality: "High", resolution: uhd, frameRate: 30, colour: .rec709)
+        for row in RecordRow.allCases {
+            #expect(wide.chips(row, for: s, freeBytes: nil) == wide.chips(row, for: s))
+            #expect(wide.chips(row, for: s).allSatisfy { $0.estimate == nil })
+        }
+    }
+    @Test func aCodecTapThatMovesTheOtherRowsShowsTheSettledEstimate() throws {
+        let wide = try resolver("wide")
+        let s = RecordSelection(family: .hevc, quality: "Max", resolution: fhd, frameRate: 120, colour: .rec709)
+        let settled = try #require(wide.select(.codec, chipID: "proRes", in: s))
+        #expect(settled.frameRate != s.frameRate)
+        let chip = try #require(wide.chips(.codec, for: s, freeBytes: free).first { $0.id == "proRes" })
+        let expected = DataRateEstimator.estimate(for: try #require(wide.option(for: settled)), freeBytes: free)
+        #expect(chip.estimate == expected)
+    }
 }

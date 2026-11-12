@@ -43,7 +43,46 @@ nonisolated enum DataRateEstimator {
     static func footer(for option: VideoOption, freeBytes: Int64) -> String {
         let rate = String(format: "%.1f", gigabytesPerMinute(for: option))
         let minutes = minutesRemaining(freeBytes: freeBytes, option: option)
-        return "About \(rate) GB per minute. \(minutes) min left."
+        return "About \(rateText(megabitsPerSecond(for: option))), \(rate) GB per minute. \(minutes) min left."
+    }
+
+    /// What a chip shows for `option`: the data rate, then the record time left in `freeBytes`.
+    static func estimate(for option: VideoOption, freeBytes: Int64) -> ChipEstimate {
+        let megabits = megabitsPerSecond(for: option)
+        let minutes = minutesRemaining(freeBytes: freeBytes, option: option)
+        return ChipEstimate(
+            rate: chipRateText(megabits: megabits),
+            time: chipTimeText(minutes: minutes),
+            spoken: "about \(spokenRate(megabits)), \(spokenTime(minutes: minutes))"
+        )
+    }
+
+    static func chipRateText(megabits: Double) -> String { "~" + rateText(megabits) }
+
+    /// "~11h 17m" in the system's duration format; "Full" when no minutes are left.
+    static func chipTimeText(minutes: Int) -> String {
+        minutes > 0 ? "~" + durationStyle(width: .narrow, minutes: minutes) : "Full"
+    }
+
+    /// One decimal under 10 Mb/s, whole megabits up to 1000, then gigabits with one decimal.
+    private static func rateText(_ megabits: Double) -> String {
+        if megabits.rounded() >= 1000 { return String(format: "%.1f Gb/s", megabits / 1000) }
+        if (megabits * 10).rounded() / 10 < 10 { return String(format: "%.1f Mb/s", megabits) }
+        return String(format: "%.0f Mb/s", megabits)
+    }
+
+    private static func spokenRate(_ megabits: Double) -> String {
+        rateText(megabits)
+            .replacingOccurrences(of: " Mb/s", with: " megabits per second")
+            .replacingOccurrences(of: " Gb/s", with: " gigabits per second")
+    }
+
+    private static func spokenTime(minutes: Int) -> String {
+        minutes > 0 ? "about \(durationStyle(width: .wide, minutes: minutes)) of recording" : "no recording time left"
+    }
+
+    private static func durationStyle(width: Duration.UnitsFormatStyle.UnitWidth, minutes: Int) -> String {
+        Duration.seconds(minutes * 60).formatted(.units(allowed: [.hours, .minutes], width: width))
     }
 
     private static func scaledProRes(_ mbps: Double, pixels: Double, fps: Double) -> Double {
