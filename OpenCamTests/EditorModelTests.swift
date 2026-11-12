@@ -24,6 +24,17 @@ import Testing
         await model.load()
         #expect(model.adjustments.contrast == 25); #expect(model.lookName == "Warm fade"); #expect(!model.hasChanges); #expect(model.preview != nil)
     }
+    @Test func theOverlayDrawsWhenMasksLoadBeforeThePicture() async throws {
+        let dir = try TestFiles.directory()
+        _ = try TestFiles.writeJPEG(width: 400, height: 300, rgb: SIMD3(0.5, 0.5, 0.5), to: dir.appending(path: "OC_0001.JPG"))
+        let mask = LocalMask(shape: MaskKind.radial.defaultShape)
+        try EditStore(directory: dir).save(PhotoEdit(masks: [mask]), stem: "OC_0001")
+        let item = try #require(LibraryScanner.items(in: dir).first)
+        let model = EditorModel(item: item, edits: EditStore(directory: dir), looks: try LookStore(directory: TestFiles.directory()), group: .masks)
+        await model.load()
+        await model.waitForMaskOverlay()
+        #expect(model.maskOverlay != nil)
+    }
     @Test func resetsAndSave() async throws {
         let (model, dir, _) = try await EditorFixture.make(width: 400, height: 300)
         model.adjustments.shadows = 40; model.adjustments.tint = -10; #expect(model.hasChanges)

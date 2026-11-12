@@ -528,8 +528,9 @@ extension EditorModel {
         let wanted: MaskOverlayKey? = group == .masks && isShowingMaskOverlay
             ? selectedMask.map { MaskOverlayKey(shape: $0.shape, isInverted: $0.isInverted) } : nil
         guard wanted != requestedOverlay else { return }
-        requestedOverlay = wanted
+        // Recorded only once it can start: a request made before the proxy decodes is asked for again when the proxy is ready.
         guard let proxy else { return }
+        requestedOverlay = wanted
         // Nothing to draw clears at once; a render still running is dropped when it ends, as it no longer matches the request.
         if wanted == nil { maskOverlay = nil }
         guard let job = overlays.request(wanted) else { return }
