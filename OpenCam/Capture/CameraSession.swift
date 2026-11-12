@@ -106,6 +106,8 @@ actor CameraSession: SessionConfigurator {
     /// The Camera Control's system controls are installed last, for the device and mode now applied.
     func configure(_ configuration: SessionConfiguration) throws(CameraSessionError) {
         guard !recorder.output.isRecording else { throw .recordingInProgress }
+        // A configure that fails with no restore leaves the camera in a state nothing tracks, so nothing is assumed to hold.
+        appliedManual = nil
         let timing = (start: ContinuousClock.now, previous: lastWorkingConfiguration)
         launchMarks?.mark("session configure")
         defer {
@@ -255,6 +257,7 @@ actor CameraSession: SessionConfigurator {
     func releaseCameras() {
         stop()
         lastWorkingConfiguration = nil
+        appliedManual = nil
         installSystemControls([])
         guard let videoInput else { return }
         session.beginConfiguration()
