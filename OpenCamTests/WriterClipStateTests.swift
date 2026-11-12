@@ -228,6 +228,57 @@ import Testing
         #expect(r44 == nil)   // nothing new
     }
 
+    /// Delivers frame `index` arriving `delay` seconds after its on-time arrival; writes it when the state says so.
+    /// Returns whether it was written.
+    func deliver(_ clip: inout WriterClipState, _ index: Int, delay: Double = 0) -> Bool {
+        let step = clip.video(pts: pts(index), duration: frame, arrival: arrival(index, lag: delay), isWriterReady: true)
+        switch step {
+        case .startAndWrite, .write:
+            _ = clip.videoWritten(true, pts: pts(index), duration: frame)
+            return true
+        case .skip, .ignore:
+            return false
+        }
+    }
+
+    @Test func aLastingRiseInDeliveryDelayStopsDroppingWithinAboutASecond() {
+        var clip = state(.keepRecording)
+        var written = [Bool]()
+        for index in 0..<200 {
+            // From frame 60 every frame arrives 1.5 frame times later than before, forever.
+            written.append(deliver(&clip, index, delay: index >= 60 ? 1.5 / 30 : 0))
+        }
+        let skipped = written.indices.filter { !written[$0] }
+        #expect(!skipped.isEmpty)
+        #expect(skipped.allSatisfy { $0 >= 60 })
+        #expect(skipped.count <= 35)
+        #expect(written[100...].allSatisfy { $0 })
+        #expect(clip.facts.total == skipped.count)
+        #expect(clip.facts.byReason[DropReason.behind.rawValue] == skipped.count)
+        #expect(clip.end == nil)
+    }
+
+    @Test func aShortHiccupDropsOnlyUntilCaughtUp() {
+        var clip = state(.keepRecording)
+        for index in 0..<10 { #expect(deliver(&clip, index)) }
+        // Frame 10 is delivered 3 frame times late; 11 to 13 follow back to back, at the same instant.
+        let late = 3.0 / 30
+        func hiccup(from first: Int) -> [Bool] {
+            (0..<4).map { offset in
+                let index = first + offset
+                // All four arrive when frame `first` would have, 3 frame times late.
+                return deliver(&clip, index, delay: late - Double(offset) / 30)
+            }
+        }
+        #expect(hiccup(from: 10) == [false, false, true, true])
+        for index in 14..<40 { #expect(deliver(&clip, index)) }
+        // The baseline did not move: the same hiccup later behaves the same.
+        #expect(hiccup(from: 40) == [false, false, true, true])
+        for index in 44..<60 { #expect(deliver(&clip, index)) }
+        #expect(clip.facts.total == 4)
+        #expect(clip.end == nil)
+    }
+
     @Test func factsCountDeliveredAndWritten() {
         var clip = state()
         write(&clip, frames: 3)

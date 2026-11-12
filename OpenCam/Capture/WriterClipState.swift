@@ -27,12 +27,20 @@ nonisolated struct WriterClipState: Sendable {
     /// Absorbs the rounding of converting a duration to seconds, so a lag of exactly one frame is not behind.
     private static let lagTolerance = 1e-9
 
+    /// Presentation time the baseline looks back over, and room for that many frames at the fastest rate the camera delivers.
+    private static let windowSeconds = 1.0
+    private static let windowCapacity = 256
+
     private let policy: DropPolicy
     private let frameSeconds: Double
     private let minFreeBytes: Int64
 
     private var firstPTS: CMTime?
     private var firstArrival = 0.0
+    private var windowOffsets = [Double](repeating: 0, count: WriterClipState.windowCapacity)
+    private var windowDelays = [Double](repeating: 0, count: WriterClipState.windowCapacity)
+    private var windowStart = 0
+    private var windowCount = 0
     private var lastWrittenEnd: CMTime?
     private var pendingFinish: Finish?
     private var lastReportArrival: Double?
@@ -62,9 +70,11 @@ nonisolated struct WriterClipState: Sendable {
             }
             self.firstPTS = pts
             firstArrival = now
+            _ = recordDelay(0, at: 0)
             return .startAndWrite(at: pts)
         }
-        let lag = (now - firstArrival) - CMTimeGetSeconds(CMTimeSubtract(pts, firstPTS))
+        let offset = CMTimeGetSeconds(CMTimeSubtract(pts, firstPTS))
+        let lag = recordDelay((now - firstArrival) - offset, at: offset)
         if lag > frameSeconds + Self.lagTolerance {
             countDrop(.behind)
             return .skip
@@ -141,6 +151,31 @@ nonisolated struct WriterClipState: Sendable {
         guard policy == .stopRecording, lastWrittenEnd != nil else { return }
         facts.stoppedRecording = true
         pendingFinish = end(.droppedFrames)
+    }
+
+    /// Adds this frame's delivery delay (its arrival offset minus its presentation offset, both from the first frame) to the
+    /// ring of the last second of presentation time, and returns how far it is above the smallest delay in that second.
+    /// The smallest recent delay is the baseline, so a lasting change in the camera's delay stops counting as lag once the
+    /// older, smaller delays have aged out, while a short hiccup is still measured against the steady delay before it.
+    /// Skipped frames are recorded too: their delay is real, and without it the baseline could never rise.
+    private mutating func recordDelay(_ delay: Double, at offset: Double) -> Double {
+        let capacity = Self.windowCapacity
+        // Drop what is older than the window (the ring is oldest first from `windowStart`).
+        while windowCount > 0, windowOffsets[windowStart] <= offset - Self.windowSeconds {
+            windowStart = (windowStart + 1) % capacity
+            windowCount -= 1
+        }
+        if windowCount == capacity {
+            windowStart = (windowStart + 1) % capacity
+            windowCount -= 1
+        }
+        let slot = (windowStart + windowCount) % capacity
+        windowOffsets[slot] = offset
+        windowDelays[slot] = delay
+        windowCount += 1
+        var smallest = delay
+        for step in 0..<windowCount { smallest = min(smallest, windowDelays[(windowStart + step) % capacity]) }
+        return delay - smallest
     }
 
     private static func seconds(_ duration: Duration) -> Double {
