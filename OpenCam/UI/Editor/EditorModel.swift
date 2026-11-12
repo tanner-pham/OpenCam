@@ -16,6 +16,8 @@ import OSLog
     var curveChannel: CurveChannel = .master
     /// The colour band the Mix group shows; never saved, so an edit opens on Red.
     var mixBand: ColourBand = .red
+    /// The tonal range the Grading group shows; never saved, so an edit opens on Midtones.
+    var gradingRegion: GradingRegion = .midtones
     var isShowingOriginal = false
     private let edits: EditStore
     private let lookStore: LookStore

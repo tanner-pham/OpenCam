@@ -33,9 +33,8 @@ struct ColourWheel: View {
         .frame(width: diameter)
     }
 
-    /// The readout follows its title rather than the column's far edge, so beside the other wheel's title it still reads as
-    /// this wheel's. At accessibility text sizes the two do not fit a 138 to 160 pt column on one line, so the readout goes
-    /// under the title and either may wrap rather than be cut.
+    /// The readout follows its title. At accessibility text sizes the two do not fit a 160 pt column on one line, so the
+    /// readout goes under the title and either may wrap rather than be cut.
     private var titleRow: some View {
         let isLarge = dynamicTypeSize.isAccessibilitySize
         let layout = isLarge ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
@@ -49,8 +48,7 @@ struct ColourWheel: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .font(.subheadline)
         .lineLimit(isLarge ? nil : 1)
-        // "Highlights" and "359° · 100" need about 149 pt; beside the picture a wheel is 138 pt wide, so the longest pair
-        // shrinks a little rather than cutting either.
+        // "Highlights" and "359° · 100" need about 149 of the 160 pt; in a narrower panel the pair shrinks a little rather than cutting either.
         .minimumScaleFactor(isLarge ? 1 : 0.8)
         // The disc's sliders say the same.
         .accessibilityHidden(true)

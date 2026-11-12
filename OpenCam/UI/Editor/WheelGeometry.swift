@@ -6,12 +6,10 @@ nonisolated enum WheelGeometry {
     static let maxDiameter: CGFloat = 160
     /// The grading panel's padding on each side.
     static let sideInset = Theme.Space.l
-    /// Between the two lower wheels.
-    static let columnGap = Theme.Space.m
 
-    /// Two wheels side by side fill the panel up to `maxDiameter`: 160 pt in the folded portrait panel, 138 pt in the 320 pt one.
+    /// One wheel fills the panel up to `maxDiameter`: 160 pt in the folded portrait panel and in the 320 pt one.
     static func diameter(forWidth width: CGFloat) -> CGFloat {
-        max(0, min(maxDiameter, ((width - 2 * sideInset - columnGap) / 2).rounded(.down)))
+        max(0, min(maxDiameter, (width - 2 * sideInset).rounded(.down)))
     }
 
     /// Hue: the angle from the centre, 0 at the right, increasing clockwise on screen; saturation: distance / radius, capped at

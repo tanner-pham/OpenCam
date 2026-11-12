@@ -17,7 +17,7 @@ import Testing
         #expect(WheelGeometry.tint(at: CGPoint(x: 75, y: 50), diameter: d) == (0, 50)); #expect(WheelGeometry.tint(at: CGPoint(x: 200, y: 50), diameter: d) == (0, 100))
         #expect(WheelGeometry.tint(at: CGPoint(x: 50.1, y: 50.1), diameter: d) == (0, 0))   // saturation rounds to 0, so hue 0
         #expect(WheelGeometry.point(hue: 90, saturation: 50, diameter: d) == CGPoint(x: 50, y: 75))
-        #expect(WheelGeometry.diameter(forWidth: 320) == 138); #expect(WheelGeometry.diameter(forWidth: 381) == 160) }
+        #expect(WheelGeometry.diameter(forWidth: 320) == 160); #expect(WheelGeometry.diameter(forWidth: 150) == 118); #expect(WheelGeometry.diameter(forWidth: 20) == 0) }
     @Test func voiceOverStepsWrapHueAndClampSaturation() {
         #expect(WheelGeometry.steppedHue(345, steps: 1) == 0); #expect(WheelGeometry.steppedHue(0, steps: -1) == 345); #expect(WheelGeometry.steppedHue(90, steps: 1) == 105)
         #expect(WheelGeometry.steppedHue(360, steps: 1) == 15); #expect(WheelGeometry.steppedHue(7, steps: -1) == 352)
