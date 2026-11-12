@@ -65,6 +65,8 @@ A failed check is information, not an emergency: note what happened and move on.
 - [ ] Monitoring in wired headphones is heard with no noticeable delay; in Bluetooth with a delay.
 - [ ] A clip recorded with monitoring on has the sound once, clean, and the meters move.
 - [ ] Unplug headphones while monitoring and recording: nothing comes from the speaker, the notice shows, the clip keeps its sound.
+- [ ] The same two unplug checks during a ProRes clip (the writer path takes sound through its own output): the clip is saved and plays to the end. Note whether sound stops at the unplug, and what the `.json` says.
+- [ ] A chosen microphone and "Monitor in headphones" On, then record ProRes for a minute: sound is in the clip, in sync, from the chosen microphone.
 - [ ] A call or Siri stops monitoring and it returns afterwards.
 - [ ] Record start and stop haptics still fire with a source chosen and with monitoring on.
 
