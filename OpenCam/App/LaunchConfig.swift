@@ -9,14 +9,17 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
     var simulatedState: SimulatedState?
     var freeSpaceMarginMB: Int?
     var keepsSweepClips = false
-    var editorGroup: EditorGroup = .light   // -editorGroup light|colour|detail|effects|looks
+    var editorGroup: EditorGroup = .light   // -editorGroup light|colour|curve|detail|effects|looks
     var seedsSamples = false                // -seedSamples on (honoured in the Simulator only)
     var seedsLook = false                   // -seedLook on (honoured in the Simulator only)
     var seedsFormats = false                // -seedFormats on (honoured in the Simulator only)
+    var seedsStudyLook = false              // -seedStudy on: saves the look "Colour study" (honoured in the Simulator only)
     var startsInSelectMode = false          // -librarySelect on
     var cameraLookName: String?             // -cameraLook <name>: the look of that name is selected, or None when there is none
-    /// True when -orientation, -mode, -screen, -recording, -state, -editorGroup, -cameraLook or an "on" flag among -seedSamples,
-    /// -seedLook, -seedFormats and -librarySelect parsed to a valid value; such launches never restore or save selections.
+    var editorLookName: String?             // -editorLook <name>: the launch push applies the look of that name, unsaved
+    /// True when -orientation, -mode, -screen, -recording, -state, -editorGroup, -cameraLook, -editorLook or an "on" flag among
+    /// -seedSamples, -seedLook, -seedFormats, -seedStudy and -librarySelect parsed to a valid value; such launches never restore
+    /// or save selections.
     var isScripted = false
 
     static func parse(_ args: [String]) -> LaunchConfig {
@@ -61,12 +64,20 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
             config.seedsFormats = true
             config.isScripted = true
         }
+        if value("-seedStudy") == "on" {
+            config.seedsStudyLook = true
+            config.isScripted = true
+        }
         if value("-librarySelect") == "on" {
             config.startsInSelectMode = true
             config.isScripted = true
         }
         if let name = value("-cameraLook") {
             config.cameraLookName = name
+            config.isScripted = true
+        }
+        if let name = value("-editorLook") {
+            config.editorLookName = name
             config.isScripted = true
         }
         config.freeSpaceMarginMB = value("-freeSpaceMarginMB").flatMap { Int($0) }
