@@ -11,6 +11,12 @@ nonisolated struct CaptureCapabilities: Codable, Sendable, Equatable {
     /// How the scan that made these was taken. A file without it was written before the photo preset reading, and
     /// decodes as 1; the cache reuses only `currentScanVersion`.
     var scanVersion: Int = CaptureCapabilities.currentScanVersion
+    /// Options only the writer records, derived from the scan in memory. Never encoded or decoded: the cache holds the scan alone.
+    var writerOptions: [VideoOption] = []
+
+    private enum CodingKeys: String, CodingKey {
+        case lenses, videoOptions, photoOptions, osBuild, modelIdentifier, skippedLensIDs, scanVersion
+    }
 
     static let fixtureName = "CapabilitiesFixture"
     /// 2: photo sizes and RAW come from each camera under the photo preset.
@@ -46,6 +52,13 @@ nonisolated struct CaptureCapabilities: Codable, Sendable, Equatable {
         } catch {
             throw .unwritable(path: "(data)", reason: String(describing: error))
         }
+    }
+
+    /// These capabilities with the writer options `support` allows, derived from the scanned options.
+    func withWriterOptions(_ support: WriterSupport) -> CaptureCapabilities {
+        var merged = self
+        merged.writerOptions = WriterOptions.derived(from: videoOptions, support: support)
+        return merged
     }
 
     func videoOptions(forLens id: String) -> [VideoOption] {

@@ -22,9 +22,11 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
     var openControl: ManualControl?         // -control shutter|iso|ev|wb|tint|focus: that slider starts open (honoured in the Simulator only)
     var forcesPictureSlider = false         // -sliderPlacement picture: the slider is drawn in the picture on the folded display (honoured in the Simulator only)
     var editorLookName: String?             // -editorLook <name>: the launch push applies the look of that name, unsaved
-    /// True when -orientation, -mode, -screen, -recording, -state, -editorGroup, -cameraLook, -editorLook, -control, -sliderPlacement or an
-    /// "on" flag among -seedSamples, -seedLook, -seedFormats, -seedStudy, -librarySelect and -shutterDemo parsed to a valid value; such
-    /// launches never restore or save selections.
+    var droppedFrames = 0                   // -droppedFrames <n>: the simulated recording shows this count (honoured in the Simulator only, with -recording on)
+    var usesPhoneFormats = false            // -formats phone: the fixture holds what the phone scans, plus the writer options (honoured in the Simulator only)
+    /// True when -orientation, -mode, -screen, -recording, -state, -editorGroup, -cameraLook, -editorLook, -control, -sliderPlacement, -formats,
+    /// -droppedFrames or an "on" flag among -seedSamples, -seedLook, -seedFormats, -seedStudy, -librarySelect and -shutterDemo parsed to a
+    /// valid value; such launches never restore or save selections.
     var isScripted = false
 
     static func parse(_ args: [String]) -> LaunchConfig {
@@ -95,6 +97,14 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
         }
         if let name = value("-editorLook") {
             config.editorLookName = name
+            config.isScripted = true
+        }
+        if value("-formats") == "phone" {
+            config.usesPhoneFormats = true
+            config.isScripted = true
+        }
+        if let count = value("-droppedFrames").flatMap({ Int($0) }), count >= 0 {
+            config.droppedFrames = count
             config.isScripted = true
         }
         config.freeSpaceMarginMB = value("-freeSpaceMarginMB").flatMap { Int($0) }

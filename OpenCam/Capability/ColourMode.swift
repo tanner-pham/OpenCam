@@ -4,6 +4,8 @@ nonisolated enum ColourMode: String, Codable, Sendable, Hashable, CaseIterable {
     case rec709 = "Rec. 709"
     case p3 = "P3"
     case hlg = "HLG"
+    /// The baked profile: a log curve made from HLG frames. It records in HLG's capture colour space and is never read back from one.
+    case log = "Log"
     case appleLog = "Apple Log"
     case appleLog2 = "Apple Log 2"
 
@@ -25,7 +27,7 @@ nonisolated enum ColourMode: String, Codable, Sendable, Hashable, CaseIterable {
         switch self {
         case .rec709: 0
         case .p3: 1
-        case .hlg: 2
+        case .hlg, .log: 2
         case .appleLog: 3
         case .appleLog2: 4
         }
@@ -36,8 +38,9 @@ nonisolated enum ColourMode: String, Codable, Sendable, Hashable, CaseIterable {
         case .rec709: "Rec. 709"
         case .p3: "P3"
         case .hlg: "HLG"
-        case .appleLog: "Log"
-        case .appleLog2: "Log 2"
+        case .log: "Log"
+        case .appleLog: "Apple Log"
+        case .appleLog2: "Apple Log 2"
         }
     }
 }

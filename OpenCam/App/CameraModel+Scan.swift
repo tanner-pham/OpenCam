@@ -20,12 +20,19 @@ extension CameraModel {
             phase = .failed("The camera could not start.")
             return
         }
-        adoptScan(capabilities, lenses: lenses)
+        adoptScan(await Self.withWriterOptions(capabilities), lenses: lenses)
     }
 
     /// Reads and decodes the cache (2.4 MB on the Duo) off the main actor.
     @concurrent nonisolated private static func loadCache(_ cache: CapabilityCache) async -> CaptureCapabilities? {
-        cache.load(osBuild: DeviceIdentity.osBuild(), modelIdentifier: DeviceIdentity.modelIdentifier())
+        cache.load(osBuild: DeviceIdentity.osBuild(), modelIdentifier: DeviceIdentity.modelIdentifier())?
+            .withWriterOptions(.shipped(isSimulator: false))
+    }
+
+    /// A finished scan with the writer options this build records, derived off the main actor. The cache is saved from the
+    /// result, which encodes without them.
+    @concurrent nonisolated private static func withWriterOptions(_ capabilities: CaptureCapabilities) async -> CaptureCapabilities {
+        capabilities.withWriterOptions(.shipped(isSimulator: false))
     }
 
     /// Only with a running camera (so never while formats are read, in the Simulator, or after a failure or denial),
@@ -60,7 +67,7 @@ extension CameraModel {
         // The scan moved the cameras' formats, so the session is configured again even when the selection is unchanged.
         requestedConfiguration = nil
         if let capabilities {
-            adoptScan(capabilities, lenses: lenses)
+            adoptScan(await Self.withWriterOptions(capabilities), lenses: lenses)
         } else {
             show(Self.rescanFailedNotice, from: .scan)
         }

@@ -16,7 +16,7 @@ nonisolated struct DeviceLimits: Sendable, Equatable {
     /// `activeFormat.systemRecommendedExposureBiasRange`, when the format has one.
     var recommendedBias: ClosedRange<Float>?
     var maxWhiteBalanceGain: Float = 1
-    /// True when the session has the movie output attached (video mode).
+    /// True when the session has a video recorder's output attached (video mode): the movie output, or on the writer path its data output.
     var isVideo = false
     var isAutoFrameRateEnabled = false
     var supportsContinuousExposure = false

@@ -16,4 +16,6 @@ nonisolated enum SessionEvent: Sendable, Equatable {
     case savedStartReleased
     /// The Camera Control's own sliders took the screen (`sessionControlsWillEnterFullscreenAppearance`); the app hides its own.
     case systemControlsFullscreen
+    /// The writer recorder's running count of frames missing from the clip; `clip` is `CaptureStore.clipKey`. Writer path only.
+    case framesDropped(clip: String, total: Int)
 }

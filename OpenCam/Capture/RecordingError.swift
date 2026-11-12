@@ -10,6 +10,8 @@ nonisolated enum RecordingError: Error, CustomStringConvertible, Equatable {
     case cannotInspect(path: String, reason: String)
     case noVideoTrack(path: String)
     case cannotWriteSidecar(path: String, reason: String)
+    case writerNotAttached
+    case writerNotOpened(codec: String, reason: String)
 
     var description: String {
         switch self {
@@ -31,6 +33,10 @@ nonisolated enum RecordingError: Error, CustomStringConvertible, Equatable {
             "[ClipInspector:inspect] Clip has no video track — {path: \(path)}"
         case .cannotWriteSidecar(let path, let reason):
             "[MovieRecorder:writeSidecar] Cannot write the sidecar — {path: \(path), reason: \(reason)}"
+        case .writerNotAttached:
+            "[CameraSession:startRecording] Writer outputs not attached — {mode: video}"
+        case .writerNotOpened(let codec, let reason):
+            "[WriterSink:open] The writer could not be opened — {codec: \(codec), reason: \(reason)}"
         }
     }
 }

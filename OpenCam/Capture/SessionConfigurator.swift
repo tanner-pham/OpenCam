@@ -13,7 +13,8 @@ nonisolated protocol SessionConfigurator: Sendable {
     func releaseSavedStart() async
     /// Starts recording `option`, which must already be configured, to `url`; the result arrives through the session's
     /// recordings once the clip ends.
-    func startRecording(option: VideoOption, url: URL, minFreeBytes: Int64) async throws(RecordingError)
+    /// `dropPolicy` applies on the writer path only. `stopRecording()` is true while a clip records or is being finished on either path.
+    func startRecording(option: VideoOption, url: URL, minFreeBytes: Int64, dropPolicy: DropPolicy) async throws(RecordingError)
     /// Stops the clip. Returns whether a clip was in flight; false means no recording result will follow.
     func stopRecording() async -> Bool
     /// What the current camera reports now; empty while the session is stopped or holds no camera.

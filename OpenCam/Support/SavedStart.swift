@@ -38,7 +38,7 @@ nonisolated struct SavedStart: Codable, Sendable, Equatable {
         guard let saved, saved.mode == configuration.mode, saved.lensID == configuration.lens.id,
               saved.record == record, saved.photo == photo else { return nil }
         guard access.camera == .authorized, access.microphone != .notDetermined, configuration.includesAudio == access.recordsSound else { return nil }
-        guard configuration.needsFrames == (hasLook && LookAvailability.isOffered(mode: configuration.mode, colour: record.colour)) else { return nil }
+        guard configuration.needsFrames == (hasLook && LookAvailability.isOffered(mode: configuration.mode, colour: record.colour, recorder: configuration.recorder)) else { return nil }
         return configuration
     }
 }

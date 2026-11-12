@@ -10,13 +10,15 @@ struct ReadoutView: View {
     var isCompact = false
     var isSet = false
     var isOpen = false
+    /// The readout sits on a tinted warning capsule: the caption is primary too, because secondary text is unreadable on the tint.
+    var isOnWarning = false
 
     var body: some View {
         VStack(spacing: 2) {
             Text(caption)
                 .font(isCompact ? Theme.Text.compactCaption : Theme.Text.caption)
                 .tracking(0.4)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isOnWarning ? .primary : .secondary)
             HStack(spacing: Theme.Space.xs) {
                 if showsIndicator {
                     Circle().fill(Theme.recordRed).frame(width: Theme.Space.s, height: Theme.Space.s)

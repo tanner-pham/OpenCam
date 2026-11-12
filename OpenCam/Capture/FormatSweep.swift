@@ -196,7 +196,7 @@ import OSLog
         case .completed:
             guard result.sidecar?.actual == nil else { return nil }
             return result.sidecar?.error ?? SweepError.clipUnreadable(file: file).description
-        case .stopped:
+        case .stopped, .nothingRecorded:
             return result.sidecar?.error ?? SweepError.stoppedEarly(file: file, outcome: result.outcome.summary).description
         case .failed(let message):
             return message

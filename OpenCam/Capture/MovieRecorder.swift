@@ -103,46 +103,8 @@ nonisolated final class MovieRecorder: NSObject, AVCaptureFileOutputRecordingDel
         let results = self.results
         let tracker = self.tracker
         Task {
-            results.yield(await Self.finish(recording, outcome: outcome, errorMessage: message))
+            results.yield(await ClipFinisher.finish(recording, recorder: .system, drops: nil, errorMessage: message, outcome: { _ in outcome }))
             tracker.state.withLock { $0.reported() }
-        }
-    }
-
-    /// A clip the output called playable but that is missing is reported as failed; a clip that exists is never reported lost.
-    private static func finish(_ recording: PendingRecording, outcome: RecordingOutcome, errorMessage: String?) async -> RecordingResult {
-        let path = recording.url.path(percentEncoded: false)
-        guard FileManager.default.fileExists(atPath: path) else {
-            let failed: RecordingOutcome = outcome.isPlayable
-                ? .failed("[MovieRecorder:finish] Clip missing after recording — {path: \(path)}")
-                : outcome
-            if case .failed(let message) = failed { logger.error("\(message, privacy: .public)") }
-            return RecordingResult(url: recording.url, option: recording.option, outcome: failed, sidecar: nil)
-        }
-        var actual: ClipFacts?
-        var inspectionError: String?
-        do throws(RecordingError) {
-            actual = try await ClipInspector.inspect(url: recording.url, requestedFrameRate: recording.option.frameRate)
-        } catch {
-            inspectionError = error.description
-            logger.error("\(error.description, privacy: .public)")
-        }
-        let errors = [errorMessage, inspectionError].compactMap { $0 }
-        let sidecar = ClipSidecar(requested: recording.option, actual: actual, outcome: outcome.summary, recordedAt: recording.recordedAt,
-                                  error: errors.isEmpty ? nil : errors.joined(separator: " "))
-        let written = write(sidecar, beside: recording.url) ? sidecar : nil
-        return RecordingResult(url: recording.url, option: recording.option, outcome: outcome, sidecar: written)
-    }
-
-    /// `OC_0002.MOV` gets `OC_0002.json`.
-    private static func write(_ sidecar: ClipSidecar, beside clip: URL) -> Bool {
-        let url = clip.deletingPathExtension().appendingPathExtension(CaptureFileKind.sidecar.rawValue)
-        do {
-            try sidecar.encoded().write(to: url, options: .atomic)
-            return true
-        } catch {
-            let failure = RecordingError.cannotWriteSidecar(path: url.path(percentEncoded: false), reason: error.localizedDescription)
-            logger.error("\(failure.description, privacy: .public)")
-            return false
         }
     }
 }
