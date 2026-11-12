@@ -89,6 +89,16 @@ final class CameraModel {
     @ObservationIgnored var confirmed: (configuration: SessionConfiguration, selection: SavedSelections)?
     /// `runningConfirmation`, shortened by tests.
     @ObservationIgnored var confirmationDelay: Duration = CameraModel.runningConfirmation
+    /// True from a change that pauses the picture is queued until the last queued change has finished and settled; the blur over
+    /// the picture follows it. Every path that raises it ends in `finishViewfinderChange`.
+    private(set) var isViewfinderChanging = false
+    /// `ViewfinderChange.settle`, shortened by tests.
+    @ObservationIgnored var viewfinderSettle: Duration = ViewfinderChange.settle
+    /// Counts the changes queued, so only the newest one lowers the flag.
+    @ObservationIgnored private var viewfinderChangeCount = 0
+    @ObservationIgnored private var viewfinderClearing: Task<Void, Never>?
+    /// The Simulator's configuration before the current selection change, since it has no session to compare against.
+    @ObservationIgnored private var simulatedConfiguration: SessionConfiguration?
     /// Waits `confirmationDelay` after a configuration starts running, then confirms it.
     @ObservationIgnored var confirmation: Task<Void, Never>?
     /// Counts the runtime errors handled by `cameraStopped`, so a confirmation or a recovery that a newer one overtook does nothing.
@@ -201,6 +211,7 @@ final class CameraModel {
         // A look the launch mode cannot take is None, with no notice.
         if !isLookOffered { self.cameraLook = nil }
         if isSimulator { simulate(config.simulatedState) }
+        if isSimulator { simulatedConfiguration = sessionConfiguration }
         launchTimeline.mark("model")
     }
 
@@ -549,7 +560,34 @@ final class CameraModel {
         clearNotice(from: .look)
         settleLook()
         persist()
+        simulateViewfinderChange()
         enqueueConfigure()
+    }
+
+    /// The Simulator has no session, so a change that would pause the picture on the device raises the flag for a fixed time,
+    /// and the effect shows on the stand-in picture.
+    private func simulateViewfinderChange() {
+        guard isSimulator, let configuration = sessionConfiguration else { return }
+        defer { simulatedConfiguration = configuration }
+        guard ViewfinderChange.pausesPicture(from: simulatedConfiguration, to: configuration) else { return }
+        isViewfinderChanging = true
+        viewfinderChangeCount += 1
+        lowerViewfinderChange(after: ViewfinderChange.simulated, change: viewfinderChangeCount)
+    }
+
+    /// Called when a queued change's task ends, however it ends. Only the newest change lowers the flag, once it has settled.
+    private func finishViewfinderChange(_ change: Int) {
+        guard change == viewfinderChangeCount else { return }
+        lowerViewfinderChange(after: viewfinderSettle, change: change)
+    }
+
+    private func lowerViewfinderChange(after delay: Duration, change: Int) {
+        viewfinderClearing?.cancel()
+        viewfinderClearing = Task {
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, change == viewfinderChangeCount else { return }
+            isViewfinderChanging = false
+        }
     }
 
     /// A sweep's options are never saved as the user's selection.
@@ -586,6 +624,11 @@ final class CameraModel {
     func enqueueConfigure() -> Task<CameraSessionError?, Never>? {
         guard !isScanningFormats, !isRecording, !isHeldForLibrary, let configurator, let configuration = sessionConfiguration,
               configuration != requestedConfiguration else { return nil }
+        // Raised before the configure runs, so the pause is never seen bare; only the newest change's end lowers it.
+        if ViewfinderChange.pausesPicture(from: requestedConfiguration, to: configuration) { isViewfinderChanging = true }
+        viewfinderChangeCount += 1
+        let change = viewfinderChangeCount
+        viewfinderClearing?.cancel()
         requestedConfiguration = configuration
         configureGeneration += 1
         let generation = configureGeneration
@@ -593,6 +636,7 @@ final class CameraModel {
         let previous = configureTask
         let captures = Array(photoCaptures.values)
         let task = Task { () -> CameraSessionError? in
+            defer { finishViewfinderChange(change) }
             _ = await previous?.value
             await Self.waitForAll(captures)
             guard generation == configureGeneration else { return nil }
