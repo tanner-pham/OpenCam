@@ -75,9 +75,9 @@ nonisolated enum ColourMath {
         return clamp01(x)
     }
 
-    private static func clamp01(_ x: Float) -> Float { min(max(x, 0), 1) }
+    static func clamp01(_ x: Float) -> Float { min(max(x, 0), 1) }
 
-    private static func clamp01(_ v: SIMD3<Float>) -> SIMD3<Float> {
+    static func clamp01(_ v: SIMD3<Float>) -> SIMD3<Float> {
         v.clamped(lowerBound: .zero, upperBound: .one)
     }
 }
