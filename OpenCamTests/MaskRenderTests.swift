@@ -51,6 +51,16 @@ import Testing
         #expect(abs(try pixel(out, x: 2, top: 2) - pixel(plain, x: 2, top: 2)) < 0.02)
     }
 
+    @Test func radialUsesTheShorterSideOnAWideOffsetPicture() throws {
+        let base = CIImage(color: CIColor(red: 0.4, green: 0.4, blue: 0.4, colorSpace: renderer.displayP3) ?? .gray)
+            .cropped(to: CGRect(x: 10, y: 20, width: 200, height: 100))
+        let shape = MaskShape.radial(centre: MaskPoint(x: 0.5, y: 0.5), radius: 0.4, feather: 0)
+        let out = renderer.render(base, edit: edit(bright(shape))), plain = renderer.render(base, edit: PhotoEdit())
+        // The centre is (110, 70) and the radius 0.4 of the 100 pt short side, 40 pt.
+        #expect(try PixelReader.rgb(out, x: 145, y: 70).x - PixelReader.rgb(plain, x: 145, y: 70).x > 0.1)
+        #expect(abs(try PixelReader.rgb(out, x: 155, y: 70).x - PixelReader.rgb(plain, x: 155, y: 70).x) < 0.02)
+    }
+
     @Test func invertedRadialBrightensTheCornersOnly() throws {
         let base = try grey()
         let shape = MaskShape.radial(centre: MaskPoint(x: 0.5, y: 0.5), radius: 0.3, feather: 0.5)
@@ -137,8 +147,10 @@ import Testing
         for table in tables.prefix(8) { _ = cache.cube(for: table) }
         for table in tables.prefix(8) { _ = cache.cube(for: table) }
         #expect(builds.value == 8)
-        _ = cache.cube(for: tables[8])   // pushes out the least recently used (the first)
-        _ = cache.cube(for: tables[1]); #expect(builds.value == 9)
-        _ = cache.cube(for: tables[0]); #expect(builds.value == 10)
+        _ = cache.cube(for: tables[0])   // used again, so the second entry is now the least recently used
+        _ = cache.cube(for: tables[8])   // pushes that one out; a first-in-first-out cache would push out the first
+        #expect(builds.value == 9)
+        _ = cache.cube(for: tables[0]); #expect(builds.value == 9)   // survived
+        _ = cache.cube(for: tables[1]); #expect(builds.value == 10)  // was rebuilt
     }
 }

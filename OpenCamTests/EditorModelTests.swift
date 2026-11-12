@@ -358,7 +358,7 @@ import Testing
     }
 
     @Test func theSubjectIsFoundOncePerOpen() async throws {
-        let calls = Counter()
+        let calls = CallCounter()
         let model = try await subjectModel { _ in calls.increment(); return .notFound }
         #expect(model.subjectState == .notNeeded); #expect(calls.value == 0)
         model.addMask(.subject); model.addMask(.subject)
@@ -372,20 +372,13 @@ import Testing
         let captures = try TestFiles.directory()
         _ = try TestFiles.writeJPEG(width: 400, height: 300, rgb: SIMD3(0.5, 0.5, 0.5), to: captures.appending(path: "OC_0001.JPG"))
         try EditStore(directory: captures).save(PhotoEdit(masks: [LocalMask(shape: .subject)]), stem: "OC_0001")
-        let calls = Counter()
+        let calls = CallCounter()
         let item = try #require(LibraryScanner.items(in: captures).first)
         let model = EditorModel(item: item, edits: EditStore(directory: captures), looks: try LookStore(directory: TestFiles.directory()),
                                 findSubject: { _ in calls.increment(); return .notFound })
         await model.load(); await model.waitForSubject()
         #expect(calls.value == 1); #expect(model.subjectState == .notFound)
     }
-}
-
-nonisolated final class Counter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var count = 0
-    var value: Int { lock.withLock { count } }
-    func increment() { lock.withLock { count += 1 } }
 }
 
 nonisolated final class TestClock: @unchecked Sendable {
