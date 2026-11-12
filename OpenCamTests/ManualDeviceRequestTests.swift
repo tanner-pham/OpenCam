@@ -51,6 +51,19 @@ import Testing
         #expect(low.exposure == .custom(duration: fast, iso: 34))
     }
 
+    @Test func onlyACustomExposureNeedsTheFormatsAnswer() {
+        let custom = ManualDeviceRequest.make(plan(exposure: .custom(seconds: 1.0 / 60, iso: 400)), limits: limits())
+        #expect(custom.exposureToCheck == ManualDeviceRequest.ExposureCheck(duration: CMTime(seconds: 1.0 / 60, preferredTimescale: 1_000_000_000), iso: 400))
+        // The values to check are the clamped ones that will be passed, and a missing one stays missing (the camera's current).
+        let clamped = ManualDeviceRequest.make(plan(exposure: .custom(seconds: nil, iso: 99_999)), limits: limits())
+        #expect(clamped.exposureToCheck == ManualDeviceRequest.ExposureCheck(duration: nil, iso: 6400))
+        #expect(ManualDeviceRequest.make(plan(exposure: .continuous), limits: limits()).exposureToCheck == nil)
+        #expect(ManualDeviceRequest.make(plan(bias: 1), limits: limits()).exposureToCheck == nil)
+        var noCustom = limits()
+        noCustom.supportsCustomExposure = false
+        #expect(ManualDeviceRequest.make(plan(exposure: .custom(seconds: 0.01, iso: 100)), limits: noCustom).exposureToCheck == nil)
+    }
+
     @Test func aShutterInsideTheLimitsIsNotLogged() {
         let request = ManualDeviceRequest.make(plan(exposure: .custom(seconds: 1.0 / 60, iso: 400)), limits: limits())
         #expect(request.clamps.isEmpty)

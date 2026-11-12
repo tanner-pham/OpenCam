@@ -56,6 +56,19 @@ nonisolated struct ManualDeviceRequest: Sendable, Equatable {
     var focus: Focus?
     var clamps: [Clamp] = []
 
+    /// The shutter and ISO a custom exposure will be set with; nil is the camera's current value.
+    struct ExposureCheck: Sendable, Equatable {
+        var duration: CMTime?
+        var iso: Float?
+    }
+
+    /// Present when the request sets a custom exposure: the format must be asked about exactly these values before anything is
+    /// set, since the setter raises for a combination it does not support.
+    var exposureToCheck: ExposureCheck? {
+        guard case .custom(let duration, let iso)? = exposure else { return nil }
+        return ExposureCheck(duration: duration, iso: iso)
+    }
+
     /// What the device did, for the settings the session reports.
     struct Outcome: Sendable, Equatable {
         var didSetExposure: Bool

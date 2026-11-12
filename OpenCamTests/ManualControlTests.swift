@@ -166,6 +166,26 @@ import Testing
         #expect(rig.model.notice == nil)
     }
 
+    @Test func aRefusedExposureShowsTheNoticeAndReturnsTheSlider() async throws {
+        let rig = try await rig()
+        rig.model.toggleControl(.shutter)
+        let before = rig.model.manual
+        await rig.fake.setManualError(.notSupported(control: "exposure", lens: "wide"))
+        rig.model.setControl(.shutter, step: 12)
+        await rig.model.manualApplyTask?.value
+        #expect(rig.model.manual == before)
+        #expect(rig.model.appliedManual == before)
+        #expect(rig.model.notice == CameraModel.controlFailedNotice)
+        #expect(rig.model.noticeSource == .control)
+        await rig.fake.setManualError(nil)
+        let sent = await rig.fake.manualApplies.count
+        rig.model.setControl(.shutter, step: 20)
+        await rig.model.manualApplyTask?.value
+        #expect(await rig.fake.manualApplies.count == sent + 1)
+        #expect(rig.model.manual != before)
+        #expect(rig.model.notice == nil)
+    }
+
     @Test func noCameraReturnsQuietly() async throws {
         let rig = try await rig()
         await rig.fake.setManualError(.noCamera)

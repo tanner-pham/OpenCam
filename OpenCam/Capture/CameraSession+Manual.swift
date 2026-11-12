@@ -28,12 +28,23 @@ extension CameraSession {
             throw .lockFailed(reason: String(describing: error))
         }
         defer { device.unlockForConfiguration() }
+        // Decided before anything is set: a format that refuses the exposure leaves the camera and `appliedManual` as they were.
+        if let check = request.exposureToCheck {
+            // The setter also raises for a combination the format does not support, which the format answers for the exact
+            // values (AVCaptureDevice.h, `supportsExposureModeCustom`, which accepts the "current" constants).
+            let duration = check.duration ?? AVCaptureDevice.currentExposureDuration
+            let iso = check.iso ?? AVCaptureDevice.currentISO
+            guard device.activeFormat.supportsExposureModeCustom(lensAperture: AVCaptureDevice.currentLensAperture, duration: duration, iso: iso) else {
+                Self.logger.error("[CameraSession:applyManual] Custom exposure not supported by the format — {lens: \(self.lensName, privacy: .public), duration: \(duration.seconds), iso: \(iso)}")
+                throw .notSupported(control: "exposure", lens: lensName)
+            }
+        }
         let outcome = run(request, on: device)
         let result = ManualDeviceRequest.result(of: plan, previous: appliedManual, outcome: outcome)
         // What the camera took, not what was asked: a clamped white balance is then not locked again by the next apply.
         appliedManual = result
         if plan.exposure != nil {
-            setExposureBiasControls(enabled: CameraControlPlan.enablesExposureBias(for: plan.applied.exposure))
+            setExposureBiasControls(enabled: CameraControlPlan.enablesExposureBias(for: result.exposure))
         }
         return result
     }
@@ -99,16 +110,10 @@ extension CameraSession {
             device.exposureMode = .continuousAutoExposure
             outcome.didSetExposure = true
         case .custom(let duration, let iso)?:
-            let durationToSet = duration ?? AVCaptureDevice.currentExposureDuration
-            let isoToSet = iso ?? AVCaptureDevice.currentISO
-            // The setter also raises for a combination the format does not support, which the format answers for the exact
-            // values (AVCaptureDevice.h, `supportsExposureModeCustom`, which accepts the "current" constants).
-            if device.activeFormat.supportsExposureModeCustom(lensAperture: AVCaptureDevice.currentLensAperture, duration: durationToSet, iso: isoToSet) {
-                device.setExposureModeCustom(duration: durationToSet, iso: isoToSet, completionHandler: nil)
-                outcome.didSetExposure = true
-            } else {
-                Self.logger.error("[CameraSession:applyManual] Custom exposure not supported by the format — {lens: \(self.lensName, privacy: .public), duration: \(durationToSet.seconds), iso: \(isoToSet)}")
-            }
+            // The caller has already asked the format about these values.
+            device.setExposureModeCustom(duration: duration ?? AVCaptureDevice.currentExposureDuration,
+                                         iso: iso ?? AVCaptureDevice.currentISO, completionHandler: nil)
+            outcome.didSetExposure = true
         case nil:
             break
         }
