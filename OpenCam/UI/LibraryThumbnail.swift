@@ -25,7 +25,9 @@ struct LibraryThumbnail: View {
             if Self.showsSymbol(for: thumbnails) {
                 Image(systemName: "photo.on.rectangle")
             } else {
+                // Images are not dimmed by the system's disabled tint, so the stack dims itself like the symbol and its siblings.
                 ThumbnailStack(thumbnails: thumbnails)
+                    .opacity(model.canOpenLibrary ? 1 : 0.4)
             }
         }
         .disabled(!model.canOpenLibrary)
