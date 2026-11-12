@@ -20,12 +20,33 @@ struct EditorPicture: View {
             Image(decorative: image, scale: 1)
                 .resizable()
                 .scaledToFit()
-                .overlay(alignment: .top) { originalBadge }
+                // Before the overlays, so a touch on a mask handle is the handle's alone and never a press on the picture.
                 .onLongPressGesture(minimumDuration: 0.15, perform: {}, onPressingChanged: { model.isShowingOriginal = $0 })
+                .overlay { maskLayers }
+                .overlay(alignment: .top) { originalBadge }
                 .accessibilityElement()
                 .accessibilityLabel(model.item.stem)
         } else {
             ProgressView()
+        }
+    }
+
+    /// The selected mask in red and its handles, only in the Masks group and never over the original.
+    @ViewBuilder
+    private var maskLayers: some View {
+        if model.group == .masks {
+            ZStack {
+                if model.isShowingMaskOverlay, let overlay = model.maskOverlay {
+                    Image(decorative: overlay, scale: 1)
+                        .resizable()
+                        .allowsHitTesting(false)
+                }
+                if let kind = model.selectedMask?.shape.kind, kind == .linear || kind == .radial {
+                    MaskHandles(model: model)
+                }
+            }
+            // Kept in the tree, only hidden, so a press on the picture never removes a handle mid-touch.
+            .opacity(model.isShowingOriginal ? 0 : 1)
         }
     }
 

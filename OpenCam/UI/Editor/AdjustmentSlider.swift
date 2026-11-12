@@ -2,11 +2,37 @@ import SwiftUI
 
 /// One adjustment: its name and value on a row, the system slider below. Double-tapping the name row resets it.
 struct AdjustmentSlider: View {
-    let key: AdjustmentKey
-    @Binding var value: Double
-    /// The name shown on the row when set ("Luminance" under a grading wheel); the slider's accessibility label stays `key.title`.
-    var title: String? = nil
-    let onReset: () -> Void
+    /// The name shown on the row ("Luminance" under a grading wheel) and the slider's accessibility label.
+    private let name: String
+    private let accessibilityName: String
+    @Binding private var value: Double
+    private let range: ClosedRange<Double>
+    private let valueText: String
+    private let snap: (Double) -> Double
+    private let onReset: () -> Void
+
+    /// A slider for an adjustment: its range, step and value text come from `key`. `title` replaces the name on the row only;
+    /// the slider's accessibility label stays `key.title`.
+    init(key: AdjustmentKey, value: Binding<Double>, title: String? = nil, onReset: @escaping () -> Void) {
+        name = title ?? key.title
+        accessibilityName = key.title
+        _value = value
+        range = key.range
+        valueText = key.valueText(value.wrappedValue)
+        snap = key.snapped
+        self.onReset = onReset
+    }
+
+    /// A slider for a value that is not an adjustment, such as a mask's feather, drawn the same way. Whole steps.
+    init(title: String, value: Binding<Double>, range: ClosedRange<Double>, valueText: String, onReset: @escaping () -> Void) {
+        name = title
+        accessibilityName = title
+        _value = value
+        self.range = range
+        self.valueText = valueText
+        snap = { $0.rounded() }
+        self.onReset = onReset
+    }
 
     /// The space between a name row and its slider.
     private static let nameGap = Theme.Space.s
@@ -31,19 +57,19 @@ struct AdjustmentSlider: View {
                 .accessibilityHidden(true)
             // Zero is "no change": the fill grows from it, so an untouched centred slider shows no fill. The value snaps to
             // `key.step` in the binding, because a stepped Slider draws a tick mark per step under the track.
-            Slider(value: steppedValue, in: key.range, neutralValue: 0) {
-                Text(key.title)
+            Slider(value: steppedValue, in: range, neutralValue: 0) {
+                Text(accessibilityName)
             }
-            .accessibilityValue(key.valueText(value))
+            .accessibilityValue(valueText)
             .accessibilityAction(named: "Reset", onReset)
         }
     }
 
     private var nameRow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(title ?? key.title)
+            Text(name)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(key.valueText(value))
+            Text(valueText)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
@@ -52,6 +78,6 @@ struct AdjustmentSlider: View {
     }
 
     private var steppedValue: Binding<Double> {
-        Binding(get: { value }, set: { value = key.snapped($0) })
+        Binding(get: { value }, set: { value = snap($0) })
     }
 }

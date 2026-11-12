@@ -99,6 +99,21 @@ nonisolated final class LookRenderer: Sendable {
         return out
     }
 
+    /// The mask as translucent red over `extent`: red where it applies, clear elsewhere. Nil when the mask cannot apply.
+    func maskOverlay(for mask: LocalMask, extent: CGRect, subject: CIImage?) -> CIImage? {
+        guard let weights = MaskImage.image(for: mask, extent: extent, subject: subject) else { return nil }
+        let matrix = CIFilter.colorMatrix()
+        matrix.inputImage = weights
+        matrix.rVector = CIVector(x: 0, y: 0, z: 0, w: 0)
+        matrix.gVector = CIVector(x: 0, y: 0, z: 0, w: 0)
+        matrix.bVector = CIVector(x: 0, y: 0, z: 0, w: 0)
+        matrix.aVector = CIVector(x: Self.overlayAlpha, y: 0, z: 0, w: 0)
+        matrix.biasVector = CIVector(x: 1, y: 0.1, z: 0.1, w: 0)
+        return matrix.outputImage?.cropped(to: extent)
+    }
+
+    private static let overlayAlpha: CGFloat = 0.45
+
     /// The colour table and vignette only, for the viewfinder; matches `render` for the same values.
     func renderColourAndVignette(_ image: CIImage, cube: ColourCube, vignette: Double) -> CIImage {
         let extent = image.extent

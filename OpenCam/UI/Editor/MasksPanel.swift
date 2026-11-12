@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The Masks group: one row with the Add menu and the masks, then Invert and Delete, then its seven sliders.
+/// The Masks group: one row with the Add menu and the masks, then Invert, Show mask and Delete, then a radial mask's Feather slider and the seven sliders.
 struct MasksPanel: View {
     @Bindable var model: EditorModel
 
@@ -17,6 +17,7 @@ struct MasksPanel: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     actions
+                    if case let .radial(_, _, feather)? = model.selectedMask?.shape { featherSlider(feather) }
                     ForEach(LocalMask.keys, id: \.self) { key in
                         AdjustmentSlider(key: key, value: sliderBinding(key)) { model.updateSelectedMask { $0.adjustments[key] = 0 } }
                     }
@@ -70,18 +71,9 @@ struct MasksPanel: View {
     }
 
     private var actions: some View {
-        let isInverted = model.selectedMask?.isInverted ?? false
-        return HStack(spacing: Theme.Space.s) {
-            // Filled in the accent with dark text when on, the faint neutral fill when off, as the picker's buttons are.
-            Button { model.updateSelectedMask { $0.isInverted.toggle() } } label: {
-                Text("Invert")
-                    .font(.subheadline)
-                    .foregroundStyle(isInverted ? Color.black : Color.primary)
-                    .frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget - Self.borderedInset)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(isInverted ? Theme.accent : Color.primary.opacity(0.18))
-            .accessibilityAddTraits(isInverted ? .isSelected : [])
+        HStack(spacing: Theme.Space.s) {
+            toggleButton("Invert", isOn: model.selectedMask?.isInverted ?? false) { model.updateSelectedMask { $0.isInverted.toggle() } }
+            toggleButton("Show mask", isOn: model.isShowingMaskOverlay) { model.isShowingMaskOverlay.toggle() }
             Button(role: .destructive) { model.deleteSelectedMask() } label: {
                 Text("Delete")
                     .font(.subheadline)
@@ -92,6 +84,38 @@ struct MasksPanel: View {
         }
         // The first slider's reset target reaches up over the gap above its name row; the padding keeps it off the buttons.
         .padding(.bottom, AdjustmentSlider.reachUp - Self.rowGap)
+    }
+
+    /// Filled in the accent with dark text when on, the faint neutral fill when off, as the picker's buttons are.
+    private func toggleButton(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .foregroundStyle(isOn ? Color.black : Color.primary)
+                .frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget - Self.borderedInset)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(isOn ? Theme.accent : Color.primary.opacity(0.18))
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
+    /// How far a radial mask's soft edge reaches in from its outline, 0 to 100.
+    private func featherSlider(_ feather: Double) -> some View {
+        let binding = Binding(
+            get: { feather * 100 },
+            set: { value in
+                model.updateSelectedMask { mask in
+                    if case let .radial(centre, radius, _) = mask.shape { mask.shape = .radial(centre: centre, radius: radius, feather: value / 100) }
+                }
+            }
+        )
+        return AdjustmentSlider(title: "Feather", value: binding, range: 0...100, valueText: "\(Int(binding.wrappedValue.rounded()))") {
+            model.updateSelectedMask { mask in
+                if case let .radial(centre, radius, _) = mask.shape { mask.shape = .radial(centre: centre, radius: radius, feather: 0.5) }
+            }
+        }
     }
 
     private func sliderBinding(_ key: AdjustmentKey) -> Binding<Double> {

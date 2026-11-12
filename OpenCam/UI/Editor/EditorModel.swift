@@ -11,7 +11,9 @@ import OSLog
     private static let logger = Logger(subsystem: "local.opencam.app", category: "EditorModel")
 
     let item: LibraryItem
-    var group: EditorGroup
+    var group: EditorGroup {
+        didSet { if group != oldValue { requestMaskOverlay() } }
+    }
     /// The curve the Curve group shows and edits.
     var curveChannel: CurveChannel = .master
     /// The colour band the Mix group shows; never saved, so an edit opens on Red.
@@ -46,10 +48,19 @@ import OSLog
             guard masks != oldValue else { return }
             record(PhotoEdit(adjustments: adjustments, lookName: lookName, masks: oldValue))
             requestRender()
+            requestMaskOverlay()
         }
     }
     /// The mask the Masks group shows; never saved, so an edit opens with none chosen.
-    var selectedMaskID: UUID?
+    var selectedMaskID: UUID? {
+        didSet { if selectedMaskID != oldValue { requestMaskOverlay() } }
+    }
+    /// Whether the selected mask is tinted red on the picture while the Masks group is open.
+    var isShowingMaskOverlay = true {
+        didSet { if isShowingMaskOverlay != oldValue { requestMaskOverlay() } }
+    }
+    /// The selected mask in translucent red at the proxy's size; nil when it is not shown or the mask cannot apply.
+    private(set) var maskOverlay: CGImage?
     var selectedMask: LocalMask? { masks.first { $0.id == selectedMaskID } }
     /// The lens and exposure facts of the original file; none until the read finishes or when the file carries none.
     private(set) var facts = PhotoFacts.none
@@ -86,6 +97,9 @@ import OSLog
     private var proxy: CIImage?
     private var renders = RenderCoalescer<PhotoEdit>()
     private var renderTask: Task<Void, Never>?
+    private var overlays = RenderCoalescer<MaskOverlayKey?>()
+    private var overlayTask: Task<Void, Never>?
+    private var requestedOverlay: MaskOverlayKey?
     private var shownGeneration = 0
     private var histograms = RenderCoalescer<CGImage>()
     private var histogramTask: Task<Void, Never>?
@@ -197,6 +211,7 @@ import OSLog
         }
         proxy = decoded
         proxySize = decoded.extent.size
+        requestMaskOverlay()
         original = unedited
         tileSource = await Self.makeTileSource(from: unedited)
         requestRender()
@@ -219,6 +234,13 @@ import OSLog
     /// Returns when no render is running or waiting.
     func waitForPreview() async {
         while !renders.isIdle, let task = renderTask {
+            await task.value
+        }
+    }
+
+    /// Returns when no mask overlay render is running or waiting.
+    func waitForMaskOverlay() async {
+        while !overlays.isIdle, let task = overlayTask {
             await task.value
         }
     }
@@ -489,5 +511,50 @@ extension EditorModel {
         } catch {
             Self.logger.error("[EditorModel:discardExport] The export file could not be removed — {file: \(url.lastPathComponent, privacy: .public), reason: \(error.localizedDescription, privacy: .public)}")
         }
+    }
+}
+
+// MARK: - Mask overlay
+
+/// What the overlay depends on: the mask's shape and inversion. Its adjustments do not change it.
+private nonisolated struct MaskOverlayKey: Equatable, Sendable {
+    let shape: MaskShape
+    let isInverted: Bool
+}
+
+extension EditorModel {
+    /// Renders the overlay for the selected mask when it differs from the last one asked for, one render at a time.
+    fileprivate func requestMaskOverlay() {
+        let wanted: MaskOverlayKey? = group == .masks && isShowingMaskOverlay
+            ? selectedMask.map { MaskOverlayKey(shape: $0.shape, isInverted: $0.isInverted) } : nil
+        guard wanted != requestedOverlay else { return }
+        requestedOverlay = wanted
+        guard let proxy else { return }
+        // Nothing to draw clears at once; a render still running is dropped when it ends, as it no longer matches the request.
+        if wanted == nil { maskOverlay = nil }
+        guard let job = overlays.request(wanted) else { return }
+        overlayTask = Task { await runOverlays(from: job, extent: proxy.extent) }
+    }
+
+    fileprivate func runOverlays(from first: (generation: Int, value: MaskOverlayKey?), extent: CGRect) async {
+        var job: (generation: Int, value: MaskOverlayKey?)? = first
+        while let current = job {
+            let image = await renderOverlay(current.value, extent: extent)
+            // Only the newest request decides what is shown, so a stale result never replaces a clear.
+            if current.value == requestedOverlay { maskOverlay = image }
+            job = overlays.finish()
+        }
+    }
+
+    private func renderOverlay(_ key: MaskOverlayKey?, extent: CGRect) async -> CGImage? {
+        guard let key else { return nil }
+        let mask = LocalMask(shape: key.shape, isInverted: key.isInverted)
+        let renderer = renderer
+        return await Self.overlayImage(renderer: renderer, mask: mask, extent: extent)
+    }
+
+    @concurrent private static func overlayImage(renderer: LookRenderer, mask: LocalMask, extent: CGRect) async -> CGImage? {
+        guard let overlay = renderer.maskOverlay(for: mask, extent: extent, subject: nil) else { return nil }
+        return await renderer.cgImage(overlay)
     }
 }
