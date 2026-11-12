@@ -11,3 +11,31 @@ nonisolated struct ManualRanges: Sendable, Equatable {
     /// Video only.
     var frameSeconds: Double?
 }
+
+extension ManualRanges {
+    /// Every number inside what this camera allows, and a group it lacks returned to automatic.
+    /// A non-finite exposure number holds the camera's value; any other non-finite value is dropped.
+    nonisolated func clamped(_ settings: ManualSettings) -> ManualSettings {
+        var next = ManualSettings()
+        if case .manual(let shutter, let iso) = settings.exposure, let shutterRange = shutterSeconds, let isoRange = self.iso {
+            var upper = shutterRange.upperBound
+            if let frameSeconds, frameSeconds.isFinite, frameSeconds > 0 { upper = min(upper, frameSeconds) }
+            let low = shutterRange.lowerBound
+            let high = max(low, upper)
+            next.exposure = .manual(
+                shutterSeconds: shutter.flatMap { $0.isFinite ? min(max($0, low), high) : nil },
+                iso: iso.flatMap { $0.isFinite ? min(max($0, isoRange.lowerBound), isoRange.upperBound) : nil }
+            )
+        }
+        if let value = settings.bias, value.isFinite, let range = bias {
+            next.bias = min(max(value, range.lowerBound), range.upperBound)
+        }
+        if case .manual(let kelvin, let tint) = settings.whiteBalance, hasWhiteBalance, kelvin.isFinite, tint.isFinite {
+            next.whiteBalance = .manual(kelvin: min(max(kelvin, 2500), 10000), tint: min(max(tint, -150), 150))
+        }
+        if let value = settings.focus, value.isFinite, hasFocus {
+            next.focus = min(max(value, 0), 1)
+        }
+        return next
+    }
+}
