@@ -106,6 +106,22 @@ import Testing
         #expect(await rig.fake.manualApplies.count == 1)
     }
 
+    /// EV has no automatic state: its slider is never drawn as automatic, and its readout is marked whenever it is not zero.
+    @Test func evIsMarkedWhenItIsNotZeroAndItsSliderIsNeverAutomatic() async throws {
+        let rig = try await rig()
+        rig.model.toggleControl(.bias)
+        #expect(rig.model.openSlider?.isAutomatic == false)
+        #expect(!rig.model.readout(for: .bias).isSet)
+        let scale = try #require(rig.model.scale(for: .bias))
+        rig.model.setControl(.bias, step: scale.values.count - 1)
+        await rig.model.manualApplyTask?.value
+        #expect(rig.model.readout(for: .bias).isSet)
+        #expect(rig.model.openSlider?.isAutomatic == false)
+        rig.model.setControl(.bias, step: scale.step(nearest: 0))
+        await rig.model.manualApplyTask?.value
+        #expect(!rig.model.readout(for: .bias).isSet)
+    }
+
     @Test func whiteBalanceTakesTheOtherValueFromTheLiveReadout() async throws {
         let rig = try await rig()
         let scale = try #require(rig.model.scale(for: .temperature))

@@ -35,7 +35,7 @@ extension CameraModel {
         return ControlReadoutState(
             text: control.text(value),
             spoken: control.spoken(value),
-            isSet: manual.isSet(control),
+            isSet: isMarkedSet(control, value: value),
             isOpen: openControl == control,
             isAvailable: canAdjustControls && manual.isAdjustable(control) && scale(for: control) != nil
         )
@@ -51,8 +51,13 @@ extension CameraModel {
             adjustStride: scale.adjustStride,
             text: control.text(value),
             spoken: control.spoken(value),
-            isAutomatic: !manual.isSet(control)
+            isAutomatic: control.hasAutomatic && !manual.isSet(control)
         )
+    }
+
+    /// Whether the readout is marked as set by hand. EV has no automatic state, so it is marked whenever it is not zero.
+    private func isMarkedSet(_ control: ManualControl, value: Double?) -> Bool {
+        control.hasAutomatic ? manual.isSet(control) : abs(value ?? 0) > Double(Self.biasTolerance)
     }
 
     /// Opens the slider, switches to this one, or closes it when it is the open one. Changes nothing on the camera.
