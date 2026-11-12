@@ -161,8 +161,14 @@ extension CameraModel {
 
     /// The model returns to what the camera has, unless the user has moved on (the snapshot that waits then decides).
     private func manualApplyFailed(_ error: ManualControlError, sent: ManualSettings, generation: Int) {
-        Self.logger.error("\(error.description, privacy: .public)")
-        ErrorJournal.record(error.description)
+        if error == .noCamera {
+            // Expected when the camera was just released or stopped (the Library, a stopped session): what follows sets it
+            // automatic, so this is not a failure to keep in the journal.
+            Self.logger.info("\(error.description, privacy: .public)")
+        } else {
+            Self.logger.error("\(error.description, privacy: .public)")
+            ErrorJournal.record(error.description)
+        }
         guard generation == manualGeneration else { return }
         if manual == sent { manual = appliedManual }
         if error != .noCamera { show(Self.controlFailedNotice, from: .control) }
