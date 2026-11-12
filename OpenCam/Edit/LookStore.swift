@@ -122,7 +122,7 @@ nonisolated struct LookStore: Sendable {
         do {
             return try Self.decoder.decode(Look.self, from: data)
         } catch {
-            if let version = try? JSONDecoder().decode(EditFileVersion.self, from: data).version, version > Look.currentVersion {
+            if let version = EditFileVersion.stored(in: data), version > Look.currentVersion {
                 throw .newerVersion(path: path, version: version)
             }
             throw .unreadable(path: path, reason: error.localizedDescription)

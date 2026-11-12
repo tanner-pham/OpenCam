@@ -25,7 +25,7 @@ nonisolated struct EditStore: Sendable {
         do {
             return try JSONDecoder().decode(PhotoEdit.self, from: data)
         } catch {
-            if let version = Self.storedVersion(in: data), version > PhotoEdit.currentVersion {
+            if let version = EditFileVersion.stored(in: data), version > PhotoEdit.currentVersion {
                 throw .newerVersion(path: path, version: version)
             }
             throw .unreadable(path: path, reason: error.localizedDescription)
@@ -68,7 +68,7 @@ nonisolated struct EditStore: Sendable {
     private func refuseUnwritable(_ url: URL) throws(EditStoreError) {
         let path = url.path(percentEncoded: false)
         let data = try Self.read(url)
-        guard let version = Self.storedVersion(in: data) else {
+        guard let version = EditFileVersion.stored(in: data) else {
             throw .unreadable(path: path, reason: "The file has no readable version")
         }
         if version > PhotoEdit.currentVersion { throw .newerVersion(path: path, version: version) }
@@ -85,11 +85,5 @@ nonisolated struct EditStore: Sendable {
         } catch {
             throw .unreadable(path: url.path(percentEncoded: false), reason: error.localizedDescription)
         }
-    }
-
-    /// The file's version alone, read without its shape (a missing version is 1); nil when the bytes are not a JSON object
-    /// or the version is not a number.
-    private static func storedVersion(in data: Data) -> Int? {
-        (try? JSONDecoder().decode(EditFileVersion.self, from: data)).map { $0.version ?? 1 }
     }
 }

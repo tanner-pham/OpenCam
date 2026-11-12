@@ -5,10 +5,18 @@ nonisolated struct PictureHistogram: Sendable, Equatable {
     static let binCount = 256
     static let sampleLongSide = 256
 
+    /// Always `binCount` long, which `heights` relies on; only `counting` makes one.
     let luma: [UInt32]
     let red: [UInt32]
     let green: [UInt32]
     let blue: [UInt32]
+
+    private init(luma: [UInt32], red: [UInt32], green: [UInt32], blue: [UInt32]) {
+        self.luma = luma
+        self.red = red
+        self.green = green
+        self.blue = blue
+    }
 
     /// Counts RGBA8 bytes (alpha ignored). Luma bin: `Int((0.2126·r + 0.7152·g + 0.0722·b).rounded())`, on the encoded bytes.
     static func counting(rgba: [UInt8]) -> PictureHistogram {

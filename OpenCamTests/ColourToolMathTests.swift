@@ -45,6 +45,9 @@ import Testing
         #expect(ColourMath.hsv(nearRed).x < 360)
         #expect(abs(ColourMath.bandWeights(hue: ColourMath.hsv(nearRed).x).sum() - 1) < 1e-5)
         #expect(maxDiff(mix(nearRed, sat: only(.red, -1)), SIMD3(1, 1, 1)) < 1e-5) }
+    @Test func negativeHuesWrapAndMinusOneRedShiftsToThreeThirty() {
+        #expect(ColourMath.rgb(hue: -30, saturation: 2.0 / 3, value: 0.75) == ColourMath.rgb(hue: 330, saturation: 2.0 / 3, value: 0.75))
+        let shifted = ColourMath.hsv(mix(red, hue: only(.red, -1))); #expect(abs(shifted.x - 330) < 0.01) }
     @Test func mathRunsOffTheMainActor() async {
         let result = await Self.offMainActor()
         #expect(result.x.isFinite) }

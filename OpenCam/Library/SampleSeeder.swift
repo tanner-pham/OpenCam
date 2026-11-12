@@ -3,7 +3,8 @@ import Foundation
 import ImageIO
 import SwiftUI
 
-/// Writes three generated pictures into an empty Captures folder, so the Library can be shown in the Simulator.
+/// Writes generated pictures into the Captures folder, so the Library can be shown in the Simulator: `seedIfEmpty` three JPEGs
+/// into an empty folder, `seedFormatsIfAbsent` (in `SampleSeeder+Formats.swift`) four more files of different formats.
 @MainActor enum SampleSeeder {
     static let size = CGSize(width: 672, height: 504)
     static let scale: CGFloat = 3

@@ -68,4 +68,10 @@ import Testing
         #expect(store.all().map(\.name) == ["Future"]); #expect(throws: LookStoreError.newerVersion(path: path, version: 3)) { try store.rename(id, to: "Now") }
         #expect(throws: LookStoreError.newerVersion(path: path, version: 3)) { try store.duplicate(id) }
         #expect(try Data(contentsOf: url) == Data(json.utf8)); try store.delete(id); #expect(store.all().isEmpty) }
+    @Test func newerLookWithShapeThisBuildCannotReadIsStillNewerAndUntouched() throws {
+        let store = try LookStore(directory: TestFiles.directory()), id = UUID()
+        let json = #"{"id": "\#(id.uuidString)", "name": "Future", "version": 3, "adjustments": {"curves": 1}, "createdAt": "2026-11-10T09:00:00Z"}"#
+        let url = try writeLook(json, in: store, id: id), path = url.path(percentEncoded: false)
+        #expect(throws: LookStoreError.newerVersion(path: path, version: 3)) { try store.rename(id, to: "Now") }
+        #expect(try Data(contentsOf: url) == Data(json.utf8)) }
 }

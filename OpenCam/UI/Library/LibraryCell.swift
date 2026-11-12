@@ -51,29 +51,21 @@ struct LibraryCell: View {
     @ViewBuilder
     private var clipBadge: some View {
         if item.kind == .clip {
-            HStack(spacing: Theme.Space.xs) {
-                Image(systemName: "play.fill")
-                if let duration {
-                    Text(LibraryCopy.duration(seconds: duration)).monospacedDigit()
+            LibraryBadge {
+                HStack(spacing: Theme.Space.xs) {
+                    Image(systemName: "play.fill")
+                    if let duration {
+                        Text(LibraryCopy.duration(seconds: duration)).monospacedDigit()
+                    }
                 }
             }
-            .font(.caption)
-            .padding(.horizontal, Theme.Space.s)
-            .padding(.vertical, Theme.Space.xs)
-            .glassEffect(.regular, in: .capsule)
-            .padding(Theme.Space.s)
         }
     }
 
     @ViewBuilder
     private var formatBadge: some View {
         if let designation = FormatDesignation.of(item) {
-            Text(designation.title)
-                .font(.caption)
-                .padding(.horizontal, Theme.Space.s)
-                .padding(.vertical, Theme.Space.xs)
-                .glassEffect(.regular, in: .capsule)
-                .padding(Theme.Space.s)
+            LibraryBadge { Text(designation.title) }
         }
     }
 
