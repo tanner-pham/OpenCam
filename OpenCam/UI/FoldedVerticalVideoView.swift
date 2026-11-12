@@ -54,13 +54,19 @@ struct FoldedVerticalVideoView: View {
                 // The meters capsule takes the width the summary and the shutter leave, so the gaps between the three are
                 // equal: the meters at its leading edge, the time left at its trailing edge. "Storage full" is wider than the
                 // minutes, so the meters give way to it.
-                HStack(spacing: Theme.Space.s) {
-                    if !model.isStorageFull { LiveAudioMeters(model: model, width: 48) }
-                    Spacer(minLength: 0)
-                    remainingText
+                HStack(spacing: 0) {
+                    if model.isStorageFull {
+                        Spacer(minLength: 0)
+                        remainingText
+                        Spacer(minLength: 0)
+                    } else {
+                        LiveAudioMeters(model: model, width: 48)
+                        Spacer(minLength: Theme.Space.s)
+                        remainingText
+                    }
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.horizontal, Theme.Space.s + Theme.Space.xs / 2)
+                .padding(.horizontal, Theme.Space.s)
                 .frame(minHeight: Theme.Size.minTarget)
                 // Red text over the picture is unreadable (about 1.2:1), so the capsule carries the warning and the text stays primary.
                 .glassEffect(model.remaining.isWarning ? .regular.tint(Theme.recordRed) : .regular, in: .capsule)
