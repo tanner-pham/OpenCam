@@ -160,8 +160,14 @@ final class CameraModel {
     @ObservationIgnored var recordingClip: (url: URL, option: VideoOption)?
     /// Frames missing from the clip being recorded on the writer path; 0 at each start. Follows `.framesDropped` for that clip only.
     private(set) var droppedFrames = 0
-    /// What the writer recorder does when a frame is missing. Keep recording until the setting exists.
-    var dropPolicy = DropPolicy.keepRecording
+    /// What the writer recorder does when a frame is missing. Saved, except in a scripted launch, which neither loads nor saves it.
+    var dropPolicy = DropPolicy.keepRecording {
+        didSet { if !isScripted { dropPolicy.save(to: defaults) } }
+    }
+    /// Begins a claim on background time, named for the work; the system's, unless a test supplies one.
+    @ObservationIgnored var beginBackgroundWork: @MainActor (String) -> any BackgroundWork = { SystemBackgroundWork(name: $0) }
+    /// The claim held while a writer clip records in the background; ended with the clip's result.
+    @ObservationIgnored var backgroundWork: (any BackgroundWork)?
     /// Clips the model ended without their result, by `CaptureStore.clipKey`; a result that still arrives changes no
     /// recording state.
     @ObservationIgnored var unreportedClips: Set<String> = []
@@ -213,6 +219,9 @@ final class CameraModel {
         self.freeBytes = Self.simulatorFreeBytes
         self.isRecording = config.isRecording
         self.recordingStart = config.isRecording ? Date().addingTimeInterval(-42) : nil
+        // The simulated recording's drop count, for screenshots; a scripted launch never loads the saved policy.
+        if isSimulator, config.isRecording { self.droppedFrames = config.droppedFrames }
+        if !config.isScripted { self.dropPolicy = DropPolicy.load(from: defaults) }
         switch config.screen {
         case .main: self.sheet = nil
         case .record: self.sheet = .record

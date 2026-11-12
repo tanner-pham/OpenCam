@@ -74,6 +74,8 @@ import Testing
             ("bottomNotice", { _ = model.bottomNotice }),
             ("sessionConfiguration", { _ = model.sessionConfiguration }),
             ("timecodeFrameRate", { _ = model.timecodeFrameRate }),
+            ("droppedFrames", { _ = (model.isRecording, model.droppedFrames) }),
+            ("dropChoice", { _ = model.dropChoice }),
         ]
         for (name, read) in reads {
             #expect(PerfClock.report("read: \(name)", runs: 9, read) < Self.bound)
@@ -220,6 +222,8 @@ import Testing
         if !model.isStorageFull { _ = model.shownMeterLevels }
         _ = model.remaining.text
         _ = model.remaining.isWarning
+        // The dropped-frames badge reads only these two.
+        _ = (model.isRecording, model.droppedFrames)
     }
 
     private static func foldedVerticalPhoto(_ model: CameraModel) {

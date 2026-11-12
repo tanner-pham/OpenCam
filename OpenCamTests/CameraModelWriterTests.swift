@@ -161,4 +161,59 @@ import Testing
         let resolver = model.recordResolver
         #expect(model.sweepOptions.allSatisfy { resolver.recorder(for: RecordSelection(family: $0.codec.family, quality: $0.codec.quality, resolution: $0.resolution, frameRate: $0.frameRate, colour: $0.colour)) == .system })
     }
+
+    func sidecar(for option: VideoOption, writerDrops: Int?, fileDrops: Int?) -> ClipSidecar {
+        let facts = ClipFacts(codecFourCC: "apch", width: 3840, height: 2160, nominalFrameRate: 30, durationSeconds: 3, frameCount: 90,
+                              droppedFrames: fileDrops, colour: .hlg, megabitsPerSecond: 500, hasAudio: true)
+        return ClipSidecar(requested: option, actual: facts, outcome: "completed", recordedAt: .now, error: nil, recorder: .writer,
+                           drops: writerDrops.map { DropFacts(total: $0) })
+    }
+
+    @Test func theNoticeUsesTheWritersCount() throws {
+        let model = try deviceModel(FakeSessionConfigurator(failingLensIDs: []))
+        proRes(model)
+        let option = try #require(model.currentVideoOption)
+        let url = URL(filePath: "/tmp/OC_0007.MOV")
+        model.recordingDidFinish(RecordingResult(url: url, option: option, outcome: .completed, sidecar: sidecar(for: option, writerDrops: 3, fileDrops: nil)))
+        #expect(model.notice == "OC_0007 dropped 3 frames.")
+        // The writer's count stands over the file's, and a writer count of none is none.
+        model.recordingDidFinish(RecordingResult(url: url, option: option, outcome: .completed, sidecar: sidecar(for: option, writerDrops: 1, fileDrops: 9)))
+        #expect(model.notice == "OC_0007 dropped 1 frame.")
+        model.recordingDidFinish(RecordingResult(url: url, option: option, outcome: .completed, sidecar: sidecar(for: option, writerDrops: 0, fileDrops: 9)))
+        #expect(model.notice == nil)
+        // The system recorder has no writer count: the file's stands.
+        model.recordingDidFinish(RecordingResult(url: url, option: option, outcome: .completed, sidecar: sidecar(for: option, writerDrops: nil, fileDrops: 2)))
+        #expect(model.notice == "OC_0007 dropped 2 frames.")
+    }
+
+    @Test func backgroundingDuringAWriterClipHoldsBackgroundWorkUntilTheResult() async throws {
+        let fake = FakeSessionConfigurator(failingLensIDs: [])
+        let model = try deviceModel(fake)
+        var begun: [FakeBackgroundWork] = []
+        model.beginBackgroundWork = { name in
+            let work = FakeBackgroundWork(name: name)
+            begun.append(work)
+            return work
+        }
+        proRes(model)
+        await model.waitForQueuedConfigures()
+        model.appEnteredBackground()   // idle
+        #expect(begun.isEmpty)
+        await (try #require(model.startRecording())).value
+        model.appEnteredBackground()
+        model.appEnteredBackground()   // once per clip
+        #expect(begun.count == 1)
+        #expect(begun.first?.isEnded == false)
+        let url = try #require(model.recordingClip?.url)
+        let option = try #require(model.recordingClip?.option)
+        model.recordingDidFinish(RecordingResult(url: url, option: option, outcome: .completed, sidecar: nil))
+        #expect(begun.first?.endCount == 1)
+        // The system path never begins any.
+        hevc(model)
+        await model.waitForQueuedConfigures()
+        await (try #require(model.startRecording())).value
+        model.appEnteredBackground()
+        #expect(begun.count == 1)
+        await removeClips(of: fake)
+    }
 }

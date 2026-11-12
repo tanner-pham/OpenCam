@@ -33,6 +33,12 @@ struct FoldedVerticalVideoView: View {
             .padding(.top, insets.top)
             .padding(.bottom, insets.bottom)
         }
+        .overlay(alignment: .topTrailing) {
+            // Under the readout bar's trailing end, in an overlay so no control moves when it appears.
+            DroppedFramesBadge(model: model, isCompact: true)
+                .padding(.top, insets.top + Theme.Space.l + Theme.Size.minTarget + Theme.Space.s)
+                .padding(.trailing, Theme.Space.l)
+        }
         .frame(width: size.width, height: size.height)
         .clipped()
     }

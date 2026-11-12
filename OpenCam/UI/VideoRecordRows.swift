@@ -6,6 +6,7 @@ struct VideoRecordRows: View {
     @Binding var selection: RecordSelection
     let freeBytes: Int64
     let look: LookChoice
+    let drop: DropChoice
     var sweepCaption: String? = nil
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
@@ -25,6 +26,8 @@ struct VideoRecordRows: View {
                 }
                 ChipRow(title: "Look", chips: look.chips, selectedID: look.selectedID, reason: look.reason, columns: 1,
                         isSingleLine: true, onSelect: look.onSelect)
+                ChipRow(title: DropPolicy.rowTitle, chips: drop.chips, selectedID: drop.selectedID, reason: drop.reason, columns: 2,
+                        onSelect: drop.onSelect)
                 if let option = resolver.option(for: selection) {
                     Text(DataRateEstimator.footer(for: option, freeBytes: freeBytes))
                         .font(.footnote.monospacedDigit())

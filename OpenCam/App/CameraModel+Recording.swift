@@ -98,6 +98,7 @@ extension CameraModel {
     /// A result for a clip the model already ended without one changes no recording state, which may belong to a newer clip.
     func recordingDidFinish(_ result: RecordingResult) {
         if unreportedClips.remove(CaptureStore.clipKey(for: result.url)) == nil {
+            endBackgroundWork()
             isRecording = false
             recordingStart = nil
             recordingStartTask = nil
@@ -122,8 +123,8 @@ extension CameraModel {
         }
         if result.outcome.isPlayable { captureSaved(result.url) }
         let clipName = result.url.deletingPathExtension().lastPathComponent
-        // An unknown dropped-frame count gives no notice.
-        let recordingNotice = result.outcome.notice ?? result.sidecar?.actual?.droppedFrames.flatMap {
+        // The writer's own count when the clip has one, else the count read from the file; an unknown count gives no notice.
+        let recordingNotice = result.outcome.notice ?? (result.sidecar?.drops?.total ?? result.sidecar?.actual?.droppedFrames).flatMap {
             RecordingOutcome.droppedFramesNotice(clipName: clipName, droppedFrames: $0)
         }
         if let recordingNotice {

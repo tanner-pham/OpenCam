@@ -41,5 +41,13 @@ import Testing
         #expect(!LaunchConfig.parse(["app"]).forcesPictureSlider)
         #expect(LaunchConfig.parse(["app", "-sliderPlacement", "strip"]) == LaunchConfig())
     }
+    @Test func parsesDroppedFramesFlag() {
+        let c = LaunchConfig.parse(["app", "-recording", "on", "-droppedFrames", "3"])
+        #expect(c.droppedFrames == 3); #expect(c.isScripted)
+        #expect(LaunchConfig.parse(["app", "-droppedFrames", "3"]).isScripted)
+        #expect(LaunchConfig.parse(["app"]).droppedFrames == 0)
+        #expect(LaunchConfig.parse(["app", "-droppedFrames", "many"]) == LaunchConfig())
+        #expect(LaunchConfig.parse(["app", "-droppedFrames", "-2"]) == LaunchConfig())
+    }
     @Test func unknownValuesFallBack() { #expect(LaunchConfig.parse(["app", "-mode", "cinema", "-screen", "monitor"]) == LaunchConfig()) }
 }
