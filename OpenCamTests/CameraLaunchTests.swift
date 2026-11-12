@@ -27,6 +27,7 @@ import Testing
         let defaults: UserDefaults
         let directory: URL
         let hook: ScanHook
+        let capabilitySource: CapabilitySource
         /// What a second model resolves from the same capabilities and defaults.
         let expected: SessionConfiguration
     }
@@ -66,7 +67,7 @@ import Testing
         let model = CameraModel(config: LaunchConfig(), capabilities: empty, isSimulator: false, defaults: defaults, capabilitySource: capabilitySource)
         model.confirmationDelay = delay
         let fake = FakeSessionConfigurator(failingLensIDs: failsConfigure ? [expected.lens.id] : [])
-        return Rig(model: model, fake: fake, defaults: defaults, directory: directory, hook: hook, expected: expected)
+        return Rig(model: model, fake: fake, defaults: defaults, directory: directory, hook: hook, capabilitySource: capabilitySource, expected: expected)
     }
 
     @Test func aNormalStartConfiguresAttachesStartsAndConfirms() async throws {
@@ -269,6 +270,55 @@ import Testing
         #expect(rig.model.currentSelection == selection)
         #expect(rig.model.notice == nil)
         #expect(await eventually { rig.model.phase == .ready })
+    }
+
+    /// What a launch has, besides the configuration, that the record must agree with the next time.
+    enum Trip: CaseIterable {
+        /// Camera allowed, microphone denied: no sound, no look.
+        case plain
+        /// Both allowed, so `includesAudio` is true.
+        case microphone
+        /// A look in Rec. 709 video, so `needsFrames` is true.
+        case look
+    }
+
+    /// Launch N confirms a configuration and saves it; launch N+1, a new model on the same defaults and capability source,
+    /// finds the record usable and adopts it. The record is written by `saveStart`, never by hand. `access` has a private setter, so
+    /// the models are made with `isSimulator: true`, which starts them with camera and microphone authorized without prompting;
+    /// the trips without sound then get the microphone denied through `.microphoneUnavailable`, the event that does it on a device.
+    @Test(arguments: Trip.allCases) func whatOneLaunchConfirmsTheNextLaunchAdopts(trip: Trip) async throws {
+        let rig = try rig()
+        let access = CaptureAccess(camera: .authorized, microphone: trip == .microphone ? .authorized : .denied)
+        let looks = try LookStore(directory: TestFiles.directory())
+        let look = try looks.save(name: "Warm fade", adjustments: Adjustments().setting(.temperature, to: 20))
+        let empty = CaptureCapabilities(lenses: [], videoOptions: [], photoOptions: [], osBuild: "", modelIdentifier: "")
+        func launch() -> CameraModel {
+            let model = CameraModel(config: LaunchConfig(), capabilities: empty, isSimulator: true, defaults: rig.defaults,
+                                    capabilitySource: rig.capabilitySource, lookStore: looks)
+            model.confirmationDelay = .milliseconds(40)
+            if trip != .microphone { model.apply(.microphoneUnavailable("[test] microphone denied")) }
+            return model
+        }
+
+        let first = launch()
+        #expect(await first.startCamera(on: FakeSessionConfigurator(failingLensIDs: []), savedStart: nil))
+        if trip == .look {
+            first.selectLook(look.id)
+            await first.waitForQueuedConfigures()
+        }
+        #expect(await eventually { first.confirmed?.configuration.needsFrames == (trip == .look) && SavedStart.load(from: rig.defaults) != nil })
+        let confirmed = try #require(first.confirmed?.configuration)
+        #expect(confirmed.includesAudio == (trip == .microphone))
+
+        let fake = FakeSessionConfigurator(failingLensIDs: [])
+        let second = launch()
+        let configuration = try #require(second.savedStartConfiguration(access: access))
+        #expect(configuration == confirmed)
+        #expect(await second.startCamera(on: fake, savedStart: Task { configuration }))
+        #expect(await fake.calls == ["start"])
+        #expect(await fake.applied.isEmpty)
+        #expect(second.phase == .ready)
+        #expect(second.launchTimeline.line.hasSuffix("saved start"))
     }
 
     @Test func eventsFromAnAdoptedSavedStartAreApplied() async throws {
