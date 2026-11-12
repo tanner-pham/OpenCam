@@ -254,6 +254,12 @@ actor CameraSession: SessionConfigurator {
         self.videoInput = nil
     }
 
+    /// Releases a saved start's camera and marks, in one actor turn so no event lands between them, where its events end.
+    func releaseSavedStart() {
+        releaseCameras()
+        continuation.yield(.savedStartReleased)
+    }
+
     // MARK: Inputs
 
     private func attachVideo(_ device: AVCaptureDevice, lensID: String) throws(CameraSessionError) {

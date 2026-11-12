@@ -84,7 +84,9 @@ extension CameraModel {
     /// A saved start that already failed wrote its own journal line; any other is journalled here, once.
     func discardSavedStart(_ savedStart: Task<SessionConfiguration?, Never>, on configurator: any SessionConfigurator, reason: String) async {
         let started = await savedStart.value
-        await configurator.releaseCameras()
+        // Its start may have queued events; the session marks where they end and the model skips up to the mark.
+        isIgnoringEventsUntilSavedStartReleased = true
+        await configurator.releaseSavedStart()
         guard let started else { return }
         let message = "[CameraModel:startCamera] Saved start released — {reason: \(reason), lens: \(started.lens.id), mode: \(started.mode.rawValue)}"
         Self.logger.info("\(message, privacy: .public)")

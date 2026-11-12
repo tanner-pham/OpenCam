@@ -155,6 +155,9 @@ final class CameraModel {
     @ObservationIgnored var frameWatch: Task<Void, Never>?
     /// True while a rescan holds the session stopped, until it runs again; no frame watch starts meanwhile.
     @ObservationIgnored var isSessionStoppedForRescan = false
+    /// True from the release of a saved start until `.savedStartReleased` reaches `apply`: the events before it belong to
+    /// a start the model did not keep, and none of them says anything about the session that runs now.
+    @ObservationIgnored var isIgnoringEventsUntilSavedStartReleased = false
     /// The launch phases, journalled once when the session first runs.
     @ObservationIgnored var launchTimeline = LaunchTimeline()
 
@@ -864,6 +867,10 @@ extension CameraModel {
     }
 
     func apply(_ event: SessionEvent) {
+        if isIgnoringEventsUntilSavedStartReleased {
+            if event == .savedStartReleased { isIgnoringEventsUntilSavedStartReleased = false }
+            return
+        }
         switch event {
         case .interrupted(let reason):
             isInterrupted = true
@@ -916,6 +923,8 @@ extension CameraModel {
             isThermalPressure = isThermal
         case .framesUnavailable:
             framesUnavailable()
+        case .savedStartReleased:
+            break
         }
     }
 }

@@ -243,4 +243,42 @@ import Testing
         let rig = try rig()
         #expect(await CameraSession().startSaved(rig.expected).value == nil)
     }
+
+    @Test func eventsFromAReleasedSavedStartAreIgnored() async throws {
+        let rig = try rig(delay: .milliseconds(300))
+        let differing = Field.mode.changing(rig.expected)
+        #expect(await rig.model.startCamera(on: rig.fake, savedStart: Task { differing }))
+        let selection = rig.model.currentSelection
+        let saved = SavedSelections.load(from: rig.defaults)
+        let errors = rig.model.runtimeErrorCount
+
+        rig.model.apply(.runtimeError("stale"))
+        #expect(rig.model.notice == nil)
+        #expect(rig.model.currentSelection == selection)
+        #expect(SavedSelections.load(from: rig.defaults) == saved)
+        #expect(rig.model.runtimeErrorCount == errors)
+        #expect(rig.model.phase == .ready)
+        #expect(await rig.fake.calls == ["release", "configure", "start"])
+
+        rig.model.apply(.savedStartReleased)
+        rig.model.apply(.runtimeError(Self.stop))
+        #expect(rig.model.runtimeErrorCount == errors + 1)
+        await rig.model.waitForQueuedConfigures()
+        #expect(await rig.fake.calls == ["release", "configure", "start", "configure", "start"])
+        #expect(await rig.fake.applied == [rig.expected, rig.expected])
+        #expect(rig.model.currentSelection == selection)
+        #expect(rig.model.notice == nil)
+        #expect(await eventually { rig.model.phase == .ready })
+    }
+
+    @Test func eventsFromAnAdoptedSavedStartAreApplied() async throws {
+        let rig = try rig(delay: .milliseconds(300))
+        let expected = rig.expected
+        #expect(await rig.model.startCamera(on: rig.fake, savedStart: Task { expected }))
+        #expect(!rig.model.isIgnoringEventsUntilSavedStartReleased)
+        rig.model.apply(.runtimeError(Self.stop))
+        #expect(rig.model.runtimeErrorCount == 1)
+        await rig.model.waitForQueuedConfigures()
+        #expect(await rig.fake.calls == ["start", "configure", "start"])
+    }
 }
