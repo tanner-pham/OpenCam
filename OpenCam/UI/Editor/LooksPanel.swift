@@ -28,9 +28,13 @@ struct LooksPanel: View {
                             .contextMenu { menu(for: look) }
                     }
                 }
-                Button("Save as look", action: startNamingNew)
-                    .buttonStyle(.bordered)
-                    .disabled(model.adjustments.isIdentity)
+                Button(action: startNamingNew) {
+                    // 44 pt, as the Masks group's Add menu is; the style's own height is about 34.
+                    Text("Save as look")
+                        .frame(minHeight: Theme.Size.borderedLabel)
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.adjustments.isIdentity)
             }
             .padding(.horizontal, Theme.Space.l)
             .padding(.top, Theme.Space.m)
