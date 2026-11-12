@@ -81,6 +81,10 @@ struct OpenCamApp: App {
             }
             .task {
                 guard let model, let session else { return }
+                // The preview layer joins the session before it starts. Photo and file outputs defer their start by default
+                // (AVCaptureOutputBase.h) while a preview layer does not, and "every output having the same value is
+                // equivalent to not using deferred start" (AVCaptureVideoPreviewLayer.h). `CameraPreviewView` gets this view later.
+                _ = PreviewUIView.shared(for: session.previewSource)
                 await model.start(session: session)
             }
             .task { await runShutterDemo() }

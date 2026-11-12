@@ -24,7 +24,8 @@ final class PreviewUIView: UIView {
 
     private var previewLayer: AVCaptureVideoPreviewLayer? { layer as? AVCaptureVideoPreviewLayer }
 
-    /// The preview for `source`'s session, made on first use and reused after.
+    /// The preview for `source`'s session, made on first use and reused after. `OpenCamApp` makes it before the session
+    /// starts, so the layer is connected when `startRunning` is called, and `CameraPreviewView` later receives this same view.
     static func shared(for source: PreviewSource) -> PreviewUIView {
         if let current, current.session === source.session { return current }
         let preview = PreviewUIView(source: source)
