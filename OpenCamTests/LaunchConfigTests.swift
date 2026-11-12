@@ -20,6 +20,13 @@ import Testing
         #expect(LaunchConfig.parse(["app", "-cameraLook", "Warm fade"]).isScripted)   // the flag alone makes the launch scripted
         #expect(LaunchConfig.parse(["app"]).cameraLookName == nil)
     }
+    @Test func parsesFormatsFlag() {
+        let c = LaunchConfig.parse(["app", "-formats", "phone"])
+        #expect(c.usesPhoneFormats); #expect(c.isScripted)
+        #expect(!LaunchConfig.parse(["app", "-formats", "other"]).usesPhoneFormats)
+        #expect(LaunchConfig.parse(["app", "-formats", "other"]) == LaunchConfig())
+        #expect(!LaunchConfig.parse(["app"]).usesPhoneFormats)
+    }
     @Test func parsesControlFlag() {
         let c = LaunchConfig.parse(["app", "-control", "wb"])
         #expect(c.openControl == .temperature); #expect(c.isScripted)

@@ -14,11 +14,11 @@ struct VideoRecordRows: View {
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 ForEach(RecordRow.allCases, id: \.self) { row in
                     // Worked out once per row; the reason line is the first dimmed chip's reason (`reasonLine`).
-                    let chips = resolver.chips(row, for: selection, freeBytes: freeBytes)
+                    let chips = RecordRowText.chips(row, from: resolver.chips(row, for: selection, freeBytes: freeBytes))
                     ChipRow(title: row.title,
                             chips: chips,
                             selectedID: selectedID(row),
-                            reason: chips.first { !$0.isAvailable }?.reason,
+                            reason: RecordRowText.line(row, chips: chips, selection: selection),
                             columns: row.columns(isWide: verticalSizeClass == .compact)) { chipID in
                         if let changed = resolver.select(row, chipID: chipID, in: selection) { selection = changed }
                     }
