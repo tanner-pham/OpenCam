@@ -27,6 +27,9 @@ actor CameraSession: SessionConfigurator {
     /// Attached only while the applied configuration's `needsFrames` is true, so with no look the outputs are as before.
     private let frameOutput: AVCaptureVideoDataOutput
     private var pressureObservation: NSKeyValueObservation?
+    /// The session's own part of the launch, written as one journal line when the first `start()` returns, then nil.
+    /// Its clock is the process start, like the model's line.
+    private var launchMarks: LaunchTimeline? = LaunchTimeline()
     /// True while a media-services-reset restart runs, so a reset during that restart is not retried; cleared when it
     /// ends, whether it worked or not.
     private var isRestartingAfterReset = false
@@ -100,7 +103,11 @@ actor CameraSession: SessionConfigurator {
     func configure(_ configuration: SessionConfiguration) throws(CameraSessionError) {
         guard !recorder.output.isRecording else { throw .recordingInProgress }
         let timing = (start: ContinuousClock.now, previous: lastWorkingConfiguration)
-        defer { TimingJournal.configure(configuration, after: timing.previous, since: timing.start) }
+        launchMarks?.mark("session configure")
+        defer {
+            launchMarks?.mark("session configured")
+            TimingJournal.configure(configuration, after: timing.previous, since: timing.start)
+        }
         do throws(CameraSessionError) {
             try apply(configuration)
             lastWorkingConfiguration = configuration
@@ -193,8 +200,23 @@ actor CameraSession: SessionConfigurator {
             notificationTokens = Self.observeNotifications(of: session, owner: self, continuation: continuation)
         }
         guard !session.isRunning else { return }
+        launchMarks?.mark("session startRunning")
         session.startRunning()
+        launchMarks?.mark("session running")
         allowHapticsWhileRecording()
+        writeLaunchLine()
+    }
+
+    /// The session's launch line, once, after the first start: the marks, then what was applied and whether a preview layer
+    /// was already connected (`preview yes` means the layer joined before the session started).
+    private func writeLaunchLine() {
+        guard var marks = launchMarks else { return }
+        marks.mark("session started")
+        if let applied = lastWorkingConfiguration { marks.note("\(applied.mode.rawValue) \(applied.lens.label)") }
+        marks.note("audio \(audioInput != nil ? "yes" : "no")")
+        marks.note("preview \(session.connections.contains { $0.videoPreviewLayer != nil } ? "yes" : "no")")
+        launchMarks = nil
+        ErrorJournal.record(marks.line)
     }
 
     /// After `AVError.Code.mediaServicesWereReset` the session is restarted once, if it is meant to run; `.restarted`

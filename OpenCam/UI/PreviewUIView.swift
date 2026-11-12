@@ -12,6 +12,9 @@ final class PreviewUIView: UIView {
 
     private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     private var rotationObservation: NSKeyValueObservation?
+    private var previewingObservation: NSKeyValueObservation?
+    /// The first-picture line is written once per view.
+    private var hasJournaledFirstPicture = false
     private var sessionObservers: [any NSObjectProtocol] = []
     private let frames: FramePipeline
 
@@ -57,6 +60,11 @@ final class PreviewUIView: UIView {
             }
         }
         sessionObservers = [started, configured]
+        // `isPreviewing` is meant to be observed (AVCaptureVideoPreviewLayer.h). The header names no delivery queue, so the
+        // callback only hops to the main actor, where the layer and the window are read again.
+        previewingObservation = previewLayer.observe(\.isPreviewing, options: [.initial, .new]) { [weak self] _, _ in
+            Task { @MainActor in self?.journalFirstPictureIfShown() }
+        }
     }
 
     @available(*, unavailable)
@@ -69,6 +77,16 @@ final class PreviewUIView: UIView {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         updateRotationCoordinator()
+        journalFirstPictureIfShown()
+    }
+
+    /// Writes `[timing] launch first picture N ms` the first time the layer is rendering frames while the view is in a window.
+    private func journalFirstPictureIfShown() {
+        guard !hasJournaledFirstPicture, window != nil, previewLayer?.isPreviewing == true else { return }
+        hasJournaledFirstPicture = true
+        var timeline = LaunchTimeline()
+        timeline.mark("first picture")
+        ErrorJournal.record(timeline.line)
     }
 
     /// Builds a coordinator when the layer's camera differs from the one being followed.

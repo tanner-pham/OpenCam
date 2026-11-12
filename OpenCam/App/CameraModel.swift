@@ -748,14 +748,17 @@ extension CameraModel {
     /// then follows its events for as long as the calling task runs.
     /// File and device reads run off the main actor, so the screen stays responsive while the camera starts.
     func start(session: CameraSession) async {
+        launchTimeline.mark("start")
         refreshFreeBytes()
         failedCombinations = await Self.loadFailedCombinations(from: capabilitySource)
         access = await CameraSession.requestAccess()
+        launchTimeline.mark("access")
         guard access.canUseCamera else {
             phase = access.camera == .restricted ? .cameraRestricted : .cameraDenied
             return
         }
         let lenses = await Self.discoverLenses(with: capabilitySource)
+        launchTimeline.mark("lenses")
         guard !lenses.isEmpty else {
             Self.logger.error("[CameraModel:start] No camera found — {lenses: 0}")
             phase = .failed("The camera could not start.")

@@ -8,6 +8,7 @@ extension CameraModel {
         let started = ContinuousClock.now
         let cached = await Self.loadCache(cache)
         TimingJournal.record("cache load (off the main actor)", since: started, over: TimingJournal.mainActorThreshold)
+        launchTimeline.mark("cache")
         if let cached, let adopted = cached.adopting(discovered: lenses) {
             replaceCapabilities(adopted)
             return
