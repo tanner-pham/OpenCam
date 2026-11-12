@@ -42,7 +42,8 @@ extension CameraSession {
         if let focus = plan.focus {
             setFocus(focus, on: device)
         }
-        appliedManual = plan.applied
+        // What the camera took, not what was asked: a clamped white balance is then not locked again by the next apply.
+        appliedManual = result
         if plan.exposure != nil {
             setExposureBiasControls(enabled: CameraControlPlan.enablesExposureBias(for: plan.applied.exposure))
         }
