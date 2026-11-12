@@ -270,7 +270,7 @@ final class CameraModel {
     var recordResolver: RecordSelectionResolver {
         guard let lens = currentLens else { return RecordSelectionResolver(lensOptions: []) }
         if let cached = recordResolvers[lens.id] { return cached }
-        let resolver = RecordSelectionResolver(options: capabilities.videoOptions, lens: lens)
+        let resolver = RecordSelectionResolver(options: capabilities.videoOptions, writerOptions: capabilities.writerOptions, lens: lens)
         recordResolvers[lens.id] = resolver
         return resolver
     }
@@ -790,7 +790,7 @@ final class CameraModel {
         -> (lensID: String, record: RecordSelection?, photo: PhotoSelection?) {
         let lensID = lensID.flatMap { id in capabilities.lenses.contains { $0.id == id } ? id : nil } ?? defaultLens(in: capabilities)?.id ?? ""
         let lens = capabilities.lenses.first { $0.id == lensID }
-        let recordResolver = RecordSelectionResolver(options: capabilities.videoOptions, lens: lens)
+        let recordResolver = RecordSelectionResolver(options: capabilities.videoOptions, writerOptions: capabilities.writerOptions, lens: lens)
         let photoResolver = PhotoSelectionResolver(options: capabilities.photoOptions, lenses: capabilities.lenses, lensID: lensID)
         return (lensID, settle(record, with: recordResolver), settle(photo, with: photoResolver))
     }

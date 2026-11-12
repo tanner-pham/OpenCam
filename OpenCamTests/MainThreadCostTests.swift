@@ -10,11 +10,17 @@ import Testing
     private static let bound = Duration.seconds(5)
 
     private func readyModel(mode: CaptureMode = .video) throws -> CameraModel {
-        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.loadDuo(), isSimulator: true,
+        // The phone's list with the writer options merged in (2,160 more options), as the Simulator and a shipped writer see it.
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.loadDuo().withWriterOptions(.all), isSimulator: true,
                                 defaults: try Fixture.freshDefaults())
         model.phase = .ready
         model.mode = mode
         return model
+    }
+
+    @Test func writerOptionsDerivation() throws {
+        let capabilities = try Fixture.loadDuo()
+        #expect(PerfClock.report("withWriterOptions on the phone's list", runs: 5) { _ = capabilities.withWriterOptions(.all) } < Self.bound)
     }
 
     @Test func launchCosts() throws {
@@ -122,7 +128,7 @@ import Testing
 
     /// A lens's first visit builds its resolver (cold); a later visit reuses it (warm). Each run starts from a fresh model.
     @Test func lensFirstVisit() throws {
-        let capabilities = try Fixture.loadDuo()
+        let capabilities = try Fixture.loadDuo().withWriterOptions(.all)
         let clock = ContinuousClock()
         var coldRead: [Duration] = [], coldSwitch: [Duration] = [], warmSwitch: [Duration] = []
         for _ in 0..<7 {

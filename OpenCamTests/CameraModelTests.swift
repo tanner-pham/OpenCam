@@ -7,7 +7,7 @@ import Testing
         let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
         model.record = RecordSelection(family: .proRes, quality: "422 HQ", resolution: .named(width: 3840, height: 2160), frameRate: 30, colour: .appleLog2)
         model.selectLens("ultraWide")
-        #expect(model.record.resolution.label == "1080p"); #expect(model.summaryParts == ["ProRes", "1080p", "Log 2"])
+        #expect(model.record.resolution.label == "1080p"); #expect(model.summaryParts == ["ProRes", "1080p", "Apple Log 2"])
         model.selectLens("nope"); #expect(model.lensID == "ultraWide")
     }
 

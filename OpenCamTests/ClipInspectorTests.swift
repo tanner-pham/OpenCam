@@ -22,6 +22,7 @@ import Testing
         #expect(ClipInspector.colour(primaries: nil, transfer: nil, log: kCMFormatDescriptionLogTransferFunction_AppleLog2 as String) == .appleLog2)
         #expect(ClipInspector.colour(primaries: kCMFormatDescriptionColorPrimaries_ITU_R_2020 as String, transfer: kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG as String, log: nil) == .hlg)
         #expect(ClipInspector.colour(primaries: kCMFormatDescriptionColorPrimaries_ITU_R_709_2 as String, transfer: kCMFormatDescriptionTransferFunction_ITU_R_709_2 as String, log: nil) == .rec709)
+        #expect(ClipInspector.colour(primaries: kCMFormatDescriptionColorPrimaries_ITU_R_2020 as String, transfer: kCMFormatDescriptionTransferFunction_ITU_R_709_2 as String, log: nil) == .log)
         #expect(ClipInspector.colour(primaries: nil, transfer: nil, log: nil) == nil)
     }
 }
