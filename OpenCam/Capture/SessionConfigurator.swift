@@ -16,4 +16,12 @@ nonisolated protocol SessionConfigurator: Sendable {
     func startRecording(option: VideoOption, url: URL, minFreeBytes: Int64) async throws(RecordingError)
     /// Stops the clip. Returns whether a clip was in flight; false means no recording result will follow.
     func stopRecording() async -> Bool
+    /// What the current camera reports now; empty while the session is stopped or holds no camera.
+    func currentReadouts() async -> LiveReadouts
+    /// What the current camera and its active format allow by hand; nil while the session is stopped or holds no camera.
+    func manualRanges() async -> ManualRanges?
+    /// Sets the camera to `settings`, changing only the groups that differ from the last settings applied to this camera;
+    /// `reapplyingAll` sets every group. Never reconfigures the session; works while recording. Every value is clamped to
+    /// the device's limits first, and the settings actually set are returned. A configure returns the camera to automatic.
+    func applyManual(_ settings: ManualSettings, reapplyingAll: Bool) async throws(ManualControlError) -> ManualSettings
 }

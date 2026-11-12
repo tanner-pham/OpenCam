@@ -13,7 +13,7 @@ actor FakeSessionConfigurator: SessionConfigurator {
     private(set) var releaseCount = 0
     /// True while a camera input is attached: from a configure until the session lets the camera go.
     private(set) var holdsCamera = true
-    /// Session calls in order: "configure", "start", "release".
+    /// Session calls in order: "configure", "start", "release", "manual".
     private(set) var calls: [String] = []
     private(set) var recordingURLs: [URL] = []
     private(set) var stopRecordingCount = 0
@@ -88,5 +88,55 @@ actor FakeSessionConfigurator: SessionConfigurator {
     func stopRecording() -> Bool {
         stopRecordingCount += 1
         return isClipInFlight
+    }
+
+    // MARK: Manual controls
+
+    /// What `manualRanges()` answers and `applyManual` clamps to; nil reads as no camera, and an apply then returns its settings as they are.
+    private var ranges: ManualRanges?
+    private var readouts = LiveReadouts()
+    private var manualError: ManualControlError?
+    private(set) var manualApplies: [(settings: ManualSettings, reapplyingAll: Bool)] = []
+    private var isHoldingManual = false
+    private var heldManual: [CheckedContinuation<Void, Never>] = []
+
+    func setReadouts(_ readouts: LiveReadouts) {
+        self.readouts = readouts
+    }
+
+    func setRanges(_ ranges: ManualRanges?) {
+        self.ranges = ranges
+    }
+
+    /// From now on `applyManual` throws `error`; nil stops that.
+    func setManualError(_ error: ManualControlError?) {
+        manualError = error
+    }
+
+    /// From now on an apply is recorded, then waits, before it returns, until `resumeManual`.
+    func holdManual() {
+        isHoldingManual = true
+    }
+
+    func resumeManual() {
+        isHoldingManual = false
+        for waiting in heldManual { waiting.resume() }
+        heldManual = []
+    }
+
+    func currentReadouts() -> LiveReadouts {
+        readouts
+    }
+
+    func manualRanges() -> ManualRanges? {
+        ranges
+    }
+
+    func applyManual(_ settings: ManualSettings, reapplyingAll: Bool) async throws(ManualControlError) -> ManualSettings {
+        manualApplies.append((settings, reapplyingAll))
+        calls.append("manual")
+        if isHoldingManual { await withCheckedContinuation { heldManual.append($0) } }
+        if let manualError { throw manualError }
+        return ranges?.clamped(settings) ?? settings
     }
 }

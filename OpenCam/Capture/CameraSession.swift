@@ -10,14 +10,14 @@ actor CameraSession: SessionConfigurator {
     nonisolated let recordingResults: AsyncStream<RecordingResult>
 
     private let queue = DispatchSerialQueue(label: "opencam.session")
-    private let session: AVCaptureSession
+    let session: AVCaptureSession
     private let continuation: AsyncStream<SessionEvent>.Continuation
     private let recordingContinuation: AsyncStream<RecordingResult>.Continuation
     /// Its output is attached in video mode only.
     private let recorder: MovieRecorder
     /// Registered on the first `start()`, because the runtime-error observer needs a reference to this actor.
     private var notificationTokens: [any NSObjectProtocol] = []
-    private var videoInput: AVCaptureDeviceInput?
+    var videoInput: AVCaptureDeviceInput?
     private var audioInput: AVCaptureDeviceInput?
     /// Its output is attached in photo mode only.
     private let photoCapturer = PhotoCapturer()
@@ -37,13 +37,18 @@ actor CameraSession: SessionConfigurator {
     /// so a session stopped on purpose (during a rescan, say) stays stopped.
     private var isMeantToRun = false
     /// Restored when a later configure fails.
-    private var lastWorkingConfiguration: SessionConfiguration? {
+    var lastWorkingConfiguration: SessionConfiguration? {
         didSet { appliedConfiguration.withLock { $0 = lastWorkingConfiguration.map { "lens: \($0.lens.id), mode: \($0.mode.rawValue)" } } }
     }
     /// The lens and mode of `lastWorkingConfiguration`, for the runtime error's message, which is written off the session queue.
     private nonisolated let appliedConfiguration = Mutex<String?>(nil)
     /// The white-balance mode a ProRes RAW recording replaced, restored when that recording finishes.
-    private var whiteBalanceRestore: (device: AVCaptureDevice, mode: AVCaptureDevice.WhiteBalanceMode)?
+    var whiteBalanceRestore: (device: AVCaptureDevice, mode: AVCaptureDevice.WhiteBalanceMode)?
+    /// What the last `applyManual` left on the current camera; nil after every configure, which returns the camera to
+    /// automatic, so the next apply sets every group.
+    var appliedManual: ManualSettings?
+    /// True from the start of a ProRes RAW clip, which records with white balance locked, until `restoreWhiteBalance` runs.
+    var isRAWClipRecording = false
     /// Held here because the session does not keep its controls delegate alive.
     private let controlsDelegate = CameraControlsDelegate()
     static let logger = Logger(subsystem: "local.opencam.app", category: "CameraSession")
