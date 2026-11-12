@@ -51,6 +51,11 @@ import OSLog
             requestMaskOverlay()
         }
     }
+    /// The brush's size, 1...100, and whether it erases; editor settings, neither saved nor undoable.
+    var brushSize = 30.0
+    var isErasing = false
+    /// The brush's radius as a fraction of the picture's shorter side, 0.01...0.15.
+    var brushRadius: Double { 0.01 + (min(max(brushSize, 1), 100) - 1) / 99 * 0.14 }
     /// The mask the Masks group shows; never saved, so an edit opens with none chosen.
     var selectedMaskID: UUID? {
         didSet { if selectedMaskID != oldValue { requestMaskOverlay() } }
@@ -93,6 +98,10 @@ import OSLog
     private var history = EditHistory()
     /// True while `restore(_:)` writes the edit, so an undo or redo is not recorded as a change.
     private var isRestoring = false
+    private var isStroking = false
+    private var hasRecordedStroke = false
+    private var strokeBuilder: BrushStrokeBuilder?
+    private var strokeMaskID: UUID?
     private let now: @Sendable () -> Date
     private var proxy: CIImage?
     private var renders = RenderCoalescer<PhotoEdit>()
@@ -144,6 +153,11 @@ import OSLog
 
     private func record(_ before: PhotoEdit) {
         guard !isRestoring else { return }
+        // A stroke in progress is one step however long the finger pauses: only its first write records.
+        if isStroking {
+            if hasRecordedStroke { return }
+            hasRecordedStroke = true
+        }
         history.record(before, at: now())
     }
 
@@ -389,6 +403,51 @@ extension EditorModel {
         guard let index = masks.firstIndex(where: { $0.id == selectedMaskID }) else { return }
         var edited = masks
         change(&edited[index])
+        masks = edited
+    }
+}
+
+// MARK: - Brush
+
+extension EditorModel {
+    /// Starts a stroke in the selected brush mask; does nothing when the selection is not a brush. Not undoable until `endStroke`
+    /// closes it: the whole stroke is one step.
+    func beginStroke(at point: MaskPoint, pressure: Double?) {
+        guard !isStroking, let mask = selectedMask, case .brush = mask.shape else { return }
+        var builder = BrushStrokeBuilder(radius: brushRadius, isErasing: isErasing)
+        guard builder.add(point, pressure: pressure) else { return }
+        history.breakStep()
+        isStroking = true
+        hasRecordedStroke = false
+        strokeBuilder = builder
+        strokeMaskID = mask.id
+        let stroke = builder.stroke
+        writeStroke { (strokes: inout [BrushStroke]) in strokes.append(stroke) }
+    }
+
+    func continueStroke(at point: MaskPoint, pressure: Double?) {
+        guard isStroking, var builder = strokeBuilder, builder.add(point, pressure: pressure) else { return }
+        strokeBuilder = builder
+        let stroke = builder.stroke
+        writeStroke { (strokes: inout [BrushStroke]) in
+            if strokes.isEmpty { strokes.append(stroke) } else { strokes[strokes.count - 1] = stroke }
+        }
+    }
+
+    func endStroke() {
+        guard isStroking else { return }
+        isStroking = false
+        strokeBuilder = nil
+        strokeMaskID = nil
+        history.breakStep()
+    }
+
+    /// One write to `masks` per sample, so the picture renders once per sample.
+    private func writeStroke(_ change: (inout [BrushStroke]) -> Void) {
+        guard let index = masks.firstIndex(where: { $0.id == strokeMaskID }), case var .brush(strokes) = masks[index].shape else { return }
+        change(&strokes)
+        var edited = masks
+        edited[index].shape = .brush(strokes: strokes)
         masks = edited
     }
 }

@@ -18,6 +18,7 @@ struct MasksPanel: View {
                 } else {
                     actions
                     if case let .radial(_, _, feather)? = model.selectedMask?.shape { featherSlider(feather) }
+                    if model.selectedMask?.shape.kind == .brush { brushControls }
                     ForEach(LocalMask.keys, id: \.self) { key in
                         AdjustmentSlider(key: key, value: sliderBinding(key)) { model.updateSelectedMask { $0.adjustments[key] = 0 } }
                     }
@@ -99,6 +100,22 @@ struct MasksPanel: View {
         .buttonStyle(.borderedProminent)
         .tint(isOn ? Theme.accent : Color.primary.opacity(0.18))
         .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
+    /// Paint or Erase, then the brush's size; settings of the editor, not of the mask.
+    @ViewBuilder
+    private var brushControls: some View {
+        Picker("Brush mode", selection: $model.isErasing) {
+            Text("Paint").tag(false)
+            Text("Erase").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.large)
+        .frame(minHeight: Theme.Size.minTarget)
+        AdjustmentSlider(title: "Size", value: $model.brushSize, range: 1...100, valueText: "\(Int(model.brushSize.rounded()))") {
+            model.brushSize = 30
+        }
     }
 
     /// How far a radial mask's soft edge reaches in from its outline, 0 to 100.

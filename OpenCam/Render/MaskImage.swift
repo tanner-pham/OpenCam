@@ -6,7 +6,6 @@ import CoreImage.CIFilterBuiltins
 nonisolated enum MaskImage {
     /// Long side, in pixels, of the bitmap a brush mask is painted into.
     private static let brushLongSide: CGFloat = 1024
-    private static let brushBlur: Double = 2
 
     /// A grayscale image over `extent`, inverted when `mask.isInverted`. Nil when the mask cannot apply: degenerate geometry, a
     /// brush with nothing painted, or a subject mask without a subject. `subject` is a mask of the subject, white on it, at any scale.
@@ -100,7 +99,10 @@ nonisolated enum MaskImage {
         let painted = CIImage(cgImage: bitmap)
         let soft = CIFilter.gaussianBlur()
         soft.inputImage = painted.clampedToExtent()
-        soft.radius = Float(brushBlur)
+        // Softer for a bigger brush: about a third of the median dab radius in the bitmap's pixels, never under 1 px.
+        let radii = strokes.flatMap(\.dabs).filter { isUsable($0.x, $0.y, $0.radius) }
+            .map { min(max($0.radius, 0.001), 0.5) * Double(short) }.sorted()
+        soft.radius = Float(max(1, (radii.isEmpty ? 0 : radii[radii.count / 2]) / 3))
         guard let blurred = soft.outputImage?.cropped(to: painted.extent) else { return nil }
         return fit(blurred, to: extent)
     }

@@ -44,6 +44,14 @@ struct EditorPicture: View {
                 if let kind = model.selectedMask?.shape.kind, kind == .linear || kind == .radial {
                     MaskHandles(model: model)
                 }
+                // Takes every touch on the picture while a brush mask is selected, so a press never shows the original then.
+                if model.selectedMask?.shape.kind == .brush {
+                    BrushCanvas(
+                        onBegin: { model.beginStroke(at: $0, pressure: $1) },
+                        onMove: { model.continueStroke(at: $0, pressure: $1) },
+                        onEnd: { model.endStroke() }
+                    )
+                }
             }
             // Kept in the tree, only hidden, so a press on the picture never removes a handle mid-touch.
             .opacity(model.isShowingOriginal ? 0 : 1)

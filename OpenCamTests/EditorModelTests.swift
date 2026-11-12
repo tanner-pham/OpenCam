@@ -212,6 +212,52 @@ import Testing
         model.undo(); #expect(model.masks.isEmpty); #expect(model.selectedMaskID == nil); #expect(!model.canUndo)
         model.redo(); #expect(model.masks.count == 1)
     }
+    @Test func aStrokeIsOneUndoStep() async throws {
+        let clock = TestClock()
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })
+        model.addMask(.brush); clock.advance(0.1)
+        model.beginStroke(at: MaskPoint(x: 0.1, y: 0.5), pressure: nil)
+        for index in 1...5 {
+            clock.advance(1)   // slower than the coalescing window
+            model.continueStroke(at: MaskPoint(x: 0.1 + 0.15 * Double(index), y: 0.5), pressure: nil)
+        }
+        model.endStroke()
+        guard case let .brush(strokes)? = model.selectedMask?.shape else { Issue.record("not a brush"); return }
+        #expect(strokes.count == 1); #expect(strokes[0].dabs.count == 6)
+        model.undo()
+        guard case let .brush(after)? = model.selectedMask?.shape else { Issue.record("not a brush"); return }
+        #expect(after.isEmpty); #expect(model.masks.count == 1)
+        model.undo(); #expect(model.masks.isEmpty)
+        model.redo(); model.redo()
+        guard case let .brush(again)? = model.selectedMask?.shape else { Issue.record("not a brush"); return }
+        #expect(again.count == 1)
+    }
+    @Test func twoStrokesAreTwoUndoSteps() async throws {
+        let clock = TestClock()
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300, now: { clock.date })
+        model.addMask(.brush); clock.advance(0.1)
+        model.beginStroke(at: MaskPoint(x: 0.2, y: 0.2), pressure: nil); model.endStroke(); clock.advance(0.1)
+        model.isErasing = true
+        model.beginStroke(at: MaskPoint(x: 0.2, y: 0.2), pressure: nil); model.endStroke()
+        model.undo()
+        guard case let .brush(strokes)? = model.selectedMask?.shape else { Issue.record("not a brush"); return }
+        #expect(strokes.count == 1); #expect(!strokes[0].isErasing)
+    }
+    @Test func paintingNeedsABrushMaskSelected() async throws {
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300)
+        model.addMask(.linear)
+        let before = model.masks
+        model.beginStroke(at: MaskPoint(x: 0.5, y: 0.5), pressure: nil)
+        model.continueStroke(at: MaskPoint(x: 0.9, y: 0.9), pressure: nil)
+        model.endStroke()
+        #expect(model.masks == before)
+    }
+    @Test func brushSizeMapsToARadius() async throws {
+        let (model, _, _) = try await EditorFixture.make(width: 400, height: 300)
+        #expect(model.brushSize == 30)
+        model.brushSize = 1; #expect(abs(model.brushRadius - 0.01) < 1e-9)
+        model.brushSize = 100; #expect(abs(model.brushRadius - 0.15) < 1e-9)
+    }
 }
 
 nonisolated final class TestClock: @unchecked Sendable {
