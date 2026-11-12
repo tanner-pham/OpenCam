@@ -26,20 +26,20 @@ Every constraint of the camera core, E1 and E2 plans applies unchanged:
 
 Added by this plan:
 
-- **Worktree and branch:** built in its own worktree on `feat/editor-colour`, cut from the commit that holds E1 and E2 as built (`main` today; check with `git log --oneline -1 main`). Camera work continues in another worktree at the same time.
-- **Fence (owned paths):** `OpenCam/Edit/`, `OpenCam/Render/ColourMath*.swift`, `OpenCam/Render/ColourCubeCache.swift` (one line, Task 3), `OpenCam/Render/PictureHistogram.swift`, `OpenCam/Library/` (new files, `LookSeeder.swift`, `SampleSeeder.swift`), `OpenCam/UI/Editor/`, `OpenCam/UI/Library/`, `OpenCamTests/` (new files and the suites named per task; never `Fixture.swift`). The one shared file touched is `OpenCam/App/LaunchConfig.swift`, only in the launch-flag steps of Tasks 1 and 5. Never touched: `OpenCam/App/CameraModel*.swift`, `OpenCam/App/OpenCamApp.swift`, `OpenCam/Capture/`, `OpenCam/Capability/`, the camera screen's files in `OpenCam/UI/` (including `Theme.swift`), `LookRenderer.swift`, `LookCompiler.swift`, `LookBaker.swift`. A need outside the fence is skip-and-flag in the task report, never a silent edit.
+- **Worktree and branch:** (pre-flight correction) built in worktree `.claude/worktrees/editor-colour-tools-eb9e9a` on `tannerpham/editor-colour-tools-eb9e9a`, cut from `perf/main-thread-freezes` (68c78af), draft PR tanner-pham/OpenCam#9. `main` holds neither E1 nor E2: every "diff against main" in this plan means `git diff $(git merge-base origin/perf/main-thread-freezes HEAD)`. Camera work continues in another worktree at the same time.
+- **Fence (owned paths):** `OpenCam/Edit/`, `OpenCam/Render/ColourMath*.swift`, `OpenCam/Render/ColourCubeCache.swift` (one line, Task 3), `OpenCam/Render/PictureHistogram.swift`, `OpenCam/Render/HistogramChannel.swift`, `OpenCam/Render/ColourTint.swift`, `OpenCam/Library/` (new files, `LookSeeder.swift`, `SampleSeeder.swift`, `LibraryError.swift` for Task 1's `seedFailed` change), `OpenCam/UI/Editor/`, `OpenCam/UI/Library/`, `OpenCamTests/` (new files and the suites named per task; never `Fixture.swift`). The one shared file touched is `OpenCam/App/LaunchConfig.swift`, only in the launch-flag steps of Tasks 1 and 5. Never touched: `OpenCam/App/CameraModel*.swift`, `OpenCam/App/OpenCamApp.swift`, `OpenCam/Capture/`, `OpenCam/Capability/`, the camera screen's files in `OpenCam/UI/` (including `Theme.swift`), `LookRenderer.swift`, `LookCompiler.swift`, `LookBaker.swift`. A need outside the fence is skip-and-flag in the task report, never a silent edit.
 - **Simulator:** this worktree uses only `OpenCam Dev B`. Every `scripts/test.sh` and `scripts/shot.sh` command carries `OPENCAM_SIM_NAME="OpenCam Dev B"` in front; the UDID is `UDID=$(OPENCAM_SIM_NAME="OpenCam Dev B" scripts/sim-udid.sh)`. Never `booted`.
 - **Test files:** each new test file starts with `import Foundation`, `import Testing` and `@testable import OpenCam`, plus `CoreGraphics`, `CoreImage`, `ImageIO` or `UniformTypeIdentifiers` where it uses them (left out of the code below to save space).
 - **Isolation:** every new type in `Edit/`, `Render/` and `Library/` is `nonisolated` and `Sendable`. Only `EditorModel`, `SampleSeeder` and views are main-actor. Histogram counting and fact reading are `@concurrent`.
 - **One table rule:** nothing is added to `LookRenderer`'s spatial stage, `renderColourAndVignette` or `FramePipeline`. Exact stage order inside `ColourMath.apply`, written in its doc comment: 1 linear light and exposure, 2 white balance, 3 encoded and contrast, 4 highlights, shadows, whites, blacks (E1, unchanged), **5 point curves (RGB curve, then the channel's own curve)**, 6 vibrance, 7 saturation (E1, unchanged), **8 colour mixer**, **9 colour grading**, 10 clamp. Each new stage is skipped outright when it changes nothing (curves all identity; every mixer value 0; every grading saturation and luminance 0), so every table built before this plan is rebuilt bit for bit (pinned in Task 3).
 - **What makes a tool reach the viewfinder and capture:** (a) every scalar key it adds is `isColour`; (b) `Adjustments.isIdentity`, `hasColourChanges`, `matches` and `colourPart` count the curves; (c) `ColourMath.apply` reads it; (d) `Adjustments` encodes and decodes it, because `Look`, `CameraLook`, `SavedSelections` and `PhotoEdit` carry `Adjustments` whole. `LookRenderer.render` skips the table when `hasColourChanges` is false and `LookCapture.finish` skips a look whose `isIdentity` is true, so (b) is load-bearing. Pinned in Task 9.
 - **Storage versions:** `PhotoEdit.currentVersion` 1 → 2. `Look` gains `version`, `Look.currentVersion = 2`; a look file without one is version 1. Both stores stamp the current version on every write. `EditFileVersion` keeps its shape. `CameraLook` and `SavedSelections` (camera files) are not versioned.
-- **Layout sizes** (outer display 466 x 678 pt with a system strip of about 85 pt, right in portrait and left in landscape; inner display 669 x 951 pt): folded portrait is `.stacked` with a panel about 381 pt wide; folded landscape and the open phone are `.sideBySide` with the 320 pt panel. Stacked, the panel keeps `EditorLayout.minPanelHeight(for:)`: 240 pt, or 340 pt for Curve and Grading. Curve canvas: square, side `min(panel width − 32, panel height − 68)`: about 230 pt folded portrait, 288 pt folded landscape and open. Wheels: diameter `min(160, (panel width − 44) / 2)`: 160 pt folded portrait, 138 pt beside the picture. Three wheels never fit in a row at these widths at 120 pt or more, so they are always a triangle: Midtones on top, Shadows bottom left, Highlights bottom right, Blending and Balance below, in the panel's scroll view.
+- **Layout sizes** (outer display 466 x 678 pt with a system strip of about 85 pt, right in portrait and left in landscape; inner display 669 x 951 pt): folded portrait is `.stacked` with a panel about 381 pt wide; folded landscape and the open phone are `.sideBySide` with the 320 pt panel. Stacked, the panel keeps `EditorLayout.minPanelHeight(for:)`: 240 pt, or 340 pt for Curve and Grading. Curve canvas: square, side `min(panel width − 32, panel height − 68)`, where the panel is the space `CurvePanel` gets below the group picker: (pre-flight correction) folded portrait is whatever the stacked 340 pt panel leaves, at least 220 pt, settled by screenshot; 288 pt folded landscape and open. Wheels: diameter `min(160, (panel width − 44) / 2)`: 160 pt folded portrait, 138 pt beside the picture. Three wheels never fit in a row at these widths at 120 pt or more, so they are always a triangle: Midtones on top, Shadows bottom left, Highlights bottom right, Blending and Balance below, in the panel's scroll view.
 - **No lag:** every render while a control moves goes through `EditorModel.adjustments` → `RenderCoalescer` → the 2048 px proxy. The histogram has its own coalescer at `.utility` priority and never holds up a render.
 - **Exact UI copy, used verbatim:** formats "RAW", "HEIF", "RAW + HEIF", "JPEG", "RAW + JPEG", "PNG"; the info button "Photo info" (also the popover's title); rows "Format", "Lens", "Focal length", "Equivalent focal length", "Aperture", "Shutter", "ISO"; values like "f/1.8", "f/2", "1/120 s", "2 s", "ISO 100", "6.9 mm", "24 mm", joined in the summary by " · ". Groups "Curve", "Mix", "Grading". Curve channels "RGB", "Red", "Green", "Blue"; the picker's label "Curve channel"; the button "Reset"; the canvas's label "<Channel> curve" with value "<n> points". Bands "Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta"; label "Colour band"; sliders "<Band> hue", "<Band> saturation", "<Band> luminance". Wheels "Shadows", "Midtones", "Highlights", each with a readout "<hue>° · <saturation>" ("210° · 35") and a slider shown as "Luminance"; key titles "Shadows hue", "Shadows saturation", "Shadows luminance" (and Midtones, Highlights), "Blending", "Balance". The seeded look "Colour study".
 - **Launch flags (Simulator screenshots only):** `-seedFormats on` (Task 1), `-seedStudy on` and `-editorLook <name>` (Task 5); each sets `isScripted`. Seeding runs in `LibraryView.applyLaunch`, never in `OpenCamApp`.
 - **Screenshots:** `SHOT_DIR=docs/screenshots/e3`, names prefixed `e3-`, through `scripts/shot.sh` (display 1, the outer display). The implementer reads every PNG.
-- **Tap and drag tests:** a control verified only by a screenshot is not verified. For every interactive control, on the folded simulator and then on the open one, with the iOS Simulator tool `control` (device `OpenCam Dev B`): one action (`tap`, `swipe` or `touch_path`), wait 1 s, one `xcrun simctl io "$UDID" screenshot --display=<n> <scratch>/<step>.png`, look, write what changed. Folded is display 1 (1398 x 2034 px); open is the inner display (2007 x 2853 px; confirm the display number on the first shot). The fold state changes only in the Simulator's Device Hub window, not from the command line: unfold there (by hand or by computer use on Simulator). If that cannot be done, the open-display checks are reported as Not verified and listed for Tanner, never skipped silently.
+- **Tap and drag tests:** a control verified only by a screenshot is not verified. For every interactive control, on the folded simulator and then on the open one, with the iOS Simulator tool `control`: one action (`tap`, `swipe` or `touch_path`), wait 2 s, one `xcrun simctl io <UDID> screenshot --display=<n> <scratch>/<step>.png` (the tool's own screenshot can lag a tap), look, write what changed. (Pre-flight correction) Implementers do not run these: after a UI task's review is clean, a separate verifier runs the task's tap-and-drag step. Folded: `OpenCam Dev B` (display 1, 1398 x 2034 px). Open: only the simulator "Claude Duo camera design" (UDID `E4114F51-C78A-4512-B717-7CE404E38BE9`, `--display=3`), shared with the camera session: build into its own derived data (`-derivedDataPath .build-open`), install immediately before each open-display check, keep checks short, and if the screen is not the build just installed, reinstall and retry. No other simulator, never `booted`. A check that cannot be done is reported as Not verified and listed for Tanner, never skipped silently.
 
 ## Review Focus
 
@@ -52,6 +52,13 @@ Added by this plan:
 ---
 
 ### Task 1: Format badges and the editor's photo info
+
+**Pre-flight corrections (controller, 2026-11-11; these override the text below):**
+- `LibraryError.seedFailed` gains `function: String` (first associated value) and its description reads `"[SampleSeeder:\(function)] Cannot create the sample — {path: …, reason: …}"`; `seedIfEmpty` passes `"seedIfEmpty"`, the new seeder `"seedFormatsIfAbsent"`. `LibraryError.swift` is inside the fence for this.
+- The format badge copies the clip badge's style exactly (`.caption`, as `LibraryCell.swift` draws the clip badge), not `.caption2`.
+- `EditorModel.load()` starts `PhotoFacts.read` with `async let` at its very top and assigns `facts` once the edit has loaded, on every exit path (ready, read-only, failed), so the read never delays the decode.
+- `applyLaunch` order, final after Task 5: seed formats, (Task 5: seed the study look), one `library.reload()`, then choose the launch photo.
+- Step 6 is screenshots only (`scripts/shot.sh`). The "Tap-test, folded then open" sentence is run by a separate verifier after review, not by the implementer.
 
 **Files:**
 - Create: `OpenCam/Library/FormatDesignation.swift`, `OpenCam/Library/PictureKind.swift`, `OpenCam/Library/PhotoFacts.swift`, `OpenCam/Library/PhotoInfoRow.swift`, `OpenCam/UI/Editor/PhotoInfoLine.swift`
@@ -164,6 +171,9 @@ Pass when: every photo tile has its badge (RAW + HEIF, HEIF, RAW, JPEG x4) at bo
 
 ### Task 2: File versions for edits and looks
 
+**Pre-flight corrections (controller, 2026-11-11; these override the text below):**
+- Step 2's expected failure is a build error (`Look` has no `version`, `LookStoreError` has no `newerVersion`), not a failing `PhotoEdit.currentVersion == 2`.
+
 The draft's Task 2, unchanged in design.
 
 **Files:**
@@ -224,6 +234,13 @@ func writeLook(_ json: String, in store: LookStore, id: UUID) throws -> URL {
 ---
 
 ### Task 3: Point curves in the colour table
+
+**Pre-flight corrections (controller, 2026-11-11; these override the text below):**
+- Order (Step 3's reference check cannot compile after Step 2): do Step 1, add `e1TablesAreRebuiltBitForBit` alone to `ColourMathTests`, run `ColourMathTests` green against today's `ColourMath`, then write the rest of Step 2's tests and see them fail.
+- `E1ColourReference` copies `apply` and every helper it calls unqualified (`decode`, `encode`, `luma`, both `clamp01`) verbatim as private statics, so it compiles and never changes again.
+- Stage comments: add a stage-list doc comment on `ColourMath.apply`, renumber the existing inline stage comments to this plan's scheme, rename the E1 "tone curves" stage to "tones (highlights, shadows, whites, blacks)" so it does not clash with point curves, and update the stage comment in `ColourMathTests.swift` that uses the old numbers. List only the stages that exist after this task (clamp last); Tasks 7 and 8 insert theirs and renumber clamp.
+- `ToneCurve` normalisation: the `minGap` comparison is on integer thousandths (`Int((x * 1000).rounded())`, a gap below 10 is too close), never a `Double` subtraction (0.21 − 0.20 < 0.01 in `Double`). The first and the last sorted points are never dropped: an inner point within `minGap` of the last point is dropped instead; first and last closer than `minGap` give `identity`.
+- `Adjustments`' custom `encode(to:)` writes exactly the 14 keys the synthesized encoder wrote today (same names) plus `"curves"` only when not identity, so `ThumbnailCache`'s sorted-keys hash of every existing edit is unchanged.
 
 **Files:**
 - Create: `OpenCam/Edit/CurvePoint.swift`, `OpenCam/Edit/CurveChannel.swift`, `OpenCam/Edit/ToneCurve.swift`, `OpenCam/Edit/ToneCurves.swift`, `OpenCamTests/E1ColourReference.swift`
@@ -337,6 +354,9 @@ The curve formula, exact (write it in `ToneCurve`'s doc comment). Points `(x_k, 
 
 ### Task 4: Histogram of the rendered picture
 
+**Pre-flight corrections (controller, 2026-11-11; these override the text below):**
+- `OpenCam/Render/HistogramChannel.swift` is inside the fence.
+
 **Files:**
 - Create: `OpenCam/Render/PictureHistogram.swift`, `OpenCam/Render/HistogramChannel.swift`
 - Modify: `OpenCam/UI/Editor/EditorModel.swift`
@@ -399,6 +419,14 @@ actor HistogramGate {   // holds every histogram until opened
 ---
 
 ### Task 5: The curve editor
+
+**Pre-flight corrections (controller, 2026-11-11; these override the text below):**
+- `EditorLayout.minPanelHeight(for:)` returns 340 for `.curve` only in this task (`.grading` does not exist yet; Task 8 adds it). It replaces `EditorView`'s existing `private static let minPanelHeight` (do not keep both).
+- `OpenCamTests/EditorLayoutTests.swift` is not modified; the `minPanelHeight` and geometry expectations live in `CurveEditingTests` as written. The `side(for: 381 x 300) == 232` line is a formula check, not the real folded size.
+- `ScrollingPicker` uses `.scrollBounceBehavior(.basedOnSize, axes: .horizontal)` (the default axes are vertical only).
+- `moving`: the first point's x is clamped to `0...(next.x − minGap)`, the last point's to `(previous.x + minGap)...1`, inner points between `previous.x + minGap` and `next.x − minGap`, compared in integer thousandths like Task 3's normalisation. Add to `dragsNeverCrossANeighbourAndTheEndsStay`: a point dragged to exactly its neighbour's x + 0.01 is kept.
+- `applyLaunch`: seed formats, seed the study look, one `library.reload()`, then the launch push.
+- Step 7 (tap and drag) is run by a separate verifier after review, not by the implementer. Step 8 commits without it.
 
 **Files:**
 - Create: `OpenCam/Edit/CurveHit.swift`, `OpenCam/Edit/CurveDrag.swift`, `OpenCam/Edit/ToneCurve+Editing.swift`, `OpenCam/UI/Editor/CurveGeometry.swift`, `OpenCam/UI/Editor/CurveCanvas.swift`, `OpenCam/UI/Editor/CurvePanel.swift`, `OpenCam/UI/Editor/ScrollingPicker.swift`
@@ -527,6 +555,9 @@ Pass when: `e3-editor-light-v` matches `docs/screenshots/e1/e1-editor-light-v.pn
 
 ### Task 6: Colour mixer and grading maths
 
+**Pre-flight corrections (controller, 2026-11-11; these override the text below):**
+- `OpenCam/Render/ColourTint.swift` is inside the fence.
+
 The draft's Task 1 maths, with a luminance per region and Blending added to grading.
 
 **Files:**
@@ -620,6 +651,11 @@ Formulas, exact (doc comments carry them):
 
 ### Task 7: The colour mixer in the table and the editor
 
+**Pre-flight corrections (controller, 2026-11-11; these override the text below):**
+- `encode(to:)` writes the 14 E1 keys always (as today) and each added key only when it is not 0 (`toolValues` never holds a 0), plus `"curves"` when not identity: not every key in `allCases`. Decoding treats a missing key as 0. This keeps every existing edit's JSON, and so its thumbnail cache key, unchanged.
+- Stage 8 goes into `ColourMath.apply`'s stage-list doc comment; clamp is renumbered. The "anything to do" check before stage 8 is the cheapest one available (for example `toolValues.isEmpty` before reading the 24 keys).
+- Step 6 (tap and drag) is run by a separate verifier after review, not by the implementer.
+
 **Files:**
 - Create: `OpenCam/UI/Editor/MixPanel.swift`
 - Modify: `OpenCam/Edit/AdjustmentKey.swift`, `OpenCam/Edit/Adjustments.swift` (scalar storage below), `OpenCam/Edit/ColourBand.swift` (its keys), `OpenCam/Edit/EditorGroup.swift` (`case light, colour, curve, mix, detail, effects, looks`, title "Mix"), `OpenCam/Render/ColourMath.swift` (stage 8), `OpenCam/UI/Editor/EditorPanel.swift`, `OpenCam/UI/Editor/EditorModel.swift` (`var mixBand: ColourBand = .red`, never saved), `OpenCam/Library/LookSeeder.swift`
@@ -683,6 +719,12 @@ struct MixPanel: View { @Bindable var model: EditorModel }
 ---
 
 ### Task 8: Colour grading wheels in the table and the editor
+
+**Pre-flight corrections (controller, 2026-11-11; these override the text below):**
+- `EditorLayout.minPanelHeight(for:)` gains `.grading` (340) in this task, with an expectation added beside the `.curve` one.
+- `OpenCamTests/MixerTests.swift` is modified: its `AdjustmentKey.allCases.count == 38` line becomes `== 49`.
+- Stage 9 goes into `ColourMath.apply`'s stage-list doc comment; clamp becomes 10.
+- Step 6 (tap and drag) is run by a separate verifier after review, not by the implementer.
 
 **Files:**
 - Create: `OpenCam/Edit/GradingRegion.swift`, `OpenCam/UI/Editor/WheelGeometry.swift`, `OpenCam/UI/Editor/ColourWheel.swift`, `OpenCam/UI/Editor/GradingPanel.swift`
@@ -763,6 +805,11 @@ static func moved(_ key: AdjustmentKey) -> Adjustments { base(key).setting(key, 
 ---
 
 ### Task 9: One table check and E3 verification
+
+**Pre-flight corrections (controller, 2026-11-11; these override the text below):**
+- Step 4's sweep diffs against `$(git merge-base origin/perf/main-thread-freezes HEAD)`, not `main`.
+- `LookCarryTests` is declared `nonisolated struct` so `@Test(arguments:)` can read its static under default MainActor isolation.
+- Add to the report (no assertion): the time of `LookCompiler.cube(for:)` in the Simulator for an E1-only look (`LookSeeder.warmFade`) and for `LookSeeder.colourStudy`, median of 5 runs each. Above 3x the E1 time, flag it in the report; do not optimise in this task.
 
 **Files:**
 - Modify: nothing in `OpenCam/` unless a test fails; a failure means some path copies `Adjustments` key by key or tests identity without the curves, and the fix goes in that file with the smallest change, named in the report (a file outside the fence is skip-and-flag).
