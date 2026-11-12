@@ -108,8 +108,8 @@ nonisolated final class WriterRecorder {
         // Set only while a clip records.
         videoOutput.setSampleBufferDelegate(sink, queue: videoQueue)
         if hasSound { audioOutput.setSampleBufferDelegate(sink, queue: audioQueue) }
-        // Sound the writer refused: the clip records without it and the microphone is reported as unavailable, as when it cannot attach.
-        if let soundRefusal { events.yield(.microphoneUnavailable(soundRefusal)) }
+        // Sound the writer refused: the clip records without it and says so; the microphone itself is fine and stays on.
+        if let soundRefusal { events.yield(.soundNotRecorded(soundRefusal)) }
     }
 
     /// Ends the clip for `end`; the first end stands. Returns whether a result will follow: a clip was recording, or ended with

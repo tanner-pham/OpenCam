@@ -1000,6 +1000,11 @@ extension CameraModel {
             Self.logger.error("\(message, privacy: .public)")
             ErrorJournal.record(message)
             access.microphone = .denied
+        case .soundNotRecorded(let message):
+            // This clip only: microphone access is untouched, so the next configure keeps the microphone input.
+            Self.logger.error("\(message, privacy: .public)")
+            ErrorJournal.record(message)
+            show("This clip has no sound.", from: .capture)
         case .pressure(let level, let isThermal):
             pressureLevel = level
             isThermalPressure = isThermal
