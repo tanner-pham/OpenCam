@@ -333,7 +333,7 @@ final class CameraModel {
     var remainingText: String { remaining.text }
     var isStorageFull: Bool { remaining.text == StatusText.storageFull }
 
-    var pressureText: String? { StatusText.pressure(pressureLevel, isThermal: isThermalPressure) }
+    var pressureText: String? { StatusText.pressure(pressureLevel, isThermal: isThermalPressure, mode: mode) }
 
     /// The one line under the controls; photo mode never mentions the microphone, which photos do not use.
     var bottomNotice: String? {

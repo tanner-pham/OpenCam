@@ -2,7 +2,8 @@ import Foundation
 
 /// What each state of the camera says, and which line wins when several apply. Pure, so the copy is tested without a screen.
 nonisolated enum StatusText {
-    static let microphoneOff = "No microphone access"
+    /// A button that opens Settings, so it says so.
+    static let microphoneOff = "No microphone access. Open Settings"
     static let storageFull = "Storage full"
 
     static func viewfinder(_ phase: CameraPhase) -> ViewfinderStatus? {
@@ -16,11 +17,12 @@ nonisolated enum StatusText {
         }
     }
 
-    static func pressure(_ level: PressureLevel, isThermal: Bool) -> String? {
+    /// Photo mode shows no frame rate, so a serious level there says the camera, not the frame rate, may slow down.
+    static func pressure(_ level: PressureLevel, isThermal: Bool, mode: CaptureMode) -> String? {
         let cause = isThermal ? "The phone is hot." : "The phone is under heavy load."
         switch level {
         case .nominal, .fair: return nil
-        case .serious: return "\(cause) Frame rate may drop."
+        case .serious: return "\(cause) \(mode == .photo ? "The camera may slow down." : "Frame rate may drop.")"
         case .critical: return "\(cause) Recording may stop."
         case .shutdown: return "Camera stopped to protect the phone."
         }
