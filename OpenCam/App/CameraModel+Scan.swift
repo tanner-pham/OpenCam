@@ -35,6 +35,7 @@ extension CameraModel {
     /// restored afterwards.
     func rescanCapabilities() async {
         guard canRescanCapabilities else { return }
+        clearSavedStart()
         do {
             try CapabilityCache(directory: capabilitySource.cacheDirectory).clear()
         } catch {

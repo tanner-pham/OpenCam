@@ -354,6 +354,51 @@ import Testing
         #expect(await eventually { model.phase == .ready })
     }
 
+    /// What a launch that confirmed this model's configuration saves for the next one.
+    private func startRecord(of model: CameraModel) throws -> SavedStart {
+        SavedStart(configuration: try #require(model.sessionConfiguration), record: model.record, photo: model.photo,
+                   osBuild: model.capabilities.osBuild, modelIdentifier: model.capabilities.modelIdentifier, scanVersion: model.capabilities.scanVersion)
+    }
+
+    @Test func aConfirmedConfigurationIsSavedAsTheNextStart() async throws {
+        let (model, _, defaults) = try attachedModel()
+        #expect(SavedStart.load(from: defaults) == nil)
+        #expect(await confirmed(model))
+        #expect(SavedStart.load(from: defaults) == (try startRecord(of: model)))
+    }
+
+    @Test func aConfigurationThatStopsBeforeItsConfirmationIsNeverSaved() async throws {
+        let (model, fake, defaults) = try attachedModel()
+        let first = try startRecord(of: model)
+        #expect(await confirmed(model))
+        #expect(SavedStart.load(from: defaults) == first)
+        model.confirmationDelay = .seconds(5)
+        model.record = Self.other
+        await model.waitForQueuedConfigures()
+        #expect(await fake.applied.count == 1)
+        // The new selection's confirmation is armed with the long delay; the recovery's is armed with the short one.
+        model.confirmationDelay = .milliseconds(40)
+        model.apply(.runtimeError(Self.stop))
+        #expect(SavedStart.load(from: defaults)?.configuration == first.configuration)
+        await model.waitForQueuedConfigures()
+        #expect(await eventually { model.phase == .ready })
+        #expect(await confirmed(model))
+        #expect(SavedStart.load(from: defaults) == first)
+    }
+
+    @Test func aScriptedLaunchSavesNoStart() async throws {
+        let defaults = try Fixture.freshDefaults()
+        let model = CameraModel(config: .parse(["app", "-mode", "photo"]), capabilities: try Fixture.load(), isSimulator: false, defaults: defaults,
+                                captureStore: try CaptureStore(directory: TestFiles.directory()))
+        model.confirmationDelay = .milliseconds(40)
+        model.phase = .ready
+        let configuration = try #require(model.sessionConfiguration)
+        model.attachSession(FakeSessionConfigurator(failingLensIDs: []), configuredWith: configuration, selection: model.currentSelection)
+        model.confirmWhenRunning(configuration, since: model.runtimeErrorCount)
+        #expect(await confirmed(model))
+        #expect(SavedStart.load(from: defaults) == nil)
+    }
+
     /// The confirmed selection stops, its one restart stops too: the stopped state.
     private func stopTwice(_ model: CameraModel) async throws {
         model.apply(.runtimeError(Self.stop))

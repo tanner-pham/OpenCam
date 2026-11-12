@@ -596,6 +596,17 @@ final class CameraModel {
         currentSelection.save(to: defaults)
     }
 
+    /// Keeps a confirmed configuration as the next launch's start. Called only where a configuration is confirmed.
+    func saveStart(_ working: (configuration: SessionConfiguration, selection: SavedSelections)) {
+        guard !isScripted else { return }
+        SavedStart(configuration: working.configuration, record: working.selection.record, photo: working.selection.photo,
+                   osBuild: capabilities.osBuild, modelIdentifier: capabilities.modelIdentifier, scanVersion: capabilities.scanVersion).save(to: defaults)
+    }
+
+    func clearSavedStart() {
+        SavedStart.clear(from: defaults)
+    }
+
     /// Hands the model a session already running `configuration`, which was built from `selection`;
     /// later selection changes reconfigure it. The caller arms its confirmation once the session's start has returned.
     func attachSession(_ configurator: any SessionConfigurator, configuredWith configuration: SessionConfiguration, selection: SavedSelections) {

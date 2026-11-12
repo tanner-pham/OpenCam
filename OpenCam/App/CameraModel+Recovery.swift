@@ -103,6 +103,7 @@ extension CameraModel {
                   let lastWorking, lastWorking.configuration == configuration, !isSessionHeld,
                   phase == .ready || isCameraStopped else { return }
             confirmed = lastWorking
+            saveStart(lastWorking)
             isRecoveryUnconfirmed = false
             guard isCameraStopped else { return }
             phase = .ready
