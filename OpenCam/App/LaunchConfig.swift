@@ -9,7 +9,7 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
     var simulatedState: SimulatedState?
     var freeSpaceMarginMB: Int?
     var keepsSweepClips = false
-    var editorGroup: EditorGroup = .light   // -editorGroup light|colour|curve|detail|effects|looks
+    var editorGroup: EditorGroup = .light   // -editorGroup light|colour|curve|mix|grading|detail|effects|looks
     var seedsSamples = false                // -seedSamples on (honoured in the Simulator only)
     var seedsLook = false                   // -seedLook on (honoured in the Simulator only)
     var seedsFormats = false                // -seedFormats on (honoured in the Simulator only)
