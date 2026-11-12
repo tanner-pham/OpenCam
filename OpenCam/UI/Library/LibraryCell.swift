@@ -45,13 +45,18 @@ struct LibraryCell: View {
                 .resizable()
                 .scaledToFill()
         case .failed:
+            // The selection mark and the badges are drawn over the cell's top and bottom edges, so the message is centred in the
+            // space between them. It shrinks a little rather than run under either where that space is short: Select mode at
+            // the largest text this cell takes.
             VStack(spacing: 0) {
+                selectionMark.hidden()
                 Text(item.kind == .clip ? LibraryCopy.clipCannotOpen : LibraryCopy.cannotOpen)
                     .font(.caption)
                     .multilineTextAlignment(.center)
-                    .padding(Theme.Space.s)
+                    .minimumScaleFactor(0.8)
+                    .padding(.horizontal, Theme.Space.s)
+                    .padding(.vertical, Theme.Space.xs)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // The badges are drawn over the cell's bottom edge, so the message is centred in the space above them.
                 badges.hidden()
             }
             .background(.secondary)
