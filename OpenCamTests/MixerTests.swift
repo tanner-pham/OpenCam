@@ -4,7 +4,7 @@ import Testing
 
 @MainActor @Suite struct MixerTests {
     @Test func keysTitlesAndRoundTrip() throws {
-        #expect(AdjustmentKey.allCases.count == 38); #expect(EditorGroup.mix.keys.count == 24); #expect(ColourBand.red.keys == [.mixRedHue, .mixRedSaturation, .mixRedLuminance])
+        #expect(AdjustmentKey.allCases.count == 49); #expect(EditorGroup.mix.keys.count == 24); #expect(ColourBand.red.keys == [.mixRedHue, .mixRedSaturation, .mixRedLuminance])
         #expect(AdjustmentKey.mixMagentaLuminance.title == "Magenta luminance"); #expect(AdjustmentKey.mixAquaHue.range == -100...100)
         let a = Adjustments().setting(.mixRedHue, to: 150).setting(.mixBlueLuminance, to: -30)
         #expect(a[.mixRedHue] == 100); #expect(try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(a)) == a)

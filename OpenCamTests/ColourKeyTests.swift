@@ -5,12 +5,15 @@ import Testing
 /// Which adjustments belong to the colour table is said per key, never by the order of `allCases`.
 @Suite struct ColourKeyTests {
     static let colourKeys = Set<AdjustmentKey>([.exposure, .contrast, .highlights, .shadows, .whites, .blacks, .temperature, .tint,
-                                                 .vibrance, .saturation] + EditorGroup.mix.keys)
+                                                 .vibrance, .saturation] + EditorGroup.mix.keys + EditorGroup.grading.keys)
 
-    /// A value inside the range that is not zero: half the way to the upper bound.
-    static func moved(_ key: AdjustmentKey) -> Adjustments {
-        Adjustments().setting(key, to: key.range.upperBound / 2)
-    }
+    /// A hue, Blending or Balance changes nothing while every grading saturation and luminance is 0, so each is moved over a partner.
+    static let partner: [AdjustmentKey: AdjustmentKey] = [.gradingShadowsHue: .gradingShadowsSaturation, .gradingMidtonesHue: .gradingMidtonesSaturation,
+        .gradingHighlightsHue: .gradingHighlightsSaturation, .gradingBlending: .gradingShadowsSaturation, .gradingBalance: .gradingShadowsSaturation]
+    static func base(_ key: AdjustmentKey) -> Adjustments { partner[key].map { Adjustments().setting($0, to: 50) } ?? Adjustments() }
+
+    /// A value inside the range that is not zero: half the way to the upper bound, over the key's partner if it has one.
+    static func moved(_ key: AdjustmentKey) -> Adjustments { base(key).setting(key, to: key.range.upperBound / 2) }
 
     @Test func everyKeyIsClassifiedAndTheColourKeysAreExactlyTheOnesTheCompilerReads() {
         #expect(Set(AdjustmentKey.allCases.filter(\.isColour)) == Self.colourKeys)
@@ -18,7 +21,7 @@ import Testing
             + ColourBand.allCases.map { ColourMath.rgb(hue: $0.centre, saturation: 0.6, value: 0.7) }
         for key in AdjustmentKey.allCases {
             let adjustments = Self.moved(key)
-            let isRead = samples.contains { ColourMath.apply(adjustments, to: $0) != ColourMath.apply(Adjustments(), to: $0) }
+            let isRead = samples.contains { ColourMath.apply(adjustments, to: $0) != ColourMath.apply(Self.base(key), to: $0) }
             #expect(isRead == key.isColour, "\(key) is read by the colour stage: \(isRead)")
             #expect(adjustments.hasColourChanges == key.isColour, "\(key)")
         }
@@ -29,7 +32,7 @@ import Testing
         for key in AdjustmentKey.allCases {
             let builds = CallCounter()
             let cache = ColourCubeCache { builds.increment(); return LookCompiler.cube(for: $0) }
-            _ = cache.cube(for: Adjustments())
+            _ = cache.cube(for: Self.base(key))
             _ = cache.cube(for: Self.moved(key))
             #expect(builds.value == (key.isColour ? 2 : 1), "\(key)")
         }

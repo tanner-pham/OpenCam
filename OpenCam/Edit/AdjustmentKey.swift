@@ -13,6 +13,11 @@ nonisolated enum AdjustmentKey: String, CaseIterable, Sendable {
          mixBlueHue, mixBlueSaturation, mixBlueLuminance,
          mixPurpleHue, mixPurpleSaturation, mixPurpleLuminance,
          mixMagentaHue, mixMagentaSaturation, mixMagentaLuminance
+    /// Colour grading: hue, saturation and luminance of each `GradingRegion`, in that order, then the split between them.
+    case gradingShadowsHue, gradingShadowsSaturation, gradingShadowsLuminance,
+         gradingMidtonesHue, gradingMidtonesSaturation, gradingMidtonesLuminance,
+         gradingHighlightsHue, gradingHighlightsSaturation, gradingHighlightsLuminance,
+         gradingBlending, gradingBalance
 
     var title: String {
         switch self {
@@ -54,14 +59,26 @@ nonisolated enum AdjustmentKey: String, CaseIterable, Sendable {
         case .mixMagentaHue: "Magenta hue"
         case .mixMagentaSaturation: "Magenta saturation"
         case .mixMagentaLuminance: "Magenta luminance"
+        case .gradingShadowsHue: "Shadows hue"
+        case .gradingShadowsSaturation: "Shadows saturation"
+        case .gradingShadowsLuminance: "Shadows luminance"
+        case .gradingMidtonesHue: "Midtones hue"
+        case .gradingMidtonesSaturation: "Midtones saturation"
+        case .gradingMidtonesLuminance: "Midtones luminance"
+        case .gradingHighlightsHue: "Highlights hue"
+        case .gradingHighlightsSaturation: "Highlights saturation"
+        case .gradingHighlightsLuminance: "Highlights luminance"
+        case .gradingBlending: "Blending"
+        case .gradingBalance: "Balance"
         }
     }
 
     var range: ClosedRange<Double> {
         switch self {
         case .exposure: -5...5
-        case .sharpening, .noiseReduction, .grain: 0...100
-        default: -100...100   // the mixer's keys among them
+        case .gradingShadowsHue, .gradingMidtonesHue, .gradingHighlightsHue: 0...360
+        case .sharpening, .noiseReduction, .grain, .gradingShadowsSaturation, .gradingMidtonesSaturation, .gradingHighlightsSaturation: 0...100
+        default: -100...100   // the mixer's keys, the grading luminances, Blending and Balance among them
         }
     }
 
@@ -83,7 +100,10 @@ nonisolated enum AdjustmentKey: String, CaseIterable, Sendable {
              .mixRedHue, .mixRedSaturation, .mixRedLuminance, .mixOrangeHue, .mixOrangeSaturation, .mixOrangeLuminance,
              .mixYellowHue, .mixYellowSaturation, .mixYellowLuminance, .mixGreenHue, .mixGreenSaturation, .mixGreenLuminance,
              .mixAquaHue, .mixAquaSaturation, .mixAquaLuminance, .mixBlueHue, .mixBlueSaturation, .mixBlueLuminance,
-             .mixPurpleHue, .mixPurpleSaturation, .mixPurpleLuminance, .mixMagentaHue, .mixMagentaSaturation, .mixMagentaLuminance: true
+             .mixPurpleHue, .mixPurpleSaturation, .mixPurpleLuminance, .mixMagentaHue, .mixMagentaSaturation, .mixMagentaLuminance,
+             .gradingShadowsHue, .gradingShadowsSaturation, .gradingShadowsLuminance, .gradingMidtonesHue, .gradingMidtonesSaturation,
+             .gradingMidtonesLuminance, .gradingHighlightsHue, .gradingHighlightsSaturation, .gradingHighlightsLuminance,
+             .gradingBlending, .gradingBalance: true
         case .sharpening, .noiseReduction, .grain, .vignette: false
         }
     }
@@ -96,18 +116,30 @@ nonisolated enum AdjustmentKey: String, CaseIterable, Sendable {
              .mixYellowHue, .mixYellowSaturation, .mixYellowLuminance, .mixGreenHue, .mixGreenSaturation, .mixGreenLuminance,
              .mixAquaHue, .mixAquaSaturation, .mixAquaLuminance, .mixBlueHue, .mixBlueSaturation, .mixBlueLuminance,
              .mixPurpleHue, .mixPurpleSaturation, .mixPurpleLuminance, .mixMagentaHue, .mixMagentaSaturation, .mixMagentaLuminance: .mix
+        case .gradingShadowsHue, .gradingShadowsSaturation, .gradingShadowsLuminance, .gradingMidtonesHue, .gradingMidtonesSaturation,
+             .gradingMidtonesLuminance, .gradingHighlightsHue, .gradingHighlightsSaturation, .gradingHighlightsLuminance,
+             .gradingBlending, .gradingBalance: .grading
         case .sharpening, .noiseReduction: .detail
         case .grain, .vignette: .effects
         }
     }
 
+    /// Exposure to a tenth, a grading hue in whole degrees ("210°"), the others whole and signed when they can be negative.
     func valueText(_ value: Double) -> String {
         if self == .exposure {
             let tenths = (value * 10).rounded() / 10
             return tenths == 0 ? "0.0" : String(format: "%+.1f", tenths)
         }
         let whole = Int(value.rounded())
+        if isGradingHue { return "\(whole)°" }
         if range.lowerBound == 0 { return String(whole) }
         return whole == 0 ? "0" : String(format: "%+d", whole)
+    }
+
+    private var isGradingHue: Bool {
+        switch self {
+        case .gradingShadowsHue, .gradingMidtonesHue, .gradingHighlightsHue: true
+        default: false
+        }
     }
 }

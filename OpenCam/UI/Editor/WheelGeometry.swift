@@ -1,0 +1,34 @@
+import CoreGraphics
+import Foundation
+
+/// Maps a grading wheel's square canvas, `diameter` on a side with the disc filling it, to a hue and saturation.
+nonisolated enum WheelGeometry {
+    static let maxDiameter: CGFloat = 160
+    /// Across the panel: its padding on each side and the gap between the two lower wheels.
+    private static let horizontalChrome: CGFloat = 2 * Theme.Space.l + Theme.Space.m
+
+    /// Two wheels side by side fill the panel up to `maxDiameter`: 160 pt in the folded portrait panel, 138 pt in the 320 pt one.
+    static func diameter(forWidth width: CGFloat) -> CGFloat {
+        max(0, min(maxDiameter, ((width - horizontalChrome) / 2).rounded(.down)))
+    }
+
+    /// Hue: the angle from the centre, 0 at the right, increasing clockwise on screen; saturation: distance / radius, capped at
+    /// 100; both rounded to whole numbers; a saturation of 0 gives hue 0, so a puck at the centre is no edit. A hue that rounds
+    /// to 360 is 0.
+    static func tint(at point: CGPoint, diameter: CGFloat) -> (hue: Double, saturation: Double) {
+        let radius = Double(diameter) / 2
+        let dx = Double(point.x) - radius, dy = Double(point.y) - radius
+        guard radius > 0, dx.isFinite, dy.isFinite else { return (0, 0) }
+        let saturation = min(100, (hypot(dx, dy) / radius * 100).rounded())
+        guard saturation > 0 else { return (0, 0) }
+        let degrees = (atan2(dy, dx) * 180 / .pi).rounded()
+        return ((degrees + 360).truncatingRemainder(dividingBy: 360), saturation)
+    }
+
+    /// Where the puck of this hue and saturation sits on the canvas: the inverse of `tint(at:diameter:)`.
+    static func point(hue: Double, saturation: Double, diameter: CGFloat) -> CGPoint {
+        let radius = Double(diameter) / 2
+        let distance = radius * min(max(saturation, 0), 100) / 100
+        return CGPoint(x: radius + distance * __cospi(hue / 180), y: radius + distance * __sinpi(hue / 180))
+    }
+}

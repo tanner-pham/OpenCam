@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The group picker and the chosen group: its sliders, the curve editor, or the looks.
+/// The group picker and the chosen group: its sliders, the curve editor, the mixer, the grading wheels, or the looks.
 struct EditorPanel: View {
     @Bindable var model: EditorModel
 
@@ -14,6 +14,7 @@ struct EditorPanel: View {
             case .looks: LooksPanel(model: model)
             case .curve: CurvePanel(model: model)
             case .mix: MixPanel(model: model)
+            case .grading: GradingPanel(model: model)
             case .light, .colour, .detail, .effects: sliders
             }
         }

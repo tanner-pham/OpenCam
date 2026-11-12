@@ -4,6 +4,8 @@ import SwiftUI
 struct AdjustmentSlider: View {
     let key: AdjustmentKey
     @Binding var value: Double
+    /// The name shown on the row when set ("Luminance" under a grading wheel); the slider's accessibility label stays `key.title`.
+    var title: String? = nil
     let onReset: () -> Void
 
     /// The space between a name row and its slider.
@@ -39,7 +41,7 @@ struct AdjustmentSlider: View {
 
     private var nameRow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(key.title)
+            Text(title ?? key.title)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(key.valueText(value))
                 .monospacedDigit()

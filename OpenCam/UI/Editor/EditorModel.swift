@@ -185,6 +185,19 @@ import OSLog
         adjustments.curves[channel] = .identity
     }
 
+    /// Sets one grading wheel's hue and saturation in a single write to `adjustments`, so a drag renders once per move.
+    func setWheel(_ region: GradingRegion, hue: Double, saturation: Double) {
+        var edited = adjustments
+        edited[region.hueKey] = hue
+        edited[region.saturationKey] = saturation
+        adjustments = edited
+    }
+
+    /// Takes one grading wheel's puck back to the centre (hue and saturation 0); its luminance keeps its own reset.
+    func resetWheel(_ region: GradingRegion) {
+        setWheel(region, hue: 0, saturation: 0)
+    }
+
     /// Also clears the look.
     func resetAll() {
         adjustments = Adjustments()

@@ -31,7 +31,8 @@ nonisolated enum LookSeeder {
 nonisolated extension LookSeeder {
     static let colourStudyName = "Colour study"
 
-    /// An S curve with lifted blacks and dimmed whites, blue lifted in the blacks, and a few colour bands moved.
+    /// An S curve with lifted blacks and dimmed whites, blue lifted in the blacks, a few colour bands moved, and grading:
+    /// blue shadows, orange highlights and slightly lifted midtones.
     static let colourStudy: Adjustments = {
         var adjustments = Adjustments()
         adjustments.curves.master = ToneCurve(points: [CurvePoint(x: 0, y: 0.06), CurvePoint(x: 0.25, y: 0.2),
@@ -39,6 +40,8 @@ nonisolated extension LookSeeder {
         adjustments.curves.blue = ToneCurve(points: [CurvePoint(x: 0, y: 0.04), CurvePoint(x: 1, y: 1)])
         adjustments[.mixRedHue] = 15; adjustments[.mixRedSaturation] = 30; adjustments[.mixGreenHue] = -20
         adjustments[.mixBlueSaturation] = 20; adjustments[.mixBlueLuminance] = -30
+        adjustments[.gradingShadowsHue] = 210; adjustments[.gradingShadowsSaturation] = 35
+        adjustments[.gradingHighlightsHue] = 45; adjustments[.gradingHighlightsSaturation] = 30; adjustments[.gradingMidtonesLuminance] = 5
         return adjustments
     }()
 

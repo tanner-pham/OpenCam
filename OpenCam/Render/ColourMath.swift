@@ -23,7 +23,8 @@ nonisolated enum ColourMath {
     /// 1 linear light and exposure, 2 white balance, 3 encoded and contrast, 4 tones (highlights, shadows, whites, blacks),
     /// 5 point curves (the RGB curve, then the channel's own curve; each identity curve is skipped, so four identity curves
     /// change nothing),
-    /// 6 vibrance, 7 saturation, 8 colour mixer (skipped when every mixer value is 0), 9 clamp.
+    /// 6 vibrance, 7 saturation, 8 colour mixer (skipped when every mixer value is 0), 9 colour grading (skipped when every
+    /// grading saturation and luminance is 0), 10 clamp.
     static func apply(_ adjustments: Adjustments, to rgb: SIMD3<Float>) -> SIMD3<Float> {
         func t(_ key: AdjustmentKey) -> Float { Float(adjustments[key]) / 100 }
 
@@ -81,7 +82,13 @@ nonisolated enum ColourMath {
             x = mix(clamp01(x), hue: lanes.hue, saturation: lanes.saturation, luminance: lanes.luminance)
         }
 
-        // 9: clamp.
+        // 9: colour grading, on the clamped colour too (it weighs the regions by luma). Skipped outright when every grading
+        // saturation and luminance is 0, whatever the mixer holds; each region's push and lift are precomputed in `Adjustments`.
+        if adjustments.hasGradingValues {
+            x = grade(clamp01(x), lanes: adjustments.grading)
+        }
+
+        // 10: clamp.
         return clamp01(x)
     }
 

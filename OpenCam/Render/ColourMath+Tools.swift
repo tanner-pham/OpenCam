@@ -99,14 +99,30 @@ nonisolated extension ColourMath {
 
     /// How much each grading region owns a colour of this luma: (shadows, midtones, highlights), summing to 1.
     ///
-    /// Pivot `p = 0.5 + balanceReach * balance`; exponent `k = 2 * 2^(-blending)` (2 at 0, 1 at +1, 4 at -1).
+    /// Pivot `p = gradingPivot(balance)`, exponent `k = gradingExponent(blending)`.
     /// `w_s = clamp01(1 - Y / p)^k`, `w_h = clamp01((Y - p) / (1 - p))^k`, `w_m = 1 - w_s - w_h`.
     static func regionWeights(luma: Float, balance: Float, blending: Float) -> SIMD3<Float> {
-        let pivot = 0.5 + balanceReach * balance
-        let exponent = 2 * pow(2, -blending)
+        regionWeights(luma: luma, pivot: gradingPivot(balance: balance), exponent: gradingExponent(blending: blending))
+    }
+
+    /// `regionWeights(luma:balance:blending:)` with the pivot and exponent already worked out, as `GradingLanes` holds them.
+    static func regionWeights(luma: Float, pivot: Float, exponent: Float) -> SIMD3<Float> {
         let shadows = pow(clamp01(1 - luma / pivot), exponent)
         let highlights = pow(clamp01((luma - pivot) / (1 - pivot)), exponent)
         return SIMD3(shadows, 1 - shadows - highlights, highlights)
+    }
+
+    /// The luma that splits shadows from highlights: `0.5 + balanceReach * balance`, for a balance of -1...1.
+    static func gradingPivot(balance: Float) -> Float { 0.5 + balanceReach * balance }
+
+    /// The power of the region weights: `2 * 2^(-blending)` (2 at 0, 1 at +1, 4 at -1), for a blending of -1...1.
+    static func gradingExponent(blending: Float) -> Float { 2 * pow(2, -blending) }
+
+    /// What a region tinted `hue` (degrees) at `saturation` (0...1) adds to a colour at full weight:
+    /// `gradingStrength * saturation * o`, where `c = rgb(hue, 1, 1)` and `o = c - luma(c)` (a tint that keeps luma).
+    static func gradingPush(hue: Float, saturation: Float) -> SIMD3<Float> {
+        let colour = rgb(hue: hue, saturation: 1, value: 1)
+        return gradingStrength * saturation * (colour - SIMD3(repeating: luma(colour)))
     }
 
     /// Colour grading: tints shadows, midtones and highlights separately.
@@ -114,21 +130,17 @@ nonisolated extension ColourMath {
     /// `Y = luma(x)`, weights from `regionWeights`. For each region `c = rgb(hue, 1, 1)` and `o = c - luma(c)`
     /// (a tint that keeps luma). Then
     /// `x' = clamp01(x + gradingStrength * sum(w_r * saturation_r * o_r) + gradingLuminanceReach * sum(w_r * luminance_r))`.
+    /// Works through `grade(_:lanes:)`, so the maths is written once.
     static func grade(_ rgb: SIMD3<Float>, shadows: ColourTint, midtones: ColourTint, highlights: ColourTint,
                       balance: Float, blending: Float) -> SIMD3<Float> {
-        let weights = regionWeights(luma: luma(rgb), balance: balance, blending: blending)
-        var tint = SIMD3<Float>(repeating: 0)
-        var lift: Float = 0
-        accumulate(shadows, weight: weights.x, tint: &tint, lift: &lift)
-        accumulate(midtones, weight: weights.y, tint: &tint, lift: &lift)
-        accumulate(highlights, weight: weights.z, tint: &tint, lift: &lift)
-        return clamp01(rgb + gradingStrength * tint + gradingLuminanceReach * lift)
+        grade(rgb, lanes: GradingLanes(shadows: shadows, midtones: midtones, highlights: highlights, balance: balance, blending: blending))
     }
 
-    private static func accumulate(_ region: ColourTint, weight: Float, tint: inout SIMD3<Float>, lift: inout Float) {
-        let colour = rgb(hue: region.hue, saturation: 1, value: 1)
-        let offset = colour - SIMD3(repeating: luma(colour))
-        tint += weight * region.saturation * offset
-        lift += weight * region.luminance
+    /// Colour grading of one colour, with each region's push and lift and the weights' pivot and exponent read from `lanes`
+    /// rather than worked out again: the colour table calls this at every lattice point.
+    static func grade(_ rgb: SIMD3<Float>, lanes: GradingLanes) -> SIMD3<Float> {
+        let weights = regionWeights(luma: luma(rgb), pivot: lanes.pivot, exponent: lanes.exponent)
+        let push = weights.x * lanes.shadowsPush + weights.y * lanes.midtonesPush + weights.z * lanes.highlightsPush
+        return clamp01(rgb + push + (weights * lanes.lift).sum())
     }
 }
