@@ -283,7 +283,7 @@ import Testing
         model.beginStroke(at: MaskPoint(x: 0.2, y: 0.2), pressure: nil)
         model.deleteSelectedMask()
         model.addMask(.brush)
-        model.beginStroke(at: MaskPoint(x: 0.5, y: 0.5), pressure: nil)   // ignored while a stroke is open
+        model.beginStroke(at: MaskPoint(x: 0.5, y: 0.5), pressure: nil)   // ignored if the first stroke were still open
         guard case let .brush(strokes)? = model.selectedMask?.shape else { Issue.record("not a brush"); return }
         #expect(strokes.count == 1)
     }

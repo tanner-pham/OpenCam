@@ -678,13 +678,13 @@ nonisolated enum SubjectState: Equatable, Sendable {
 }
 
 extension EditorModel {
-    /// Looks for the subject on the proxy, off the main actor, the first time any subject mask exists. Once per open: a photo
-    /// where nothing was found is not searched again. A found subject brings the preview and the overlay up to date.
     /// Ends the search for the subject, for when the editor closes; whatever Vision returns is then dropped.
     func cancelSubjectSearch() {
         subjectTask?.cancel()
     }
 
+    /// Looks for the subject on the proxy, off the main actor, the first time any subject mask exists. Once per open: a photo
+    /// where nothing was found is not searched again. A found subject brings the preview and the overlay up to date.
     fileprivate func requestSubject() {
         guard subjectState == .notNeeded, let proxy, masks.contains(where: { $0.shape.kind == .subject }) else { return }
         subjectState = .finding

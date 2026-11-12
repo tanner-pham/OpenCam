@@ -3,12 +3,12 @@ import Foundation
 import OSLog
 import Vision
 
-/// Finds the people and objects in the foreground of a photo with Vision's on-device segmentation.
 /// How a search for the subject ended: it found one, Vision found nothing in the picture, or the search itself failed.
 nonisolated enum SubjectSearch: Sendable {
     case found(CIImage), notFound, failed
 }
 
+/// Finds the people and objects in the foreground of a photo with Vision's on-device segmentation.
 nonisolated enum SubjectMasker {
     private static let logger = Logger(subsystem: "local.opencam.app", category: "SubjectMasker")
 
