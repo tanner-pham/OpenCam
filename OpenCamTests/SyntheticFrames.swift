@@ -48,16 +48,17 @@ enum SyntheticFrames {
     }
 
     /// One frame's worth of 16-bit mono sound (1,600 samples at 48 kHz) starting at frame `index`'s time.
-    static func sound(startingAtFrame index: Int) throws -> CMSampleBuffer {
+    /// `channels` other than 1 gives sound the writer's input, made for one channel, cannot take.
+    static func sound(startingAtFrame index: Int, channels: UInt32 = 1) throws -> CMSampleBuffer {
         let samples = 1_600
         var format = AudioStreamBasicDescription(mSampleRate: 48_000, mFormatID: kAudioFormatLinearPCM,
-                                                 mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked, mBytesPerPacket: 2,
-                                                 mFramesPerPacket: 1, mBytesPerFrame: 2, mChannelsPerFrame: 1, mBitsPerChannel: 16, mReserved: 0)
+                                                 mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked, mBytesPerPacket: 2 * channels,
+                                                 mFramesPerPacket: 1, mBytesPerFrame: 2 * channels, mChannelsPerFrame: channels, mBitsPerChannel: 16, mReserved: 0)
         var description: CMAudioFormatDescription?
         let described = CMAudioFormatDescriptionCreate(allocator: kCFAllocatorDefault, asbd: &format, layoutSize: 0, layout: nil, magicCookieSize: 0,
                                                        magicCookie: nil, extensions: nil, formatDescriptionOut: &description)
         guard described == noErr, let description else { throw Failure.formatDescription(described) }
-        let bytes = samples * 2
+        let bytes = samples * 2 * Int(channels)
         var block: CMBlockBuffer?
         let blockStatus = CMBlockBufferCreateWithMemoryBlock(allocator: kCFAllocatorDefault, memoryBlock: nil, blockLength: bytes, blockAllocator: kCFAllocatorDefault,
                                                              customBlockSource: nil, offsetToData: 0, dataLength: bytes, flags: kCMBlockBufferAssureMemoryNowFlag,

@@ -138,6 +138,40 @@ import Testing
         #expect(report.facts.framesWritten == 12)
     }
 
+    @Test func aWriterThatStoppedByItselfEndsTheClipWithoutWaitingForStop() async throws {
+        let rig = try SinkRig()
+        try rig.open()
+        try await rig.deliver(frames: 0..<5)
+        // The writer stops under the sink, as a failed encoder or a disk error would stop it.
+        rig.queue.sync { rig.sink.currentWriter?.cancelWriting() }
+        try await rig.deliver(frames: 5..<6)
+        #expect(await rig.waitForFinishes())
+        let report = try #require(rig.takeReport())
+        #expect(report.end == .writerFailed)
+        #expect(report.facts.framesWritten == 5)
+        #expect(report.errorText?.contains("stopped by itself") == true)
+        // Later frames and a later stop change nothing.
+        try await rig.deliver(frames: 6..<8)
+        #expect(rig.finished.value == 1)
+    }
+
+    @Test func aStoppedWriterWithNoFrameLeavesNoFileAndTheStorageTickNoticesIt() async throws {
+        let rig = try SinkRig()
+        try rig.open(minFreeBytes: 1_000)
+        rig.queue.sync { rig.sink.currentWriter?.cancelWriting() }
+        // No frame ever arrives: the storage tick finds it.
+        rig.queue.sync { rig.sink.storage(freeBytes: 5_000) }
+        #expect(await rig.waitForFinishes())
+        let report = try #require(rig.takeReport())
+        #expect(report.end == .writerFailed)
+        #expect(!report.hasFrames)
+        #expect(!path.fileExists(atPath: rig.url.path(percentEncoded: false)))
+        guard case .failed = RecordingOutcome(writerEnd: report.end, hasFrames: report.hasFrames, isReadable: false) else {
+            Issue.record("A clip with no frame should not be reported as a clip")
+            return
+        }
+    }
+
     @Test func aClipThatHasNotEndedHasNoReport() async throws {
         let rig = try SinkRig()
         try rig.open()

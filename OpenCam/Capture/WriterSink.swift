@@ -48,6 +48,7 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
     // Writer state: only inside writerQueue.sync.
     private var phase = Phase.idle
     private var writer: AVAssetWriter?
+    private var outputURL: URL?
     private var videoInput: AVAssetWriterInput?
     private var audioInput: AVAssetWriterInput?
     private var frameDuration = CMTime(value: 1, timescale: 30)
@@ -132,6 +133,7 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
             throw refusal("the writer did not start: \(error.localizedDescription)")
         }
         self.writer = writer
+        outputURL = plan.url
         videoInput = video
         audioInput = audio
         frameDuration = CMTime(value: 1, timescale: CMTimeScale(max(1, plan.frameRate)))
@@ -165,6 +167,9 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
         if !duration.isNumeric || CMTimeCompare(duration, .zero) <= 0 {
             duration = frameDuration
         }
+        // A writer that stopped by itself never calls `append` again (its input is not ready), so without this the clip would
+        // run on, every frame a "not ready" drop, until the user stopped it.
+        if endIfWriterStopped() { return }
         let io: any WriterAppending = self
         let isReady = videoInput != nil && io.isVideoReady()
         guard let step = state?.video(pts: pts, duration: duration, arrival: arrival, isWriterReady: isReady) else { return }
@@ -202,7 +207,10 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
 
     /// A reading that could not be taken (nil) never ends the clip; one at or under the minimum does.
     func storage(freeBytes: Int64?) {
-        guard phase == .recording, let freeBytes, let finish = state?.storage(freeBytes: freeBytes) else { return }
+        guard phase == .recording else { return }
+        // A camera that delivers no frames still gets to notice a writer that stopped.
+        if endIfWriterStopped() { return }
+        guard let freeBytes, let finish = state?.storage(freeBytes: freeBytes) else { return }
         carryOut(finish)
     }
 
@@ -242,6 +250,18 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
 
     // MARK: Private
 
+    /// Ends the clip as `.writerFailed` when the writer is no longer writing (failed, or cancelled from outside), keeping its error
+    /// text for the report. Returns whether it did.
+    private func endIfWriterStopped() -> Bool {
+        guard phase == .recording, let writer, writer.status != .writing else { return false }
+        note("[WriterSink:endIfWriterStopped] The writer stopped by itself — {status: \(writer.status.rawValue), error: \(writer.error.map { String(describing: $0) } ?? "none")}")
+        if let finish = state?.end(.writerFailed) { carryOut(finish) }
+        return true
+    }
+
+    /// The writer, for tests that make it fail from outside. Read inside the writer queue.
+    var currentWriter: AVAssetWriter? { writer }
+
     private func append(_ sampleBuffer: CMSampleBuffer, pts: CMTime, duration: CMTime) {
         let io: any WriterAppending = self
         let isWritten = io.appendVideo(sampleBuffer)
@@ -270,13 +290,16 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
     /// the last frame is edited out (AVAssetWriter.h). All appends have returned: they share this queue.
     private func finishFile(at endTime: CMTime) {
         phase = .finishing
-        videoInput?.markAsFinished()
-        audioInput?.markAsFinished()
-        guard let writer else {
+        // `finishWriting` on a writer that is not writing raises an exception Swift cannot catch (measured in the Simulator with a
+        // cancelled writer, status 4), and a failed one has nothing left to finish: it is reported as it is, and the file it
+        // wrote stays.
+        guard let writer, writer.status == .writing else {
             onFinished()
             return
         }
-        if writer.status == .writing { writer.endSession(atSourceTime: endTime) }
+        videoInput?.markAsFinished()
+        audioInput?.markAsFinished()
+        writer.endSession(atSourceTime: endTime)
         let token = generation.value.withLock { $0 }
         let generation = generation
         let notify = onFinished
@@ -285,10 +308,12 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
         }
     }
 
-    /// Only for a clip with no frame written: nothing is lost, and the empty file is removed.
+    /// Only for a clip with no frame written: nothing is lost, and the empty file is removed. A writer that already failed leaves
+    /// `cancelWriting` with nothing to do, so the file it may have left is removed here.
     private func cancel() {
         phase = .finishing
         writer?.cancelWriting()
+        if let outputURL { try? FileManager.default.removeItem(at: outputURL) }
         onFinished()
     }
 
