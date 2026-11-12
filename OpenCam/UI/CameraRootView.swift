@@ -9,6 +9,15 @@ struct CameraRootView: View {
 
     private var isLandscape: Bool { verticalSizeClass == .compact }
 
+    /// Only the Simulator, which has the folded display alone, honours `-sliderPlacement picture`.
+    private var isSliderForcedIntoPicture: Bool {
+        #if targetEnvironment(simulator)
+        launch.forcesPictureSlider
+        #else
+        false
+        #endif
+    }
+
     init(model: CameraModel, library: LibraryStore?, launch: LaunchConfig) {
         self.model = model
         self.library = library
@@ -21,7 +30,7 @@ struct CameraRootView: View {
                 .modifier(CaptureFeedbackModifier(model: model))
                 .background(Color.black.ignoresSafeArea())
                 .persistentSystemOverlays(.hidden)
-                .toolbar { StripToolbar(model: model, library: library, isLandscape: isLandscape) }
+                .modifier(StripToolbarModifier(model: model, library: library, isLandscape: isLandscape))
                 // The Camera Control takes the photo or starts and stops recording, through the same rules as the on-screen
                 // button. Always enabled while this screen shows: a disabled interaction hands the button back to the system,
                 // which opens Apple's Camera app. When capture is not allowed the model ignores the press.
@@ -30,6 +39,7 @@ struct CameraRootView: View {
                 // found by bisection on the folded Simulator, where moving only this line brought the taps back.
                 .onCameraCaptureEvent { model.handleCaptureEvent(phase: $0.phase) }
         }
+        .environment(\.isSliderForcedIntoPicture, isSliderForcedIntoPicture)
         // An import still running when the Library closed lands after the close read the last capture.
         .onChange(of: library?.importsFinished) { model.libraryImportFinished() }
         .fullScreenCover(isPresented: Binding(get: { model.isLibraryPresented && library != nil }, set: { model.isLibraryPresented = $0 }),

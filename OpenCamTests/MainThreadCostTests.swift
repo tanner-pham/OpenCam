@@ -199,7 +199,8 @@ import Testing
     }
 
     private static func topReadoutBar(_ model: CameraModel) {
-        _ = (model.frameRateText, model.shutterText, model.isoText, model.whiteBalanceText, model.tintText)
+        _ = model.frameRateText
+        _ = [ManualControl.shutter, .iso, .temperature, .tint].map { model.readout(for: $0) }
         _ = (model.timecodeFrameRate, model.isRecording, model.recordingStart)
     }
 
@@ -217,7 +218,7 @@ import Testing
 
     private static func foldedVerticalPhoto(_ model: CameraModel) {
         _ = (model.phase, model.viewfinderLook, model.isCameraStopped)
-        _ = (model.shutterText, model.isoText, model.exposureBiasText, model.whiteBalanceText, model.focusText)
+        _ = [ManualControl.shutter, .iso, .bias, .temperature, .focus].map { model.readout(for: $0) }
         _ = model.summaryParts
         _ = model.canOpenRecordSettings
         noticeLine(model)

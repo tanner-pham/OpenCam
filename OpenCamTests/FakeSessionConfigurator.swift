@@ -13,7 +13,7 @@ actor FakeSessionConfigurator: SessionConfigurator {
     private(set) var releaseCount = 0
     /// True while a camera input is attached: from a configure until the session lets the camera go.
     private(set) var holdsCamera = true
-    /// Session calls in order: "configure", "start", "release".
+    /// Session calls in order: "configure", "start", "release", "manual".
     private(set) var calls: [String] = []
     private(set) var recordingURLs: [URL] = []
     private(set) var stopRecordingCount = 0
@@ -52,6 +52,8 @@ actor FakeSessionConfigurator: SessionConfigurator {
             throw .noMatchingFormat(option: "fake \(configuration.lens.id)")
         }
         applied.append(configuration)
+        // A configure returns the camera to automatic, as the session does.
+        appliedManual = nil
         holdsCamera = true
         calls.append("configure")
     }
@@ -69,6 +71,7 @@ actor FakeSessionConfigurator: SessionConfigurator {
     }
 
     func releaseCameras() {
+        appliedManual = nil
         isRunning = false
         holdsCamera = false
         releaseCount += 1
@@ -88,5 +91,71 @@ actor FakeSessionConfigurator: SessionConfigurator {
     func stopRecording() -> Bool {
         stopRecordingCount += 1
         return isClipInFlight
+    }
+
+    // MARK: Manual controls
+
+    /// A full, plausible set, so a test that never calls `setRanges` still goes through the session's clamping.
+    static let defaultRanges = ManualRanges(shutterSeconds: (1.0 / 8000)...(1.0 / 3), iso: 34...6400, bias: -2...2,
+                                            hasWhiteBalance: true, hasFocus: true)
+
+    /// What `manualRanges()` answers and `applyManual` plans against; nil means no camera to adjust.
+    private var ranges: ManualRanges? = FakeSessionConfigurator.defaultRanges
+    private var readouts = LiveReadouts()
+    private var manualError: ManualControlError?
+    private(set) var manualApplies: [(settings: ManualSettings, reapplyingAll: Bool)] = []
+    /// What the last apply left on the camera, as the session keeps it; nil after a configure or a release.
+    private(set) var appliedManual: ManualSettings?
+    private var isHoldingManual = false
+    private var heldManual: [CheckedContinuation<Void, Never>] = []
+
+    func setReadouts(_ readouts: LiveReadouts) {
+        self.readouts = readouts
+    }
+
+    func setRanges(_ ranges: ManualRanges?) {
+        self.ranges = ranges
+    }
+
+    /// From now on `applyManual` throws `error`; nil stops that.
+    func setManualError(_ error: ManualControlError?) {
+        manualError = error
+    }
+
+    /// From now on an apply is recorded ("manual"), then waits, until `resumeManual`; "manual done" follows when it ends.
+    func holdManual() {
+        isHoldingManual = true
+    }
+
+    func resumeManual() {
+        isHoldingManual = false
+        for waiting in heldManual { waiting.resume() }
+        heldManual = []
+    }
+
+    /// Empty while the fake is not running or holds no camera, as the session's is.
+    func currentReadouts() -> LiveReadouts {
+        guard isRunning, holdsCamera else { return LiveReadouts() }
+        return readouts
+    }
+
+    func manualRanges() -> ManualRanges? {
+        guard isRunning, holdsCamera else { return nil }
+        return ranges
+    }
+
+    /// Plans with `ManualApplyPlan.make` against its ranges and its last applied settings, as the session does, and returns what
+    /// the plan says the camera has. Refuses with `.noCamera` when not running, holding no camera or without ranges.
+    func applyManual(_ settings: ManualSettings, reapplyingAll: Bool) async throws(ManualControlError) -> ManualSettings {
+        manualApplies.append((settings, reapplyingAll))
+        calls.append("manual")
+        defer { calls.append("manual done") }
+        guard isRunning, holdsCamera, let ranges else { throw .noCamera }
+        if isHoldingManual { await withCheckedContinuation { heldManual.append($0) } }
+        if let manualError { throw manualError }
+        let plan = try ManualApplyPlan.make(settings, applied: reapplyingAll ? nil : appliedManual, limits: ranges, lens: "fake",
+                                            isRAWClipRecording: false)
+        appliedManual = plan.applied
+        return plan.applied
     }
 }

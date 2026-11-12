@@ -10,14 +10,14 @@ actor CameraSession: SessionConfigurator {
     nonisolated let recordingResults: AsyncStream<RecordingResult>
 
     private let queue = DispatchSerialQueue(label: "opencam.session")
-    private let session: AVCaptureSession
+    let session: AVCaptureSession
     private let continuation: AsyncStream<SessionEvent>.Continuation
     private let recordingContinuation: AsyncStream<RecordingResult>.Continuation
     /// Its output is attached in video mode only.
-    private let recorder: MovieRecorder
+    let recorder: MovieRecorder
     /// Registered on the first `start()`, because the runtime-error observer needs a reference to this actor.
     private var notificationTokens: [any NSObjectProtocol] = []
-    private var videoInput: AVCaptureDeviceInput?
+    var videoInput: AVCaptureDeviceInput?
     private var audioInput: AVCaptureDeviceInput?
     /// Its output is attached in photo mode only.
     private let photoCapturer = PhotoCapturer()
@@ -37,15 +37,20 @@ actor CameraSession: SessionConfigurator {
     /// so a session stopped on purpose (during a rescan, say) stays stopped.
     private var isMeantToRun = false
     /// Restored when a later configure fails.
-    private var lastWorkingConfiguration: SessionConfiguration? {
+    var lastWorkingConfiguration: SessionConfiguration? {
         didSet { appliedConfiguration.withLock { $0 = lastWorkingConfiguration.map { "lens: \($0.lens.id), mode: \($0.mode.rawValue)" } } }
     }
     /// The lens and mode of `lastWorkingConfiguration`, for the runtime error's message, which is written off the session queue.
     private nonisolated let appliedConfiguration = Mutex<String?>(nil)
     /// The white-balance mode a ProRes RAW recording replaced, restored when that recording finishes.
-    private var whiteBalanceRestore: (device: AVCaptureDevice, mode: AVCaptureDevice.WhiteBalanceMode)?
+    var whiteBalanceRestore: (device: AVCaptureDevice, mode: AVCaptureDevice.WhiteBalanceMode)?
+    /// What the last `applyManual` left on the current camera; nil after every configure, which returns the camera to
+    /// automatic, so the next apply sets every group.
+    var appliedManual: ManualSettings?
+    /// True from the start of a ProRes RAW clip, which records with white balance locked, until `restoreWhiteBalance` runs.
+    var isRAWClipRecording = false
     /// Held here because the session does not keep its controls delegate alive.
-    private let controlsDelegate = CameraControlsDelegate()
+    private let controlsDelegate: CameraControlsDelegate
     static let logger = Logger(subsystem: "local.opencam.app", category: "CameraSession")
 
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
@@ -70,6 +75,7 @@ actor CameraSession: SessionConfigurator {
         self.previewSource = PreviewSource(session: session, frames: frames)
         self.events = events
         self.continuation = continuation
+        self.controlsDelegate = CameraControlsDelegate(events: continuation)
         self.recordingResults = recordingResults
         self.recordingContinuation = recordingContinuation
         self.recorder = MovieRecorder(results: recordingContinuation)
@@ -101,6 +107,8 @@ actor CameraSession: SessionConfigurator {
     /// The Camera Control's system controls are installed last, for the device and mode now applied.
     func configure(_ configuration: SessionConfiguration) throws(CameraSessionError) {
         guard !recorder.output.isRecording else { throw .recordingInProgress }
+        // A configure that fails with no restore leaves the camera in a state nothing tracks, so nothing is assumed to hold.
+        appliedManual = nil
         let timing = (start: ContinuousClock.now, previous: lastWorkingConfiguration)
         launchMarks?.mark("session configure")
         defer {
@@ -139,6 +147,8 @@ actor CameraSession: SessionConfigurator {
             try applyPresetPhoto(configuration, to: device)
         }
         pressureObservation = Self.observePressure(of: device, continuation: continuation)
+        // Every configure returns the camera to automatic, in step with the model, which does the same when it queues one.
+        resetManual()
     }
 
     /// One configuration change, committed on return also when it throws. Returns whether photo mode is on the photo
@@ -231,6 +241,8 @@ actor CameraSession: SessionConfigurator {
             continuation.yield(.runtimeError(RuntimeErrorText.restartFailedMessage(applied: appliedConfiguration.withLock { $0 })))
             return
         }
+        // The device may have come back with settings of its own, so manual values are not assumed to hold.
+        resetManual()
         continuation.yield(.restarted)
     }
 
@@ -246,6 +258,7 @@ actor CameraSession: SessionConfigurator {
     func releaseCameras() {
         stop()
         lastWorkingConfiguration = nil
+        appliedManual = nil
         installSystemControls([])
         guard let videoInput else { return }
         session.beginConfiguration()
@@ -570,7 +583,9 @@ extension CameraSession {
         guard device.activeFormat.supportedMaxPhotoDimensions.contains(where: { $0.width == maximum.width && $0.height == maximum.height }) else {
             throw .captureFailed(reason: "photo size \(maximum.width) x \(maximum.height) not offered by the active format")
         }
-        return try await photoCapturer.capture(format: format, deviceZoom: Double(device.videoZoomFactor), dngURL: dngURL, heicURL: heicURL)
+        // A manual exposure is kept in the photo only with the speed prioritization (AVCaptureDevice.h, `exposureMode`).
+        return try await photoCapturer.capture(format: format, deviceZoom: Double(device.videoZoomFactor),
+                                               isExposureManual: device.exposureMode == .custom, dngURL: dngURL, heicURL: heicURL)
     }
 }
 
@@ -586,6 +601,8 @@ extension CameraSession {
         guard let device = videoInput?.device, session.outputs.contains(recorder.output) else { throw .outputNotAttached }
         if option.codec.family == .raw {
             try lockWhiteBalance(on: device)
+            // Until `restoreWhiteBalance`, an automatic white balance asked for by hand waits for the clip to end.
+            isRAWClipRecording = true
         }
         allowHapticsWhileRecording()
         do throws(RecordingError) {
@@ -626,7 +643,9 @@ extension CameraSession {
     }
 
     /// Returns white balance to the mode a ProRes RAW clip replaced; a failure is logged and recording carries on.
+    /// The clip is over for manual white balance either way, so the flag is cleared even when there is nothing to restore.
     private func restoreWhiteBalance() {
+        isRAWClipRecording = false
         guard let restore = whiteBalanceRestore else { return }
         whiteBalanceRestore = nil
         let (device, mode) = restore

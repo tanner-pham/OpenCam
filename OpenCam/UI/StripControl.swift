@@ -39,6 +39,14 @@ struct StripControl: View {
             .disabled(!model.canChangeLensOrMode)
         case .library:
             LibraryThumbnail(model: model, library: library)
+        case .slider:
+            // Clear of the pill's rounded end, which the thumb and the track would otherwise touch at either extreme.
+            ControlSlider(model: model)
+                .padding(.vertical, Theme.Space.xs)
+        case .auto:
+            ControlAutoButton(model: model)
+        case .close:
+            ControlCloseButton(model: model)
         }
     }
 }

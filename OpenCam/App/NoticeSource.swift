@@ -15,4 +15,6 @@ nonisolated enum NoticeSource: Sendable, Equatable {
     /// A look turned off, or not shown in the viewfinder. Never replaces a capture or configuration notice. Cleared when a
     /// look is chosen (`selectLook(chipID:)`) or the viewfinder can show it again.
     case look
+    /// A manual setting the session could not apply. Cleared by the next apply that works; a newer notice replaces it.
+    case control
 }

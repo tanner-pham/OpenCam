@@ -21,6 +21,8 @@ nonisolated enum Theme {
         static let chipLabelHeight: CGFloat = 35
         static let noticeLine: CGFloat = 18
         static let lookChipMax: CGFloat = 160
+        static let sliderLength: CGFloat = 200
+        static let sliderThumb: CGFloat = 28
     }
 
     enum Text {

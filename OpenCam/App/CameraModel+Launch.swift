@@ -72,6 +72,8 @@ extension CameraModel {
         isResettingMediaServices = false
         watchFrames(for: configuration)
         phase = .ready
+        // The buttons are usable now, not at the first poll.
+        await refreshReadouts(from: configurator)
         // Timed only once the start has returned, so a slow start never drops it, and for whatever the session last applied:
         // a selection changed during the first configure was applied by the chain before the phase was ready, so it armed
         // nothing itself. One the chain has still to apply arms its own once it has.

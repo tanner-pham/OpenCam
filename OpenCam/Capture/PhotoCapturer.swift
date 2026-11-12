@@ -6,10 +6,10 @@ import AVFoundation
 nonisolated final class PhotoCapturer {
     let output = AVCapturePhotoOutput()
 
-    /// `deviceZoom` is the source camera's `videoZoomFactor`. Throws when the request cannot be made;
-    /// once made, the result carries the files written and any error.
-    func capture(format: PhotoFormat, deviceZoom: Double, dngURL: URL, heicURL: URL) async throws(PhotoCaptureError) -> PhotoCaptureResult {
-        let settings = try makeSettings(format: format, deviceZoom: deviceZoom)
+    /// `deviceZoom` is the source camera's `videoZoomFactor`; `isExposureManual` is whether the camera's exposure mode is custom.
+    /// Throws when the request cannot be made; once made, the result carries the files written and any error.
+    func capture(format: PhotoFormat, deviceZoom: Double, isExposureManual: Bool, dngURL: URL, heicURL: URL) async throws(PhotoCaptureError) -> PhotoCaptureResult {
+        let settings = try makeSettings(format: format, deviceZoom: deviceZoom, isExposureManual: isExposureManual)
         let delegate = PhotoCaptureDelegate(dngURL: dngURL, heicURL: heicURL)
         let result = await withCheckedContinuation { continuation in
             delegate.deliver(to: continuation)
@@ -20,14 +20,15 @@ nonisolated final class PhotoCapturer {
         return result
     }
 
-    private func makeSettings(format: PhotoFormat, deviceZoom: Double) throws(PhotoCaptureError) -> AVCapturePhotoSettings {
+    private func makeSettings(format: PhotoFormat, deviceZoom: Double, isExposureManual: Bool) throws(PhotoCaptureError) -> AVCapturePhotoSettings {
         guard let connection = output.connection(with: .video), connection.isActive else {
             throw .captureFailed(reason: "photo output has no active camera connection")
         }
         // Bayer RAW needs both the device zoom and the connection's scale-and-crop at 1.0; both are at least 1.0.
         let zoom = deviceZoom * Double(connection.videoScaleAndCropFactor)
         let plan = try PhotoSettingsPlan.make(format: format, availableRawFormats: output.availableRawPhotoPixelFormatTypes,
-                                              isBayer: AVCapturePhotoOutput.isBayerRAWPixelFormat, zoomFactor: zoom)
+                                              isBayer: AVCapturePhotoOutput.isBayerRAWPixelFormat, zoomFactor: zoom,
+                                              isExposureManual: isExposureManual)
         if let raw = plan.rawPixelFormat {
             guard output.availableRawPhotoFileTypes.contains(.dng), output.supportedRawPhotoPixelFormatTypes(for: .dng).contains(raw) else {
                 throw .captureFailed(reason: "DNG not offered for RAW format \(raw)")

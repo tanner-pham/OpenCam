@@ -1,10 +1,17 @@
 import AVFoundation
 import OSLog
 
-/// "A controls delegate must be specified for controls to become active" (AVCaptureSession.h). The app draws no zoom
-/// or exposure sliders of its own to hide during the full-screen appearance, so the callbacks only log.
+/// "A controls delegate must be specified for controls to become active" (AVCaptureSession.h). When the controls enter
+/// their full-screen appearance, "applications are encouraged to hide portions of their user interface including zoom or
+/// exposure sliders" (AVCaptureSession.h), so that callback tells the model to close the open manual slider; the others
+/// only log.
 nonisolated final class CameraControlsDelegate: NSObject, AVCaptureSessionControlsDelegate {
     private static let logger = Logger(subsystem: "local.opencam.app", category: "CameraControls")
+    private let events: AsyncStream<SessionEvent>.Continuation
+
+    init(events: AsyncStream<SessionEvent>.Continuation) {
+        self.events = events
+    }
 
     func sessionControlsDidBecomeActive(_ session: AVCaptureSession) {
         Self.logger.debug("[CameraControlsDelegate:sessionControlsDidBecomeActive] Controls active")
@@ -12,6 +19,7 @@ nonisolated final class CameraControlsDelegate: NSObject, AVCaptureSessionContro
 
     func sessionControlsWillEnterFullscreenAppearance(_ session: AVCaptureSession) {
         Self.logger.debug("[CameraControlsDelegate:sessionControlsWillEnterFullscreenAppearance] Full-screen appearance begins")
+        events.yield(.systemControlsFullscreen)
     }
 
     func sessionControlsWillExitFullscreenAppearance(_ session: AVCaptureSession) {
