@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// One line under the picture: the format, lens and exposure. Tapping it opens the full "Photo info" list in a popover.
+/// One line under the picture: the format, lens and exposure. Tapping it opens the full "Photo info" list in a sheet.
 struct PhotoInfoLine: View {
     let designation: FormatDesignation?
     let facts: PhotoFacts
@@ -28,7 +28,7 @@ struct PhotoInfoLine: View {
         .sheet(isPresented: $isShowingInfo) { info }
     }
 
-    /// A full-height sheet: the medium detent cut off the last row on the folded display, and a popover has even less room: a popover opens below the line and has too little room for seven rows and a title.
+    /// Large, because the medium detent and a popover cut off rows on the folded display.
     private var info: some View {
         NavigationStack {
             List(facts.rows(designation), id: \.title) { row in
@@ -36,6 +36,11 @@ struct PhotoInfoLine: View {
             }
             .navigationTitle("Photo info")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { isShowingInfo = false }
+                }
+            }
         }
         .presentationDetents([.large])
     }
