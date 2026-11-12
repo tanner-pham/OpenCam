@@ -31,13 +31,15 @@ struct ColourWheel: View {
         .frame(width: diameter)
     }
 
+    /// The readout follows its title rather than the column's far edge, so beside the other wheel's title it still reads as
+    /// this wheel's.
     private var titleRow: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
             Text(region.title)
-                .frame(maxWidth: .infinity, alignment: .leading)
             Text("\(region.hueKey.valueText(hue)) · \(region.saturationKey.valueText(saturation))")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
         }
         .font(.subheadline)
         .lineLimit(1)

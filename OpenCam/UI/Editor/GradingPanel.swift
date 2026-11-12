@@ -11,7 +11,7 @@ struct GradingPanel: View {
             ScrollView {
                 VStack(spacing: EditorPanel.rowGap) {
                     ColourWheel(region: .midtones, model: model, diameter: diameter)
-                    HStack(alignment: .top, spacing: Theme.Space.m) {
+                    HStack(alignment: .top, spacing: WheelGeometry.columnGap) {
                         ColourWheel(region: .shadows, model: model, diameter: diameter)
                         ColourWheel(region: .highlights, model: model, diameter: diameter)
                     }
@@ -19,7 +19,7 @@ struct GradingPanel: View {
                         AdjustmentSlider(key: key, value: $model.adjustments[key]) { model.reset(key) }
                     }
                 }
-                .padding(.horizontal, Theme.Space.l)
+                .padding(.horizontal, WheelGeometry.sideInset)
                 .padding(.top, Theme.Space.m)
                 .padding(.bottom, Theme.Space.l)
             }

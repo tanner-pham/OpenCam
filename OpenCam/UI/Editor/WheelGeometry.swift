@@ -4,12 +4,14 @@ import Foundation
 /// Maps a grading wheel's square canvas, `diameter` on a side with the disc filling it, to a hue and saturation.
 nonisolated enum WheelGeometry {
     static let maxDiameter: CGFloat = 160
-    /// Across the panel: its padding on each side and the gap between the two lower wheels.
-    private static let horizontalChrome: CGFloat = 2 * Theme.Space.l + Theme.Space.m
+    /// The grading panel's padding on each side.
+    static let sideInset = Theme.Space.l
+    /// Between the two lower wheels.
+    static let columnGap = Theme.Space.m
 
     /// Two wheels side by side fill the panel up to `maxDiameter`: 160 pt in the folded portrait panel, 138 pt in the 320 pt one.
     static func diameter(forWidth width: CGFloat) -> CGFloat {
-        max(0, min(maxDiameter, ((width - horizontalChrome) / 2).rounded(.down)))
+        max(0, min(maxDiameter, ((width - 2 * sideInset - columnGap) / 2).rounded(.down)))
     }
 
     /// Hue: the angle from the centre, 0 at the right, increasing clockwise on screen; saturation: distance / radius, capped at
