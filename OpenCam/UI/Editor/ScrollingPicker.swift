@@ -12,10 +12,6 @@ struct ScrollingPicker<Value: Hashable>: View {
     var leadingInset = Theme.Space.l
     let label: (Value) -> String
 
-    /// The bordered styles add about 6.5 pt above and below the label (measured, iOS 27.2), so each button is
-    /// `Theme.Size.minTarget` tall.
-    private static var labelHeight: CGFloat { Theme.Size.minTarget - 13 }
-
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
@@ -61,7 +57,7 @@ struct ScrollingPicker<Value: Hashable>: View {
                 .font(.subheadline)
                 .lineLimit(1)
                 .fixedSize()
-                .frame(minHeight: Self.labelHeight)
+                .frame(minHeight: Theme.Size.borderedLabel)
                 .foregroundStyle(isSelected ? Color.black : Color.primary)
         }
         .buttonStyle(.borderedProminent)

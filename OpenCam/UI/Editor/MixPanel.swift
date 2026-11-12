@@ -50,7 +50,7 @@ struct MixPanel: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .foregroundStyle(isSelected && band.prefersDarkLabel ? Color.black : Color.white)
-                .frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget)
+                .frame(maxWidth: .infinity, minHeight: Theme.Size.borderedLabel)
         }
         .buttonStyle(.borderedProminent)
         .tint(isSelected ? swatch : swatch.opacity(Self.unselectedFill))

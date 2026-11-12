@@ -53,15 +53,12 @@ struct MasksPanel: View {
             }
         } label: {
             Label("Add", systemImage: "plus")
-                .frame(minHeight: Theme.Size.minTarget - Self.borderedInset)
+                .frame(minHeight: Theme.Size.borderedLabel)
         }
         .buttonStyle(.bordered)
         .fixedSize()
         .accessibilityLabel("Add mask")
     }
-
-    /// The bordered styles add about 6.5 pt above and below the label (measured, as in `ScrollingPicker`).
-    private static let borderedInset: CGFloat = 13
 
     /// The masks by position, bound through the selected id (the picker's selection is not optional).
     private var maskRow: some View {
@@ -106,7 +103,7 @@ struct MasksPanel: View {
             .font(.subheadline)
             .lineLimit(1)
             .fixedSize()
-            .frame(maxWidth: .infinity, minHeight: Theme.Size.minTarget - Self.borderedInset)
+            .frame(maxWidth: .infinity, minHeight: Theme.Size.borderedLabel)
     }
 
     /// What the search for the subject is doing, while it has nothing to show.
