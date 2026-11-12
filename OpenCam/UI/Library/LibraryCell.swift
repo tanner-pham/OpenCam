@@ -10,6 +10,11 @@ struct LibraryCell: View {
     @State private var state: ThumbnailState = .loading
     @State private var duration: Double?
 
+    /// The cell's badges, message and selection mark follow the text size only this far. They sit on a thumbnail 110 to 125 pt
+    /// wide: at accessibility sizes "RAW + HEIF" took two lines and half the picture, and past this size it no longer fits one
+    /// line in the landscape grid. VoiceOver reads the same facts from the cell's label.
+    private static let largestText = DynamicTypeSize.xLarge
+
     var body: some View {
         Color.clear
             .aspectRatio(1, contentMode: .fit)
@@ -18,6 +23,7 @@ struct LibraryCell: View {
             .overlay(alignment: .bottomLeading) { formatBadge }
             .overlay(alignment: .topTrailing) { selectionMark }
             .clipped()
+            .dynamicTypeSize(...Self.largestText)
             .contentShape(.rect)
             .task(id: library.thumbnailKey(for: item)) { state = await library.thumbnail(for: item) }
             .task(id: item.id) {
@@ -39,12 +45,23 @@ struct LibraryCell: View {
                 .resizable()
                 .scaledToFill()
         case .failed:
-            Text(item.kind == .clip ? LibraryCopy.clipCannotOpen : LibraryCopy.cannotOpen)
-                .font(.caption)
-                .multilineTextAlignment(.center)
-                .padding(Theme.Space.s)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.secondary)
+            VStack(spacing: 0) {
+                Text(item.kind == .clip ? LibraryCopy.clipCannotOpen : LibraryCopy.cannotOpen)
+                    .font(.caption)
+                    .multilineTextAlignment(.center)
+                    .padding(Theme.Space.s)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // The badges are drawn over the cell's bottom edge, so the message is centred in the space above them.
+                badges.hidden()
+            }
+            .background(.secondary)
+        }
+    }
+
+    private var badges: some View {
+        ZStack {
+            clipBadge
+            formatBadge
         }
     }
 
