@@ -39,7 +39,10 @@ struct CurveCanvas: View {
         .accessibilityLabel("\(channel.title) curve")
         // A curve always keeps its two end points, so the count is never 1.
         .accessibilityValue("\(curve.points.count) points")
-        .accessibilityAction(named: "Reset") { curve = .identity }
+        // Offered only while there is something to reset, as the visible Reset is.
+        .accessibilityActions {
+            if !curve.isIdentity { Button("Reset") { curve = .identity } }
+        }
     }
 
     // MARK: - Touch

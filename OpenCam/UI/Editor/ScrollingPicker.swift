@@ -22,6 +22,10 @@ struct ScrollingPicker<Value: Hashable>: View {
         }
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        // A scroll view draws past its frame along its axis: into the safe area (the outer display's system strip, in portrait)
+        // and while it rubber-bands. The strip is cut at its own sides, so a segment at the edge stops there; above and below
+        // it is left free for the selection's lift while it is touched.
+        .mask { Rectangle().padding(.vertical, -Theme.Space.l) }
         // Only the opening offset: a later choice never moves the strip under the finger.
         .defaultScrollAnchor(isSelectionInLastHalf ? .trailing : .leading, for: .initialOffset)
         .fixedSize(horizontal: false, vertical: true)

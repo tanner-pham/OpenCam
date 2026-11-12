@@ -24,6 +24,7 @@ import Testing
         #expect(lifted.points.count == 3); #expect(lifted.points[0] == CurvePoint(x: 0, y: 0))
         #expect(end.curve(translation: CurvePoint(x: 0.7, y: 0.1), margin: 0.1).points[0] == CurvePoint(x: 0.49, y: 0.1))
         #expect(s.removing(0) == s); #expect(s.removing(2) == s); #expect(s.removing(1) == .identity)
+        #expect(try #require(CurveDrag.begin(on: s, at: CurvePoint(x: 0.52, y: 0.61), radius: 0.05)).curve(translation: CurvePoint(x: 0, y: 0), margin: 0.1) == s)   // an off-centre touch never jumps the point
         // Exactly a neighbour's x + 0.01 is kept: the gap is compared in whole thousandths, not as a Double difference.
         let four = ToneCurve(points: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.2, y: 0.3), CurvePoint(x: 0.6, y: 0.7), CurvePoint(x: 1, y: 1)])
         let inner = try #require(CurveDrag.begin(on: four, at: CurvePoint(x: 0.6, y: 0.7), radius: 0.05)); let close = inner.curve(translation: CurvePoint(x: -0.39, y: 0), margin: 0.1)
@@ -47,6 +48,6 @@ import Testing
         _ = try LookSeeder.seedColourStudy(into: looks); #expect(try LookSeeder.seedColourStudy(into: looks) == nil)
         #expect(LookSeeder.colourStudy.curves.master.points.count == 4); #expect(LookSeeder.colourStudy.hasColourChanges); let captures = try TestFiles.directory()
         _ = try TestFiles.writeJPEG(width: 64, height: 48, rgb: SIMD3(0.5, 0.5, 0.5), to: captures.appending(path: "OC_0001.JPG"))
-        guard let item = LibraryScanner.items(in: captures).first else { throw TestFileError.bitmapUnavailable }
+        let item = try #require(LibraryScanner.items(in: captures).first)
         let launched = EditorModel(item: item, edits: EditStore(directory: captures), looks: looks, launchLook: "Colour study"); await launched.load()
         #expect(launched.adjustments == LookSeeder.colourStudy); #expect(launched.lookName == "Colour study"); #expect(launched.hasUnsavedChanges) } }
