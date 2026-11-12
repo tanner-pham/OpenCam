@@ -186,6 +186,29 @@ import Testing
         #expect(model.notice == "OC_0007 dropped 2 frames.")
     }
 
+    @Test func theClaimBeginsWhenTheSceneStopsBeingActiveAndOnlyOncePerClip() async throws {
+        let fake = FakeSessionConfigurator(failingLensIDs: [])
+        let model = try deviceModel(fake)
+        var begun: [FakeBackgroundWork] = []
+        model.beginBackgroundWork = { name in
+            let work = FakeBackgroundWork(name: name)
+            begun.append(work)
+            return work
+        }
+        proRes(model)
+        await model.waitForQueuedConfigures()
+        await (try #require(model.startRecording())).value
+        model.appStoppedBeingActive()   // .inactive
+        #expect(begun.count == 1)
+        model.appStoppedBeingActive()   // .background follows
+        #expect(begun.count == 1)
+        let url = try #require(model.recordingClip?.url)
+        let option = try #require(model.recordingClip?.option)
+        model.recordingDidFinish(RecordingResult(url: url, option: option, outcome: .completed, sidecar: nil))
+        #expect(begun.first?.endCount == 1)
+        await removeClips(of: fake)
+    }
+
     @Test func backgroundingDuringAWriterClipHoldsBackgroundWorkUntilTheResult() async throws {
         let fake = FakeSessionConfigurator(failingLensIDs: [])
         let model = try deviceModel(fake)
@@ -197,11 +220,11 @@ import Testing
         }
         proRes(model)
         await model.waitForQueuedConfigures()
-        model.appEnteredBackground()   // idle
+        model.appStoppedBeingActive()   // idle
         #expect(begun.isEmpty)
         await (try #require(model.startRecording())).value
-        model.appEnteredBackground()
-        model.appEnteredBackground()   // once per clip
+        model.appStoppedBeingActive()
+        model.appStoppedBeingActive()   // once per clip
         #expect(begun.count == 1)
         #expect(begun.first?.isEnded == false)
         let url = try #require(model.recordingClip?.url)
@@ -212,7 +235,7 @@ import Testing
         hevc(model)
         await model.waitForQueuedConfigures()
         await (try #require(model.startRecording())).value
-        model.appEnteredBackground()
+        model.appStoppedBeingActive()
         #expect(begun.count == 1)
         await removeClips(of: fake)
     }

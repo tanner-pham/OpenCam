@@ -56,6 +56,15 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
     private var outputURL: URL?
     private var videoInput: AVAssetWriterInput?
     private var audioInput: AVAssetWriterInput?
+    /// The adaptor of a clip whose frames are rendered. Held as `AnyObject` so the deprecated type appears only in the witnesses.
+    @available(iOS, deprecated: 27.0, message: "Uses the writer calls iOS 27 deprecates on purpose; see the type's comment")
+    private var adaptor: AVAssetWriterInputPixelBufferAdaptor? {
+        get { adaptorStorage as? AVAssetWriterInputPixelBufferAdaptor }
+        set { adaptorStorage = newValue }
+    }
+    private var adaptorStorage: AnyObject?
+    /// The render stage of a clip that bakes its frames; nil otherwise. Read only inside the writer queue, used on the video queue.
+    private var render: RecordingRender?
     private var frameDuration = CMTime(value: 1, timescale: 30)
     private var state: WriterClipState?
     private var errorText: String?
@@ -83,9 +92,33 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
         let arrival = ContinuousClock.now - origin
         if output is AVCaptureAudioDataOutput {
             writerQueue.sync { receiveAudio(sampleBuffer) }
-        } else {
-            writerQueue.sync { receiveVideo(sampleBuffer, arrival: arrival) }
+            return
         }
+        // A clip that bakes its frames takes three steps: admit on the writer queue, render here on the video queue (the writer
+        // queue stays free for sound), then append on the writer queue. The callback does not return before the last, so at
+        // most the frame in hand is held; a late frame is refused in the first step, before it costs a render.
+        guard let job = writerQueue.sync(execute: { routeVideo(sampleBuffer, arrival: arrival) }) else { return }
+        let rendered = CMSampleBufferGetImageBuffer(sampleBuffer).flatMap { job.render.render($0) }
+        writerQueue.sync { receiveRendered(rendered, pts: job.pts, duration: job.duration) }
+    }
+
+    /// What the video queue renders: the render stage of this clip and the frame's times.
+    private struct RenderJob {
+        let render: RecordingRender
+        let pts: CMTime
+        let duration: CMTime
+    }
+
+    /// Inside the writer queue. A clip that does not bake takes the frame here, whole; one that does admits it and hands back the
+    /// render stage (read here, so the property is only touched inside the queue). Nil: nothing more to do for this frame.
+    private func routeVideo(_ sampleBuffer: CMSampleBuffer, arrival: Duration) -> RenderJob? {
+        guard let render else {
+            receiveVideo(sampleBuffer, arrival: arrival)
+            return nil
+        }
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let duration = normalisedDuration(CMSampleBufferGetDuration(sampleBuffer))
+        return admitVideo(pts: pts, duration: duration, arrival: arrival) ? RenderJob(render: render, pts: pts, duration: duration) : nil
     }
 
     func captureOutput(_ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
@@ -113,6 +146,15 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
         self.recommendedVideo = nil
         self.recommendedAudio = nil
         func refusal(_ reason: String) -> RecordingError { .writerNotOpened(codec: plan.codecType, reason: reason) }
+        // A clip that cannot be rendered fails here, before any writer or file exists.
+        var stage: RecordingRender?
+        if plan.bakesLog {
+            let candidate = RecordingRender(cube: LogProfile.bakeCube())
+            guard candidate.prepare(width: plan.width, height: plan.height) else {
+                throw refusal("the Log render could not be set up for \(plan.width) x \(plan.height) frames")
+            }
+            stage = candidate
+        }
         let writer: AVAssetWriter
         do {
             writer = try AVAssetWriter(outputURL: plan.url, fileType: .mov)
@@ -130,6 +172,12 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
         video.transform = CGAffineTransform(rotationAngle: CGFloat(plan.rotationDegrees * .pi / 180))
         guard writer.canAdd(video) else { throw refusal("the writer cannot take the video input") }
         writer.add(video)
+        var newAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+        if plan.bakesLog {
+            let attributes: [String: Any] = [kCVPixelBufferPixelFormatTypeKey as String: RecordingRender.pixelFormat,
+                                             kCVPixelBufferWidthKey as String: plan.width, kCVPixelBufferHeightKey as String: plan.height]
+            newAdaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: video, sourcePixelBufferAttributes: attributes)
+        }
         var audio: AVAssetWriterInput?
         if recordsSound {
             let settings = recommendedAudio ?? Self.fallbackAudioSettings
@@ -156,6 +204,8 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
         outputURL = plan.url
         videoInput = video
         audioInput = audio
+        adaptor = newAdaptor
+        render = stage
         frameDuration = CMTime(value: 1, timescale: CMTimeScale(max(1, plan.frameRate)))
         state = WriterClipState(policy: plan.policy, frameDuration: frameDuration, minFreeBytes: plan.minFreeBytes,
                                rendersFrames: plan.bakesLog)
@@ -184,10 +234,7 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
     func receiveVideo(_ sampleBuffer: CMSampleBuffer, arrival: Duration) {
         guard phase == .recording else { return }
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        var duration = CMSampleBufferGetDuration(sampleBuffer)
-        if !duration.isNumeric || CMTimeCompare(duration, .zero) <= 0 {
-            duration = frameDuration
-        }
+        let duration = normalisedDuration(CMSampleBufferGetDuration(sampleBuffer))
         // A writer that stopped by itself never calls `append` again (its input is not ready), so without this the clip would
         // run on, every frame a "not ready" drop, until the user stopped it.
         if endIfWriterStopped() { return }
@@ -205,6 +252,50 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
             append(sampleBuffer, pts: pts, duration: duration)
         case .write:
             append(sampleBuffer, pts: pts, duration: duration)
+        }
+        reportDrops(arrival: arrival)
+    }
+
+    /// Step one for a clip that bakes its frames: counts the frame, starts the session on the first, and says whether to render it.
+    /// False for a frame the writer is not ready for, or that is more than one frame behind (counted as a drop, and the "Stop
+    /// recording" policy may end the clip here), and for any frame once the clip has ended.
+    func admitVideo(pts: CMTime, duration: CMTime, arrival: Duration) -> Bool {
+        guard phase == .recording else { return false }
+        if endIfWriterStopped() { return false }
+        let io: any WriterAppending = self
+        let isReady = videoInput != nil && io.isVideoReady()
+        guard let step = state?.video(pts: pts, duration: duration, arrival: arrival, isWriterReady: isReady) else { return false }
+        switch step {
+        case .ignore:
+            return false
+        case .skip:
+            if let finish = state?.takePendingFinish() { carryOut(finish) }
+            reportDrops(arrival: arrival)
+            return false
+        case .startAndWrite(let time):
+            writer?.startSession(atSourceTime: time)
+            return true
+        case .write:
+            return true
+        }
+    }
+
+    /// Step three: appends the rendered frame through the adaptor. A frame that did not render (nil) is a counted `renderFailed`
+    /// drop, and so is a writer that stopped being ready while it rendered; either can end the clip under "Stop recording".
+    func receiveRendered(_ buffer: CVPixelBuffer?, pts: CMTime, duration: CMTime) {
+        guard phase == .recording else { return }
+        let arrival = ContinuousClock.now - origin
+        if endIfWriterStopped() { return }
+        let io: any WriterAppending = self
+        if let buffer, io.isVideoReady() {
+            let isWritten = io.appendVideo(buffer, at: pts)
+            if !isWritten {
+                note("[WriterSink:receiveRendered] A rendered frame was not appended — \(writerDetail())")
+            }
+            if let finish = state?.videoWritten(isWritten, pts: pts, duration: duration) { carryOut(finish) }
+        } else {
+            let finish = buffer == nil ? state?.renderFailed() : state?.outputDropped(.writerNotReady)
+            if let finish { carryOut(finish) }
         }
         reportDrops(arrival: arrival)
     }
@@ -264,6 +355,8 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
         writer = nil
         videoInput = nil
         audioInput = nil
+        adaptorStorage = nil
+        render = nil
         generation.value.withLock { $0 += 1 }
         return report
     }
@@ -290,6 +383,11 @@ nonisolated final class WriterSink: NSObject, AVCaptureVideoDataOutputSampleBuff
 
     /// The writer, for tests that make it fail from outside. Read inside the writer queue.
     var currentWriter: AVAssetWriter? { writer }
+
+    /// A buffer's own duration, or the frame time when it has none.
+    private func normalisedDuration(_ duration: CMTime) -> CMTime {
+        duration.isNumeric && CMTimeCompare(duration, .zero) > 0 ? duration : frameDuration
+    }
 
     private func append(_ sampleBuffer: CMSampleBuffer, pts: CMTime, duration: CMTime) {
         let io: any WriterAppending = self
@@ -373,6 +471,11 @@ extension WriterSink: WriterAppending {
     @available(iOS, deprecated: 27.0, message: "Uses the writer calls iOS 27 deprecates on purpose; see the type's comment")
     func appendVideo(_ sampleBuffer: CMSampleBuffer) -> Bool {
         videoInput?.append(sampleBuffer) ?? false
+    }
+
+    @available(iOS, deprecated: 27.0, message: "Uses the writer calls iOS 27 deprecates on purpose; see the type's comment")
+    func appendVideo(_ pixelBuffer: CVPixelBuffer, at time: CMTime) -> Bool {
+        adaptor?.append(pixelBuffer, withPresentationTime: time) ?? false
     }
 
     @available(iOS, deprecated: 27.0, message: "Uses the writer calls iOS 27 deprecates on purpose; see the type's comment")

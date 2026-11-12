@@ -256,4 +256,56 @@ import Testing
         #expect(facts.hasAudio)
         #expect(facts.frameCount == 30)
     }
+
+    // MARK: The baked Log profile
+
+    /// Opens the rig's sink for a Log clip (the Simulator cannot write ProRes, so the writer is H.264; admission and the counts do
+    /// not depend on the codec).
+    private func openLogClip(_ rig: SinkRig, policy: DropPolicy = .keepRecording) throws {
+        let option = VideoOption(lensID: "w", codec: VideoCodec(family: .h264, quality: "Standard", codecType: "avc1", bitrateTier: nil),
+                                 resolution: Resolution.named(width: 64, height: 64), frameRate: SyntheticFrames.framesPerSecond, colour: .log)
+        let plan = WriterClipPlan.make(option: option, url: rig.url, bufferWidth: 64, bufferHeight: 64, rotationDegrees: 0, policy: policy, minFreeBytes: 0)
+        #expect(plan.bakesLog)
+        let opening: any WriterOpening = rig.sink
+        try rig.queue.sync {
+            rig.sink.recommend(video: nil, audio: nil)
+            try opening.open(plan, recordsSound: false)
+        }
+    }
+
+    private func admit(_ rig: SinkRig, frame index: Int, arrivalSeconds: Double) -> Bool {
+        let duration = CMTime(value: 1, timescale: CMTimeScale(SyntheticFrames.framesPerSecond))
+        return rig.queue.sync { rig.sink.admitVideo(pts: SyntheticFrames.time(ofFrame: index), duration: duration, arrival: .seconds(arrivalSeconds)) }
+    }
+
+    @Test func aLateFrameIsRefusedBeforeItIsRendered() async throws {
+        let rig = try SinkRig()
+        try openLogClip(rig)
+        // The first frame and two on time are admitted.
+        #expect(admit(rig, frame: 0, arrivalSeconds: 0))
+        #expect(admit(rig, frame: 1, arrivalSeconds: 1.0 / 30))
+        #expect(admit(rig, frame: 2, arrivalSeconds: 2.0 / 30))
+        // Frame 3 arrives three frames late: refused, not rendered.
+        #expect(!admit(rig, frame: 3, arrivalSeconds: 6.0 / 30))
+        #expect(rig.end(.user))
+        #expect(await rig.waitForFinishes())
+        let report = try #require(rig.takeReport())
+        #expect(report.facts.byReason[DropReason.behind.rawValue] == 1)
+        #expect(report.facts.total == 1)
+        #expect(report.facts.framesDelivered == 4)
+    }
+
+    @Test func aFailedRenderIsADrop() async throws {
+        let rig = try SinkRig()
+        try openLogClip(rig)
+        #expect(admit(rig, frame: 0, arrivalSeconds: 0))
+        let duration = CMTime(value: 1, timescale: CMTimeScale(SyntheticFrames.framesPerSecond))
+        rig.queue.sync { rig.sink.receiveRendered(nil, pts: SyntheticFrames.time(ofFrame: 0), duration: duration) }
+        #expect(rig.drops.totals == [1])
+        #expect(rig.end(.user))
+        #expect(await rig.waitForFinishes())
+        let report = try #require(rig.takeReport())
+        #expect(report.facts.byReason[DropReason.renderFailed.rawValue] == 1)
+        #expect(report.facts.framesWritten == 0)
+    }
 }

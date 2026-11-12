@@ -76,9 +76,8 @@ import Testing
 
     @Test func shippedSupportIsOnlyWhatIsWired() {
         #expect(WriterSupport.shipped(isSimulator: true) == .all)
-        // Task 6 wires the recording of ProRes in HLG and in Rec. 709. The baked Log profile joins in Task 9.
-        #expect(WriterSupport.shipped(isSimulator: false) == [.proRes, .proResSDR])
-        #expect(!WriterSupport.shipped(isSimulator: false).contains(.log))
+        // Task 6 wired the recording of ProRes in HLG and in Rec. 709; Task 9 bakes the Log profile, so the phone lists everything.
+        #expect(WriterSupport.shipped(isSimulator: false) == .all)
     }
 
     @Test func writerOptionsAreNeverEncoded() throws {

@@ -9,6 +9,9 @@ nonisolated enum SessionEvent: Sendable, Equatable {
     case restarted
     /// The microphone could not attach; video continues without sound. Carries a log message only.
     case microphoneUnavailable(String)
+    /// The writer refused the sound settings of this clip, which records without sound. The microphone is fine: access is not
+    /// changed. Carries a log message only; the model shows its own notice.
+    case soundNotRecorded(String)
     case pressure(PressureLevel, isThermal: Bool)
     /// The data output that draws the look could not be added; the viewfinder keeps the preview layer.
     case framesUnavailable

@@ -43,6 +43,9 @@ actor CameraSession: SessionConfigurator {
     /// Set by `start()` and cleared by `stop()`; a media-services reset restarts the session only while it is set,
     /// so a session stopped on purpose (during a rescan, say) stays stopped.
     private var isMeantToRun = false
+    /// Set when the writer path's pixel-format step of the apply in progress failed: the camera's format and outputs are then
+    /// applied but the output's pixel format is not, so the configuration is half applied.
+    private var didPixelFormatStepFail = false
     /// Restored when a later configure fails.
     var lastWorkingConfiguration: SessionConfiguration? {
         didSet { appliedConfiguration.withLock { $0 = lastWorkingConfiguration.map { "lens: \($0.lens.id), mode: \($0.mode.rawValue)" } } }
@@ -122,12 +125,16 @@ actor CameraSession: SessionConfigurator {
             launchMarks?.mark("session configured")
             TimingJournal.configure(configuration, after: timing.previous, since: timing.start)
         }
+        didPixelFormatStepFail = false
         do throws(CameraSessionError) {
             try apply(configuration)
             lastWorkingConfiguration = configuration
             installSystemControls(CameraControlPlan.kinds(supportsControls: session.supportsControls, mode: configuration.mode, photoFormat: configuration.photo?.format ?? .heif))
         } catch {
+            var isHalfApplied = didPixelFormatStepFail
             if let lastWorkingConfiguration, lastWorkingConfiguration != configuration {
+                didPixelFormatStepFail = false
+                defer { isHalfApplied = didPixelFormatStepFail }
                 do {
                     try apply(lastWorkingConfiguration)
                     installSystemControls(CameraControlPlan.kinds(supportsControls: session.supportsControls, mode: lastWorkingConfiguration.mode, photoFormat: lastWorkingConfiguration.photo?.format ?? .heif))
@@ -137,6 +144,10 @@ actor CameraSession: SessionConfigurator {
                     continuation.yield(.runtimeError("[CameraSession:configure] Cannot restore the last configuration — {lens: \(lastWorkingConfiguration.lens.id), error: \(restoreError)}"))
                 }
             }
+            // A writer configuration whose pixel format could not be set is not working: forgetting it makes the next configure
+            // apply everything, and `startRecording` (which picks the path from it) finds no writer configuration, takes the
+            // system path, finds no movie output attached and throws `.outputNotAttached`, so no clip records half applied.
+            if isHalfApplied { lastWorkingConfiguration = nil }
             throw error
         }
     }
@@ -204,7 +215,10 @@ actor CameraSession: SessionConfigurator {
         guard configuration.mode == .video, configuration.recorder == .writer, let option = configuration.video else { return }
         session.beginConfiguration()
         defer { session.commitConfiguration() }
-        guard writerRecorder.preparePixelFormat(for: option.colour) else { throw .cannotAddOutput(name: "record frames") }
+        guard writerRecorder.preparePixelFormat(for: option.colour) else {
+            didPixelFormatStepFail = true
+            throw .cannotAddOutput(name: "record frames")
+        }
     }
 
     /// Photo mode on the photo preset, after the configuration that selected it was committed: the lens's zoom and the

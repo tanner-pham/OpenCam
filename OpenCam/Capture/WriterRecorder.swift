@@ -75,8 +75,8 @@ nonisolated final class WriterRecorder {
         let angle = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil).videoRotationAngleForHorizonLevelCapture
         let plan = WriterClipPlan.make(option: option, url: url, bufferWidth: Int(dimensions.width), bufferHeight: Int(dimensions.height),
                                        rotationDegrees: Double(angle), policy: policy, minFreeBytes: minFreeBytes)
-        // The Log profile is baked by a later task; recording it flat or unbaked under that name would be a wrong file.
-        guard !plan.bakesLog else { throw .writerNotOpened(codec: plan.codecType, reason: "this build does not record the Log profile") }
+        // The Log profile is baked frame by frame by the sink. A clip whose render cannot be set up is refused by the sink's open,
+        // before any writer exists, and a frame that arrives in another format than the render's is counted as a failed render.
         var video: [String: Any]?
         if option.codec.family != .proRes {
             // Asking for settings of a codec the output does not list raises an exception (AVCaptureVideoDataOutput.h).
@@ -108,8 +108,8 @@ nonisolated final class WriterRecorder {
         // Set only while a clip records.
         videoOutput.setSampleBufferDelegate(sink, queue: videoQueue)
         if hasSound { audioOutput.setSampleBufferDelegate(sink, queue: audioQueue) }
-        // Sound the writer refused: the clip records without it and the microphone is reported as unavailable, as when it cannot attach.
-        if let soundRefusal { events.yield(.microphoneUnavailable(soundRefusal)) }
+        // Sound the writer refused: the clip records without it and says so; the microphone itself is fine and stays on.
+        if let soundRefusal { events.yield(.soundNotRecorded(soundRefusal)) }
     }
 
     /// Ends the clip for `end`; the first end stands. Returns whether a result will follow: a clip was recording, or ended with

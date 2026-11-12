@@ -109,6 +109,16 @@ import Testing
         #expect(model.phase == .failed("The camera stopped."))
     }
 
+    @Test func aClipWithoutSoundSaysSoAndLeavesTheMicrophoneOn() throws {
+        let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
+        model.apply(.soundNotRecorded("[WriterSink:open] The writer refused the sound settings — {codec: apch}"))
+        #expect(model.notice == "This clip has no sound.")
+        #expect(model.access.recordsSound)
+        #expect(model.access == CaptureAccess(camera: .authorized, microphone: .authorized))
+        // The next configuration still includes the microphone.
+        #expect(model.sessionConfiguration?.includesAudio == true)
+    }
+
     @Test func unavailableMicrophoneReadsAsDeniedAndKeepsVideo() throws {
         let model = CameraModel(config: LaunchConfig(), capabilities: try Fixture.load(), isSimulator: true, defaults: try Fixture.freshDefaults())
         #expect(model.access.recordsSound)
