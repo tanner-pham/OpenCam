@@ -6,10 +6,31 @@ import Testing
     @Test func theBuiltInMicrophoneIsOneChipPerDataSource() {
         let state = AudioFixtures.live(AudioFixtures.usbRoute)
         #expect(state.sourceChips.map(\.id) == ["automatic", "mic#1", "mic#2", "mic#3", "usb"])
-        #expect(state.sourceChips.map(\.detail) == ["Matches the camera", "Front", "Back", "Bottom", "USB Audio"])
+        #expect(state.sourceChips.map(\.detail) == [nil, "Front", "Back", "Bottom", "USB Audio"])   // Automatic has no detail line; its reason line says what it does
         #expect(state.sourceChips.map(\.title) == ["Automatic", "Built-in", "Built-in", "Built-in", "USB"])
         #expect(state.selectedSourceID == "automatic")
         #expect(state.sourceChips.allSatisfy { $0.isAvailable })
+    }
+
+    @Test func theSourceReasonSaysWhatAutomaticDoesAndNamesAnExternalMicrophone() {
+        var state = AudioFixtures.live(AudioFixtures.usbRoute)
+        #expect(state.sourceReason == "Automatic matches the microphone to the camera.")
+        state.select(chipID: "mic#2")
+        #expect(state.sourceReason == nil)
+        state.select(chipID: "usb")
+        #expect(state.sourceReason == "Selected: USB Audio.")
+        state.select(chipID: "automatic")
+        #expect(state.sourceReason == "Automatic matches the microphone to the camera.")
+        var headset = AudioFixtures.live(AudioFixtures.wiredHeadphones)
+        headset.select(chipID: "headset")
+        #expect(headset.sourceReason == "Selected: Headset microphone.")
+        #expect([state.sourceReason, headset.sourceReason, AudioState.automaticReason].compactMap { $0 }.allSatisfy { !$0.contains("\u{2014}") })
+        // No access comes first, whatever is selected.
+        state.select(chipID: "usb")
+        state.hasMicrophone = false
+        #expect(state.sourceReason == "No microphone access.")
+        headset.hasMicrophone = false
+        #expect(headset.sourceReason == "No microphone access.")
     }
 
     @Test func portTypesMapToKinds() {
@@ -181,6 +202,9 @@ import Testing
             texts += [state.sourceReason, state.monitorReason].compactMap { $0 }
         }
         collect()
+        state.select(chipID: "mic#1")
+        collect()
+        texts += [AudioState.automaticReason]
         texts += [state.failed(.pinRefused(reason: "x")), state.failed(.monitorRefused(reason: "x"))]
         state.hasMicrophone = false
         collect()

@@ -7,6 +7,7 @@ nonisolated struct AudioState: Equatable, Sendable {
     static let offID = "off"
     static let onID = "on"
     static let noAccessReason = "No microphone access."
+    static let automaticReason = "Automatic matches the microphone to the camera."
     static let noHeadphonesReason = "Connect headphones to monitor."
     static let bluetoothDelayReason = "Bluetooth headphones add a delay."
     static let microphoneGoneNotice = "Microphone disconnected. Source is Automatic."
@@ -24,7 +25,7 @@ nonisolated struct AudioState: Equatable, Sendable {
 
     var sourceChips: [Chip] {
         let reason = hasMicrophone ? nil : Self.noAccessReason
-        var chips = [Chip(id: Self.automaticID, title: "Automatic", detail: "Matches the camera", isAvailable: hasMicrophone, reason: reason)]
+        var chips = [Chip(id: Self.automaticID, title: "Automatic", detail: nil, isAvailable: hasMicrophone, reason: reason)]
         for input in route.inputs {
             if input.dataSources.isEmpty {
                 chips.append(Chip(id: AudioPin(portUID: input.uid, dataSourceID: nil).chipID, title: input.kind.title, detail: input.name,
@@ -45,7 +46,19 @@ nonisolated struct AudioState: Equatable, Sendable {
         return pinned.chipID
     }
 
-    var sourceReason: String? { hasMicrophone ? nil : Self.noAccessReason }
+    /// No access first; then what Automatic does; then the full name of a selected external port, which its chip may cut off.
+    /// A built-in microphone's chip says everything, so it has no line.
+    var sourceReason: String? {
+        guard hasMicrophone else { return Self.noAccessReason }
+        guard let pinned = selectedPin else { return Self.automaticReason }
+        guard pinned.dataSourceID == nil, let input = route.inputs.first(where: { $0.uid == pinned.portUID }) else { return nil }
+        return "Selected: \(input.name)."
+    }
+
+    private var selectedPin: AudioPin? {
+        guard selectedSourceID != Self.automaticID else { return nil }
+        return pinned
+    }
 
     // MARK: Monitor
 
