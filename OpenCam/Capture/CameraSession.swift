@@ -121,13 +121,16 @@ actor CameraSession: SessionConfigurator {
         appliedManual = nil
         let timing = (start: ContinuousClock.now, previous: lastWorkingConfiguration)
         launchMarks?.mark("session configure")
+        // The lens-only path writes its own `[timing] lens` line, so a `configure` line beside it would be false.
+        var isLensOnly = false
         defer {
             launchMarks?.mark("session configured")
-            TimingJournal.configure(configuration, after: timing.previous, since: timing.start)
+            if !isLensOnly { TimingJournal.configure(configuration, after: timing.previous, since: timing.start) }
         }
         didPixelFormatStepFail = false
         do throws(CameraSessionError) {
             if let previous = lastWorkingConfiguration, canChangeLensOnly(to: configuration, from: previous) {
+                isLensOnly = true
                 try changeLens(configuration, from: previous)
                 lastWorkingConfiguration = configuration
             } else {
@@ -196,7 +199,7 @@ actor CameraSession: SessionConfigurator {
         try attachPhotoOutput(wantedOutputs.contains(.photo))
         try attachMovieOutput(wantedOutputs.contains(.movie))
         // The movie output replaces the lock while it records unless this is off ("Read first" 7 of the fast lens switch plan).
-        if device.isVirtualDevice, wantedOutputs.contains(.movie) {
+        if configuration.combined != nil, wantedOutputs.contains(.movie) {
             recorder.output.isPrimaryConstituentDeviceSwitchingBehaviorForRecordingEnabled = false
         }
         try attachWriterOutputs(wantedOutputs.contains(.writerVideo))

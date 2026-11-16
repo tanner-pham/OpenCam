@@ -49,8 +49,9 @@ extension CameraSession {
     }
 
     /// Sets the configuration's zoom on the combined camera when the lock left it elsewhere. After a lock to the ultra wide lens
-    /// the zoom range took 6 to 33 ms to open below the wide lens's (measured 2026-11-16), and a zoom outside the range raises an
-    /// exception Swift cannot catch (AVCaptureDevice.h, `videoZoomFactor`). So this waits for the range, at most a quarter
+    /// the zoom range took 6 to 33 ms to open below the wide lens's (measured 2026-11-16). A zoom below the range is clamped to it
+    /// (AVCaptureDevice.h, `minAvailableVideoZoomFactor`), which would leave the ultra wide lens cropped to the wide lens's framing,
+    /// and one above the format's maximum raises an exception Swift cannot catch. So this waits for the range, at most a quarter
     /// second and only while the session runs, and otherwise leaves the zoom where the lock put it; `restoreLens` tries again
     /// once the session has started.
     func settleZoom(_ configuration: SessionConfiguration, on device: AVCaptureDevice) {
@@ -72,7 +73,9 @@ extension CameraSession {
             Self.logger.error("[CameraSession:settleZoom] Cannot lock the camera for configuration — {lens: \(configuration.lens.id, privacy: .public), reason: \(String(describing: error), privacy: .public)}")
             return
         }
-        device.videoZoomFactor = zoom
+        if isHeld() {
+            device.videoZoomFactor = zoom
+        }
         device.unlockForConfiguration()
     }
 
