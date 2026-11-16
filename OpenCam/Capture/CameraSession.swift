@@ -127,9 +127,14 @@ actor CameraSession: SessionConfigurator {
         }
         didPixelFormatStepFail = false
         do throws(CameraSessionError) {
-            try apply(configuration)
-            lastWorkingConfiguration = configuration
-            installSystemControls(CameraControlPlan.kinds(supportsControls: session.supportsControls, mode: configuration.mode, photoFormat: configuration.photo?.format ?? .heif))
+            if let previous = lastWorkingConfiguration, canChangeLensOnly(to: configuration, from: previous) {
+                try changeLens(configuration, from: previous)
+                lastWorkingConfiguration = configuration
+            } else {
+                try apply(configuration)
+                lastWorkingConfiguration = configuration
+                installSystemControls(CameraControlPlan.kinds(supportsControls: session.supportsControls, mode: configuration.mode, photoFormat: configuration.photo?.format ?? .heif))
+            }
         } catch {
             var isHalfApplied = didPixelFormatStepFail
             if let lastWorkingConfiguration, lastWorkingConfiguration != configuration {
@@ -154,7 +159,7 @@ actor CameraSession: SessionConfigurator {
 
     private func apply(_ configuration: SessionConfiguration) throws(CameraSessionError) {
         let lens = configuration.lens
-        guard let device = AVCaptureDevice(uniqueID: lens.deviceUniqueID) else {
+        guard let device = AVCaptureDevice(uniqueID: configuration.cameraUniqueID) else {
             throw .deviceMissing(lensID: lens.id)
         }
         // Declared first so it runs after the commit below, also when configuring throws and the old input is restored.
@@ -165,6 +170,7 @@ actor CameraSession: SessionConfigurator {
             try applyPresetPhoto(configuration, to: device)
         }
         try preparePixelFormat(configuration)
+        settleZoom(configuration, on: device)
         pressureObservation = Self.observePressure(of: device, continuation: continuation)
         // Every configure returns the camera to automatic, in step with the model, which does the same when it queues one.
         resetManual()
@@ -189,6 +195,10 @@ actor CameraSession: SessionConfigurator {
         detachOutputs(SessionOutputPlan.make(attached: attachedOutputs(), wanted: wantedOutputs).removals)
         try attachPhotoOutput(wantedOutputs.contains(.photo))
         try attachMovieOutput(wantedOutputs.contains(.movie))
+        // The movie output replaces the lock while it records unless this is off ("Read first" 7 of the fast lens switch plan).
+        if device.isVirtualDevice, wantedOutputs.contains(.movie) {
+            recorder.output.isPrimaryConstituentDeviceSwitchingBehaviorForRecordingEnabled = false
+        }
         try attachWriterOutputs(wantedOutputs.contains(.writerVideo))
         attachFrameOutput(wantedOutputs.contains(.lookFrames))
         // Photo mode takes the photo preset when the session allows it: only there does the Duo offer Bayer RAW (measured
@@ -249,6 +259,7 @@ actor CameraSession: SessionConfigurator {
         guard !session.isRunning else { return }
         launchMarks?.mark("session startRunning")
         session.startRunning()
+        restoreLens()
         launchMarks?.mark("session running")
         allowHapticsWhileRecording()
         writeLaunchLine()
@@ -280,6 +291,7 @@ actor CameraSession: SessionConfigurator {
             return
         }
         // The device may have come back with settings of its own, so manual values are not assumed to hold.
+        restoreLens()
         resetManual()
         continuation.yield(.restarted)
     }
@@ -520,7 +532,7 @@ actor CameraSession: SessionConfigurator {
         }
         defer { device.unlockForConfiguration() }
 
-        let zoom = CGFloat(configuration.lens.zoomFactor)
+        let zoom = CGFloat(configuration.zoomFactor)
         switch configuration.mode {
         case .video:
             if let option = configuration.video {
@@ -532,7 +544,11 @@ actor CameraSession: SessionConfigurator {
         guard zoom <= device.activeFormat.videoMaxZoomFactor else {
             throw .noMatchingFormat(option: "zoom \(configuration.lens.label)")
         }
-        device.videoZoomFactor = zoom
+        if configuration.combined != nil {
+            try lockLens(configuration, on: device)
+        } else {
+            device.videoZoomFactor = zoom
+        }
     }
 
     /// Caller holds the configuration lock.

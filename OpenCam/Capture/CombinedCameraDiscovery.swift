@@ -19,7 +19,7 @@ nonisolated enum CombinedCameraDiscovery {
                                   maxZoomFactor: Double(format.videoMaxZoomFactor))
         }
         return CombinedCamera(deviceUniqueID: device.uniqueID,
-                              baseZoomByDeviceID: Dictionary(uniqueKeysWithValues: zip(constituents.map(\.uniqueID), baseZooms)),
+                              baseZoomByDeviceID: Dictionary(zip(constituents.map(\.uniqueID), baseZooms), uniquingKeysWith: { first, _ in first }),
                               formats: formats)
     }
 }
