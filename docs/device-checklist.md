@@ -146,6 +146,28 @@ ProRes and Log are recorded by the writer path. HEVC and H.264 in Rec. 709, P3 a
 - [ ] Idle with ProRes selected for 5 minutes: note the heat against HEVC.
 - [ ] Not covered by either check: sizes other than 1080p and 4K, rates other than 30 and 60, the other four lenses, the writer's HEVC with a tier's bit rate, the effect of the 10 s fragment interval on the finished file and on editors, how Photos, Files and the editor read Log's BT.2020 tags with the Rec. 709 curve, the time a path switch takes, and memory when the writer stalls with late frames kept.
 
+## 11. Fast lens switch (combined back camera)
+
+In video at up to 60 fps the 0.5x, 1x and 2x buttons run on the combined back camera, locked to the lens the button names. Photo mode, rates above 60 fps, the front cameras and a manual shutter or ISO use each lens's own camera, as before. Measured on 2026-11-16 with `-lensCheck` (`diag/dual-wide-check`): no frame is missed on a lens change; the wide lens's first frame comes about 260 ms after the tap at 30 fps, the ultra wide's about 70 ms.
+
+- [ ] In video at 4K 30 and 4K 60, HEVC and ProRes, Rec. 709 and HLG: tap around 0.5x, 1x and 2x. No blur, no frozen picture. Then copy `opencam-errors.log`: each tap wrote a `[timing] lens ... on the combined camera ... ms` line and no `[timing] configure ... (lens` line.
+- [ ] 0.5x to 1x: the framing changes at once and the wide lens takes over about a quarter second later. Note how that hand-over looks (sharpness, exposure step, any shift), at 30 and at 60 fps.
+- [ ] Twenty fast taps around 0.5x, 1x and 2x, ending on each lens in turn: no crash, and the picture is the lens the button shows.
+- [ ] 1x in video against 1x in photo mode, and 1x against 1x with a manual shutter (which uses the wide camera itself): same framing and sharpness? Note any difference.
+- [ ] With a hand 5 cm from the lenses, 1x stays the wide lens (blurred, not the ultra wide cropped), also during a recording.
+- [ ] A tap to a front lens and back: one blur each way, then the back lens taps are fast again.
+- [ ] A rate above 60 fps on 1x: lens taps blur as before.
+- [ ] Photo mode: lens taps blur as before, RAW is still offered on 0.5x and 1x, and photo sizes are unchanged.
+- [ ] The first manual shutter or ISO value: one blur, then the value holds and the readout shows it. A lens tap after it: one blur, and every control returns to automatic. The next lens tap is fast.
+- [ ] Manual white balance, focus and EV on 0.5x, 1x and 2x with exposure automatic: each slider works with no blur. A lens tap returns them to automatic.
+- [ ] While recording with exposure automatic: shutter and ISO are dimmed and VoiceOver says "Not available while recording"; white balance, focus and EV still work. With a manual shutter set before recording, shutter and ISO work during the clip.
+- [ ] A system clip (HEVC) and a writer clip (ProRes) on each of 0.5x, 1x and 2x: upright, the right lens, sound in sync, `drops.total` 0, and the lens never changes by itself mid clip.
+- [ ] The Camera Control's zoom on the combined camera: what it shows on each lens, and whether it can leave the lens the button shows.
+- [ ] Launch with the saved start on 0.5x, on 1x and on 2x: the first picture is the right lens, and the launch line shows the saved start was adopted (the first launch after installing this build releases the old start once).
+- [ ] A Library visit, a phone call, and locking the phone on each lens: the camera returns on the same lens.
+- [ ] A look in video on the combined camera: the look stays across lens taps.
+- [ ] Ten minutes on 1x in video: note heat and battery against the build before.
+
 ## 9. Things to decide after holding it
 
 - [ ] Where should the look's name live? The summary grows a line: a four-line pill in vertical video, and the open phone's photo picture shrinks a few points.
