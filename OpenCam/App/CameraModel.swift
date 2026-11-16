@@ -39,6 +39,8 @@ final class CameraModel {
     /// Each lens's record resolver, made on first use and kept until the capabilities change, so a view reading the current
     /// option does a lookup instead of walking every video option.
     @ObservationIgnored private var recordResolvers: [String: RecordSelectionResolver] = [:]
+    /// The combined back camera read at launch; nil when the device has none, and then every lens keeps its own camera.
+    @ObservationIgnored var combinedCamera: CombinedCamera?
     var isRecording: Bool
     var recordingStart: Date?
     private(set) var access: CaptureAccess
@@ -298,8 +300,9 @@ final class CameraModel {
     /// What the session should capture for the current selection; nil without a lens.
     var sessionConfiguration: SessionConfiguration? {
         guard let currentLens else { return nil }
+        let combined = manual.exposure == .automatic ? combinedCamera?.lens(for: currentLens, mode: mode, video: currentVideoOption) : nil
         return SessionConfiguration.make(lens: currentLens, mode: mode, video: currentVideoOption, photo: currentPhotoOption, access: access,
-                                         needsFrames: needsFrames, recorder: recorderPath)
+                                         needsFrames: needsFrames, recorder: recorderPath, combined: combined)
     }
 
     func resetDroppedFrames() { droppedFrames = 0 }
