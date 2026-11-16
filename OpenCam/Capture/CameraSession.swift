@@ -173,7 +173,8 @@ actor CameraSession: SessionConfigurator {
             try applyPresetPhoto(configuration, to: device)
         }
         try preparePixelFormat(configuration)
-        settleZoom(configuration, on: device)
+        // After the commits: the combined camera's lens and zoom, read back from the camera itself.
+        confirmLens(configuration, on: device)
         pressureObservation = Self.observePressure(of: device, continuation: continuation)
         // Every configure returns the camera to automatic, in step with the model, which does the same when it queues one.
         resetManual()

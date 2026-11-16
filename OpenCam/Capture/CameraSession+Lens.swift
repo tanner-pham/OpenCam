@@ -53,7 +53,7 @@ extension CameraSession {
     /// (AVCaptureDevice.h, `minAvailableVideoZoomFactor`), which would leave the ultra wide lens cropped to the wide lens's framing,
     /// and one above the format's maximum raises an exception Swift cannot catch. So this waits for the range, at most a quarter
     /// second and only while the session runs, and otherwise leaves the zoom where the lock put it; `restoreLens` tries again
-    /// once the session has started.
+    /// once the session has started. Callers hold no configuration lock: the range was measured to move after the lock was released.
     func settleZoom(_ configuration: SessionConfiguration, on device: AVCaptureDevice) {
         guard configuration.combined != nil else { return }
         let zoom = CGFloat(configuration.zoomFactor)
@@ -79,22 +79,32 @@ extension CameraSession {
         device.unlockForConfiguration()
     }
 
-    /// Puts the applied configuration's lens back on the combined camera: after a start, when the zoom could not be set before
-    /// the session ran, and after a restart, when the camera may have come back unlocked.
-    func restoreLens() {
-        guard let applied = lastWorkingConfiguration, applied.combined != nil, let device = videoInput?.device else { return }
+    /// Checks the combined camera against the configuration's lens once its own state can be read, and puts the lock and the
+    /// zoom back where they differ. Whether a new format keeps the lock, and whether the zoom range moves before the session
+    /// runs, were not measured, so this runs after every configure's commit, and again through `restoreLens`. It changes
+    /// nothing on a camera already locked to the lens at its zoom. A failure is logged and never fails the configure: the
+    /// camera then shows whatever lens the lock inside the configuration left.
+    func confirmLens(_ configuration: SessionConfiguration, on device: AVCaptureDevice) {
+        guard configuration.combined != nil else { return }
         do {
             try device.lockForConfiguration()
         } catch {
-            Self.logger.error("[CameraSession:restoreLens] Cannot lock the camera for configuration — {lens: \(applied.lens.id, privacy: .public), reason: \(String(describing: error), privacy: .public)}")
+            Self.logger.error("[CameraSession:confirmLens] Cannot lock the camera for configuration — {lens: \(configuration.lens.id, privacy: .public), reason: \(String(describing: error), privacy: .public)}")
             return
         }
         do throws(CameraSessionError) {
-            try lockLens(applied, on: device)
+            try lockLens(configuration, on: device)
         } catch {
             Self.logger.error("\(error.description, privacy: .public)")
         }
         device.unlockForConfiguration()
-        settleZoom(applied, on: device)
+        settleZoom(configuration, on: device)
+    }
+
+    /// `confirmLens` for the applied configuration: after a start, when the zoom could not be set before the session ran, and
+    /// after a restart, when the camera may have come back unlocked.
+    func restoreLens() {
+        guard let applied = lastWorkingConfiguration, let device = videoInput?.device else { return }
+        confirmLens(applied, on: device)
     }
 }
