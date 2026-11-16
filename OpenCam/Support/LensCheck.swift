@@ -73,6 +73,10 @@ nonisolated final class LensCheckRunner {
         await section("photo", "Photo preset") { await self.runPhoto(cameras) }
         await section("baseline", "Today's lens change") { await self.runBaseline(cameras) }
         await section("close", "Close subject") { await self.runCloseSubject(cameras) }
+        // A follow-up to the first run, which had no control for custom exposure; it runs only when named.
+        if only?.contains("exposure") == true {
+            await section("exposure", "Custom exposure on each camera") { await self.runExposure(cameras) }
+        }
         await finish()
     }
 
@@ -388,6 +392,43 @@ nonisolated final class LensCheckRunner {
         }
         if let failure { note("runCloseSubject", "The close subject check stopped", context: "reason: \(failure)") }
         await progress.set(headline: "You can put the phone down.", line: "")
+    }
+
+    /// Whether custom exposure is accepted on each single camera (the control) and on the combined camera, automatic and
+    /// locked to each lens; where it is accepted it is set, and on the combined camera carried across a lens change.
+    private func runExposure(_ cameras: LensCheckCameras) async {
+        let cases: [(String, AVCaptureDevice, AVCaptureDevice?)] = [
+            ("wide camera", cameras.wide, nil), ("ultra wide camera", cameras.ultra, nil), ("dual wide, auto", cameras.dual, nil),
+            ("dual wide, locked to ultra wide", cameras.dual, cameras.ultra), ("dual wide, locked to wide", cameras.dual, cameras.wide),
+        ]
+        for (name, device, lens) in cases {
+            await step("Custom exposure, \(name)")
+            let failure = await withRig(device, .frames, .uhd30HLG) { rig throws(LensCheckFailure) in
+                func read(_ label: String, extra: [String: String] = [:]) async {
+                    try? await Task.sleep(for: .milliseconds(900))
+                    self.report.manual.append(LensCheckReading(label: "exposure, \(name): \(label)", values: rig.state().merging(extra) { _, new in new }))
+                    self.save()
+                }
+                if rig.isVirtual { try rig.setBehaviour(.auto) }
+                try rig.resetManual()
+                if let lens { _ = try rig.lock(to: lens, zoom: lens.uniqueID == cameras.ultra.uniqueID ? 1 : 2) }
+                try? await Task.sleep(for: .milliseconds(900))
+                let checks = rig.exposureChecks()
+                await self.step("Custom exposure, \(name): setting it")
+                let refusal = try rig.setCustomExposure()
+                await read("after asking for 1/120 s", extra: checks.merging(refusal.map { ["refused": $0] } ?? [:]) { _, new in new })
+                if refusal == nil, let lens, rig.canLockToLens {
+                    let other = lens.uniqueID == cameras.ultra.uniqueID ? cameras.wide : cameras.ultra
+                    _ = try rig.lock(to: other, zoom: other.uniqueID == cameras.ultra.uniqueID ? 1 : 2)
+                    await read("after changing to the other lens")
+                    _ = try rig.lock(to: lens, zoom: lens.uniqueID == cameras.ultra.uniqueID ? 1 : 2)
+                    await read("back on the first lens")
+                }
+                try rig.resetManual()
+                if rig.isVirtual { try rig.setBehaviour(.auto) }
+            }
+            if let failure { note("runExposure", "The custom exposure check stopped", context: "camera: \(name), reason: \(failure)") }
+        }
     }
 
     // MARK: Plumbing

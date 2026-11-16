@@ -240,6 +240,31 @@ nonisolated final class LensCheckRig {
         return nil
     }
 
+    /// What the active format answers for custom exposure, asked several ways. Reads only.
+    func exposureChecks() -> [String: String] {
+        let active = device.activeFormat
+        let duration = max(active.minExposureDuration, min(active.maxExposureDuration, CMTime(value: 1, timescale: 120)))
+        let iso = min(active.maxISO, max(active.minISO, active.minISO * 4))
+        var values: [String: String] = [:]
+        values["check: device says custom exposure supported"] = String(device.isExposureModeSupported(.custom))
+        values["check: format aperture range"] = "\(active.minLensAperture)...\(active.maxLensAperture)"
+        values["check: device aperture"] = String(device.lensAperture)
+        values["check: format exposure range ms"] = "\(active.minExposureDuration.seconds * 1000)...\(active.maxExposureDuration.seconds * 1000)"
+        values["check: current aperture, 1/120 s, ISO \(iso)"] = String(active.supportsExposureModeCustom(lensAperture: AVCaptureDevice.currentLensAperture, duration: duration, iso: iso))
+        values["check: auto aperture, 1/120 s, ISO \(iso)"] = String(active.supportsExposureModeCustom(lensAperture: AVCaptureDevice.autoLensAperture, duration: duration, iso: iso))
+        values["check: current aperture, current duration, current ISO"] = String(active.supportsExposureModeCustom(
+            lensAperture: AVCaptureDevice.currentLensAperture, duration: AVCaptureDevice.currentExposureDuration, iso: AVCaptureDevice.currentISO))
+        values["check: current aperture, 1/120 s, current ISO"] = String(active.supportsExposureModeCustom(
+            lensAperture: AVCaptureDevice.currentLensAperture, duration: duration, iso: AVCaptureDevice.currentISO))
+        values["check: current aperture, current duration, ISO \(iso)"] = String(active.supportsExposureModeCustom(
+            lensAperture: AVCaptureDevice.currentLensAperture, duration: AVCaptureDevice.currentExposureDuration, iso: iso))
+        // A number is range checked against the format, so only apertures inside its range are asked.
+        for aperture in [active.minLensAperture, active.maxLensAperture] {
+            values["check: f/\(aperture), 1/120 s, ISO \(iso)"] = String(active.supportsExposureModeCustom(lensAperture: aperture, duration: duration, iso: iso))
+        }
+        return values
+    }
+
     func setLockedWhiteBalance() throws(LensCheckFailure) -> String? {
         guard device.isWhiteBalanceModeSupported(.locked) else { return "isWhiteBalanceModeSupported(.locked) is false" }
         guard device.isLockingWhiteBalanceWithCustomDeviceGainsSupported else { return "isLockingWhiteBalanceWithCustomDeviceGainsSupported is false" }
