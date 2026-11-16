@@ -655,7 +655,11 @@ final class CameraModel {
     /// Keeps a confirmed configuration as the next launch's start. Called only where a configuration is confirmed.
     func saveStart(_ working: (configuration: SessionConfiguration, selection: SavedSelections)) {
         guard !isScripted else { return }
-        SavedStart(configuration: working.configuration, record: working.selection.record, photo: working.selection.photo,
+        // A launch configures with exposure automatic, so the combined camera serves it even when a manual exposure moved the
+        // session to the lens's own camera.
+        var configuration = working.configuration
+        configuration.combined = combinedCamera?.lens(for: configuration.lens, mode: configuration.mode, video: configuration.video)
+        SavedStart(configuration: configuration, record: working.selection.record, photo: working.selection.photo,
                    osBuild: capabilities.osBuild, modelIdentifier: capabilities.modelIdentifier, scanVersion: capabilities.scanVersion).save(to: defaults)
     }
 
@@ -696,16 +700,24 @@ final class CameraModel {
     /// Queues a configure behind any running one. A lens switch changes lens, record and photo in one turn;
     /// only the last of those runs, because the earlier ones are superseded before the chain reaches them.
     @discardableResult
-    func enqueueConfigure() -> Task<CameraSessionError?, Never>? {
-        guard !isScanningFormats, !isRecording, !isHeldForLibrary, let configurator, let configuration = sessionConfiguration,
-              configuration != requestedConfiguration else { return nil }
+    func enqueueConfigure(keepsManual: Bool = false) -> Task<CameraSessionError?, Never>? {
+        guard !isScanningFormats, !isRecording, !isHeldForLibrary, let configurator, let wanted = sessionConfiguration,
+              wanted != requestedConfiguration else { return nil }
+        // Every configure returns the camera to automatic, except the move to the lens's own camera for a manual exposure, which
+        // sends the values again once it is attached. The reset first, so the apply it sends is the latest the configure waits for.
+        if keepsManual {
+            manualGeneration += 1
+            appliedManual = .automatic
+        } else {
+            resetManual()
+        }
+        // Read again: with exposure automatic the combined camera may serve the selection.
+        guard let configuration = sessionConfiguration else { return nil }
         // Raised before the configure runs, so the pause is never seen bare; only the newest change's end lowers it.
         if ViewfinderChange.pausesPicture(from: requestedConfiguration, to: configuration) { isViewfinderChanging = true }
         viewfinderChangeCount += 1
         let change = viewfinderChangeCount
         viewfinderClearing?.cancel()
-        // Every configure returns the camera to automatic. The reset first, so the apply it sends is the latest the configure waits for.
-        resetManual()
         let manualApply = manualApplyTask
         requestedConfiguration = configuration
         configureGeneration += 1
@@ -725,6 +737,7 @@ final class CameraModel {
             do throws(CameraSessionError) {
                 try await configurator.configure(configuration)
             } catch {
+                if keepsManual { resetManual() }
                 configureFailed(error, generation: generation)
                 return error
             }
@@ -732,6 +745,7 @@ final class CameraModel {
             clearNotice(from: .configuration)
             // The buttons are usable now, not at the next poll.
             await refreshReadouts(from: configurator)
+            if keepsManual, generation == configureGeneration { reapplyAllManual() }
             // A stopped camera runs again with the new selection; a running one is confirmed once it has run long enough.
             if await startIfStopped(configurator) || phase == .ready {
                 confirmWhenRunning(configuration, since: errors)
