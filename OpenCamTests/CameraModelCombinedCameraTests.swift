@@ -54,7 +54,9 @@ import Testing
     private func setShutterByHand(_ rig: Rig) async {
         rig.model.setControl(.shutter, step: 3)
         await rig.model.waitForQueuedConfigures()
-        _ = await eventuallyAsync { [fake = rig.fake] in await fake.manualApplies.last?.reapplyingAll == true }
+        let fake = rig.fake
+        let reapplied = await eventuallyAsync { await fake.manualApplies.last?.reapplyingAll == true }
+        #expect(reapplied)
     }
 
     @Test func videoOnABackLensNamesTheCombinedCamera() throws {

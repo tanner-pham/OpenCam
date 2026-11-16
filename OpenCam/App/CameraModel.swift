@@ -699,6 +699,8 @@ final class CameraModel {
 
     /// Queues a configure behind any running one. A lens switch changes lens, record and photo in one turn;
     /// only the last of those runs, because the earlier ones are superseded before the chain reaches them.
+    /// `keepsManual` is for the move to a lens's own camera for a manual shutter or ISO: the hand-set values are carried over
+    /// and sent again once the camera is attached, instead of returning to automatic.
     @discardableResult
     func enqueueConfigure(keepsManual: Bool = false) -> Task<CameraSessionError?, Never>? {
         guard !isScanningFormats, !isRecording, !isHeldForLibrary, let configurator, let wanted = sessionConfiguration,
@@ -712,7 +714,8 @@ final class CameraModel {
             resetManual()
         }
         // Read again: with exposure automatic the combined camera may serve the selection.
-        guard let configuration = sessionConfiguration else { return nil }
+        // With exposure automatic the selection may be what the session already runs: nothing to configure.
+        guard let configuration = sessionConfiguration, configuration != requestedConfiguration else { return nil }
         // Raised before the configure runs, so the pause is never seen bare; only the newest change's end lowers it.
         if ViewfinderChange.pausesPicture(from: requestedConfiguration, to: configuration) { isViewfinderChanging = true }
         viewfinderChangeCount += 1
@@ -737,7 +740,7 @@ final class CameraModel {
             do throws(CameraSessionError) {
                 try await configurator.configure(configuration)
             } catch {
-                if keepsManual { resetManual() }
+                if keepsManual, generation == configureGeneration { resetManual() }
                 configureFailed(error, generation: generation)
                 return error
             }
