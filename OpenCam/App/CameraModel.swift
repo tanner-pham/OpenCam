@@ -106,6 +106,9 @@ final class CameraModel {
     @ObservationIgnored var configureGeneration = 0
     /// The configuration last sent to the chain, so an unchanged selection does not reconfigure.
     @ObservationIgnored var requestedConfiguration: SessionConfiguration?
+    /// Options the combined camera failed to configure this run; they use the lens's own camera from then on, so a format that
+    /// worked before this camera was used still works on the second try.
+    @ObservationIgnored var combinedRefusals: Set<VideoOption> = []
     /// What the session last applied, and the selection that produced it; a failed configure returns to them.
     @ObservationIgnored var lastWorking: (configuration: SessionConfiguration, selection: SavedSelections)?
     /// The last configuration that ran for `confirmationDelay` with no runtime error, and its selection; a selection that
@@ -300,7 +303,9 @@ final class CameraModel {
     /// What the session should capture for the current selection; nil without a lens.
     var sessionConfiguration: SessionConfiguration? {
         guard let currentLens else { return nil }
-        let combined = manual.exposure == .automatic ? combinedCamera?.lens(for: currentLens, mode: mode, video: currentVideoOption) : nil
+        let option = currentVideoOption
+        let isRefused = option.map { combinedRefusals.contains($0) } ?? false
+        let combined = manual.exposure == .automatic && !isRefused ? combinedCamera?.lens(for: currentLens, mode: mode, video: option) : nil
         return SessionConfiguration.make(lens: currentLens, mode: mode, video: currentVideoOption, photo: currentPhotoOption, access: access,
                                          needsFrames: needsFrames, recorder: recorderPath, combined: combined)
     }
@@ -701,10 +706,20 @@ final class CameraModel {
     /// only the last of those runs, because the earlier ones are superseded before the chain reaches them.
     /// `keepsManual` is for the move to a lens's own camera for a manual shutter or ISO: the hand-set values are carried over
     /// and sent again once the camera is attached, instead of returning to automatic.
+    /// True when `wanted` is `requested` plus the combined camera. After a manual exposure moved the session to the lens's own
+    /// camera, setting it back to Auto makes the combined camera servable again; nothing the user did asks for that move, so it
+    /// waits for a change that configures anyway (the next lens tap), and the controls set by hand are kept.
+    private static func onlyGainsCombined(_ wanted: SessionConfiguration, over requested: SessionConfiguration?) -> Bool {
+        guard let requested, requested.combined == nil, wanted.combined != nil else { return false }
+        var withoutCombined = wanted
+        withoutCombined.combined = nil
+        return withoutCombined == requested
+    }
+
     @discardableResult
     func enqueueConfigure(keepsManual: Bool = false) -> Task<CameraSessionError?, Never>? {
         guard !isScanningFormats, !isRecording, !isHeldForLibrary, let configurator, let wanted = sessionConfiguration,
-              wanted != requestedConfiguration else { return nil }
+              wanted != requestedConfiguration, !(Self.onlyGainsCombined(wanted, over: requestedConfiguration)) else { return nil }
         // Every configure returns the camera to automatic, except the move to the lens's own camera for a manual exposure, which
         // sends the values again once it is attached. The reset first, so the apply it sends is the latest the configure waits for.
         if keepsManual {
@@ -740,6 +755,7 @@ final class CameraModel {
             do throws(CameraSessionError) {
                 try await configurator.configure(configuration)
             } catch {
+                if configuration.combined != nil, let video = configuration.video { combinedRefusals.insert(video) }
                 if keepsManual, generation == configureGeneration { resetManual() }
                 configureFailed(error, generation: generation)
                 return error

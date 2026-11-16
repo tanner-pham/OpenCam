@@ -205,4 +205,70 @@ import Testing
         #expect(rig.model.manual.exposure == .automatic)
         #expect(rig.model.requestedConfiguration?.combined != nil)
     }
+
+    @Test func returningExposureToAutomaticDoesNotMoveTheCamera() async throws {
+        let rig = try await readyRig()
+        await setShutterByHand(rig)
+        rig.model.setControl(.focus, step: 2)
+        rig.model.setAutomatic(.shutter)
+        let count = await rig.fake.applied.count
+        #expect(rig.model.enqueueConfigure() == nil)
+        #expect(await rig.fake.applied.count == count)
+        #expect(rig.model.manual.focus != nil)
+        rig.model.selectLens("ultraWide")
+        #expect(rig.model.isViewfinderChanging)
+        await rig.model.waitForQueuedConfigures()
+        #expect(await rig.fake.applied.last?.combined?.zoomFactor == 1)
+    }
+
+    @Test func aSecondShutterStepDuringTheMoveChangesNothing() async throws {
+        let rig = try await readyRig()
+        await rig.fake.holdConfigures()
+        rig.model.setControl(.shutter, step: 3)
+        let manual = rig.model.manual
+        rig.model.setControl(.shutter, step: 5)
+        #expect(rig.model.manual == manual)
+        await rig.fake.resumeConfigures()
+        await rig.model.waitForQueuedConfigures()
+        let fake = rig.fake
+        let didApply = await eventuallyAsync {
+            guard await fake.manualApplies.last?.reapplyingAll == true else { return false }
+            return await fake.appliedManual != nil
+        }
+        #expect(didApply)
+        #expect(await rig.fake.applied.last?.combined == nil)
+        #expect(rig.model.manual.exposure != .automatic)
+        #expect(rig.model.notice == nil)
+    }
+
+    @Test func anOptionTheCombinedCameraFailsUsesTheLensesOwnCameraNextTime() async throws {
+        let rig = try await readyRig()
+        await rig.fake.setFailsCombined(true)
+        rig.model.selectLens("ultraWide")
+        let error = await rig.model.enqueueConfigure()?.value
+        #expect(error == nil)
+        await rig.model.waitForQueuedConfigures()
+        #expect(rig.model.lensID == "wide")
+        rig.model.selectLens("ultraWide")
+        await rig.model.waitForQueuedConfigures()
+        #expect(await rig.fake.applied.last?.lens.id == "ultraWide")
+        #expect(await rig.fake.applied.last?.combined == nil)
+        #expect(rig.model.lensID == "ultraWide")
+    }
+
+    @Test func anOpenShutterSliderClosesWhenARecordingStarts() async throws {
+        let rig = try await readyRig()
+        rig.model.toggleControl(.shutter)
+        #expect(rig.model.openControl == .shutter)
+        await (try #require(rig.model.startRecording())).value
+        #expect(rig.model.openControl == nil)
+    }
+
+    @Test func anOpenFocusSliderStaysOpenWhenARecordingStarts() async throws {
+        let rig = try await readyRig()
+        rig.model.toggleControl(.focus)
+        #expect(rig.model.openControl == .focus)
+        await (try #require(rig.model.startRecording())).value
+        #expect(rig.model.openControl == .focus)
+    }
 }

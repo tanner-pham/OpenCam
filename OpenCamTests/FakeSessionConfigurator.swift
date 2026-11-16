@@ -32,6 +32,13 @@ actor FakeSessionConfigurator: SessionConfigurator {
         failingLensIDs = ids
     }
 
+    private var failsCombined = false
+
+    /// From now on a configuration on the combined camera fails to configure; false stops that.
+    func setFailsCombined(_ fails: Bool) {
+        failsCombined = fails
+    }
+
     private var isHolding = false
     private var held: [CheckedContinuation<Void, Never>] = []
 
@@ -48,6 +55,9 @@ actor FakeSessionConfigurator: SessionConfigurator {
 
     func configure(_ configuration: SessionConfiguration) async throws(CameraSessionError) {
         if isHolding { await withCheckedContinuation { held.append($0) } }
+        guard !(failsCombined && configuration.combined != nil) else {
+            throw .noMatchingFormat(option: "fake combined")
+        }
         guard !failingLensIDs.contains(configuration.lens.id) else {
             throw .noMatchingFormat(option: "fake \(configuration.lens.id)")
         }
@@ -162,6 +172,10 @@ actor FakeSessionConfigurator: SessionConfigurator {
         guard isRunning, holdsCamera, let ranges else { throw .noCamera }
         if isHoldingManual { await withCheckedContinuation { heldManual.append($0) } }
         if let manualError { throw manualError }
+        // The phone refuses a custom exposure on the combined camera (measured 2026-11-16).
+        if let last = applied.last, last.combined != nil, settings.exposure != .automatic {
+            throw .notSupported(control: "exposure", lens: last.lens.id)
+        }
         let plan = try ManualApplyPlan.make(settings, applied: reapplyingAll ? nil : appliedManual, limits: ranges, lens: "fake",
                                             isRAWClipRecording: false)
         appliedManual = plan.applied
