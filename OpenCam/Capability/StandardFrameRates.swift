@@ -4,11 +4,14 @@ import Foundation
 nonisolated enum StandardFrameRates {
     static let all = [24, 25, 30, 48, 50, 60, 100, 120]
 
-    /// Rates within 0.05 of some range are kept, so 23.976...29.97 offers 24, 25 and 30.
+    /// How far outside a range a rate may be and still be offered and found.
+    static let tolerance = 0.05
+
+    /// Rates within `tolerance` of some range are kept, so 23.976...29.97 offers 24, 25 and 30.
     static func collapse(_ ranges: [ClosedRange<Double>]) -> [Int] {
         all.filter { rate in
             let value = Double(rate)
-            return ranges.contains { $0.lowerBound - 0.05 <= value && value <= $0.upperBound + 0.05 }
+            return ranges.contains { $0.lowerBound - tolerance <= value && value <= $0.upperBound + tolerance }
         }
     }
 }

@@ -45,6 +45,20 @@ import Testing
         #expect(decoded.configuration == start.configuration)
     }
 
+    @Test func aStartSavedBeforeTheCombinedCameraDecodesWithoutOne() throws {
+        var (configuration, _, _) = try base()
+        let data = try JSONEncoder().encode(configuration)
+        var json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        json.removeValue(forKey: "combined")
+        let old = try JSONSerialization.data(withJSONObject: json)
+        #expect(try JSONDecoder().decode(SessionConfiguration.self, from: old).combined == nil)
+
+        configuration.combined = CombinedLens(deviceUniqueID: "fixture-dual", zoomFactor: 2)
+        let round = try JSONDecoder().decode(SessionConfiguration.self, from: JSONEncoder().encode(configuration))
+        #expect(round == configuration)
+        #expect(round.combined == CombinedLens(deviceUniqueID: "fixture-dual", zoomFactor: 2))
+    }
+
     @Test func aWriterStartKeepsItsFramesRule() throws {
         // Looks are never drawn with the writer, so a saved writer start asks for no frames even when a look is chosen.
         let (start, saved) = try make(colour: .rec709, needsFrames: false, recorder: .writer)
