@@ -65,4 +65,9 @@ import Testing
         #expect(c.seedsClip); #expect(c.isScripted)
         #expect(!LaunchConfig.parse(["app"]).seedsClip); #expect(!LaunchConfig.parse(["app", "-seedClip", "off"]).seedsClip)
     }
+    @Test func focusLockParsesAndIsScripted() {
+        let c = LaunchConfig.parse(["app", "-focusLock", "on"])
+        #expect(c.focusLock); #expect(c.isScripted)
+        #expect(!LaunchConfig.parse(["app"]).focusLock); #expect(!LaunchConfig.parse(["app", "-focusLock", "off"]).focusLock)
+    }
 }

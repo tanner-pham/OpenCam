@@ -25,8 +25,9 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
     var editorLookName: String?             // -editorLook <name>: the launch push applies the look of that name, unsaved
     var droppedFrames = 0                   // -droppedFrames <n>: the simulated recording shows this count (honoured in the Simulator only, with -recording on)
     var usesPhoneFormats = false            // -formats phone: the fixture holds what the phone scans, plus the writer options (honoured in the Simulator only)
+    var focusLock = false                   // -focusLock on: the picture holds focus and exposure at its centre (honoured in the Simulator only)
     /// True when -orientation, -mode, -screen, -recording, -state, -editorGroup, -cameraLook, -editorLook, -control, -sliderPlacement, -formats,
-    /// -droppedFrames or an "on" flag among -seedSamples, -seedLook, -seedFormats, -seedStudy, -seedClip, -librarySelect and -shutterDemo parsed to a
+    /// -droppedFrames or an "on" flag among -seedSamples, -seedLook, -seedFormats, -seedStudy, -seedClip, -librarySelect, -shutterDemo and -focusLock parsed to a
     /// valid value; such launches never restore or save selections.
     var isScripted = false
 
@@ -86,6 +87,10 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
         }
         if value("-shutterDemo") == "on" {
             config.showsShutterDemo = true
+            config.isScripted = true
+        }
+        if value("-focusLock") == "on" {
+            config.focusLock = true
             config.isScripted = true
         }
         if let name = value("-cameraLook") {

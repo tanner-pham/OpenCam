@@ -97,6 +97,7 @@ extension CameraModel {
         }
         manual = manual.setting(control, to: scale.values[target], live: shownReadouts)
         if !movesToOwnCameraForExposure() { sendManual() }
+        manualChangedForFocus()
     }
 
     /// Shutter and ISO cannot be set on the combined camera (measured 2026-11-16), so the first one set by hand moves the
@@ -119,6 +120,7 @@ extension CameraModel {
         guard next != manual else { return }
         manual = next
         sendManual()
+        manualChangedForFocus()
     }
 
     /// The camera is changing, or is not usable: the slider closes, the values return to automatic and are sent, and an apply
@@ -127,6 +129,7 @@ extension CameraModel {
     func resetManual() {
         manualGeneration += 1
         openControl = nil
+        focusTap.cameraChanged()
         appliedManual = .automatic
         reappliesAllManual = false
         if !seedSimulatedCamera() { manualRanges = nil }

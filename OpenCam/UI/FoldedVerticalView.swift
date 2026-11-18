@@ -12,6 +12,7 @@ struct FoldedVerticalView: View {
         // for, still 3:4, so the readouts, shutter row and notice line always show in full.
         PictureAboveControlsLayout(pictureAspect: 3 / 4) {
             ViewfinderArea(phase: model.phase, look: model.viewfinderLook, onRetry: model.isCameraStopped ? { model.retryCamera() } : nil)
+                .overlay { ViewfinderGestureLayer(model: model) }
                 .clipped()
 
             VStack(spacing: Theme.Space.s) {

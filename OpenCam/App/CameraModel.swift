@@ -70,6 +70,14 @@ final class CameraModel {
     @ObservationIgnored var manualGeneration = 0
     /// True when the next apply must set every group, not only those that changed.
     @ObservationIgnored var reappliesAllManual = false
+    /// The marker and lock a tap or a hold left on the viewfinder (`CameraModel+Focus`).
+    var focusTap = FocusTapState()
+    /// Sends tap, hold and recentre requests to the session one at a time; the latest waiting one replaces earlier ones.
+    @ObservationIgnored var focusRequests = RenderCoalescer<FocusRequest>()
+    /// Where a touch lands on the sensor on the device. A test replaces it, because there is no preview view in a test.
+    @ObservationIgnored var focusGeometry: @MainActor (CGSize) -> PreviewGeometry? = { _ in PreviewUIView.currentGeometry() }
+    /// `-focusLock on`: the Simulator holds at the centre once the layer knows its size.
+    @ObservationIgnored var holdsFocusOnLaunch = false
     /// The latest format sweep, kept after it ends so its result stays on screen.
     var sweep: FormatSweep?
     /// The saved looks, read at launch and whenever the Library closes.
@@ -94,7 +102,7 @@ final class CameraModel {
     @ObservationIgnored let keepsSweepClips: Bool
     @ObservationIgnored private let isScripted: Bool
     /// The Simulator keeps the stand-in free space; the device reads it.
-    @ObservationIgnored private let isSimulator: Bool
+    @ObservationIgnored let isSimulator: Bool
     /// `-freeSpaceMarginMB N`: recording stops N MB before the volume is full, in place of the 2 GB reserve, to test that path.
     @ObservationIgnored let freeSpaceMarginMB: Int?
     @ObservationIgnored let capabilitySource: CapabilitySource
@@ -255,6 +263,7 @@ final class CameraModel {
         if !isLookOffered { self.cameraLook = nil }
         if isSimulator { simulate(config.simulatedState) }
         if seedSimulatedCamera(), let control = config.openControl, scale(for: control) != nil { openControl = control }
+        holdsFocusOnLaunch = isSimulator && config.focusLock
         if isSimulator { simulatedConfiguration = sessionConfiguration }
         launchTimeline.mark("model")
     }
