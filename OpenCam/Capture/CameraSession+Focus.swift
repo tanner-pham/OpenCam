@@ -30,6 +30,11 @@ extension CameraSession {
             device.exposureMode = mode == .once ? .autoExpose : .continuousAutoExposure
         }
         device.isSubjectAreaChangeMonitoringEnabled = plan.watchesSubjectArea
+        if case .recentre = request {
+            didMoveFocusPoint = false
+        } else if plan.outcome != .nothing {
+            didMoveFocusPoint = true
+        }
         removeSubjectAreaObserver()
         if plan.watchesSubjectArea {
             subjectAreaObserver = Self.observeSubjectArea(of: device, owner: self)
@@ -37,13 +42,15 @@ extension CameraSession {
         return plan.outcome
     }
 
-    /// The caller holds the configuration lock. Writes only what differs from today's defaults, so a configure with no tap
-    /// changes nothing on the camera.
+    /// The caller holds the configuration lock, and calls this before the continuous modes are set. Touches the device only after a
+    /// tap or hold moved the point, so a configure with no gesture changes nothing, whatever the device did by itself.
     func resetFocusPoint(on device: AVCaptureDevice) {
+        guard didMoveFocusPoint else { return }
+        didMoveFocusPoint = false
         let centre = Self.devicePoint(.centre)
-        if device.isFocusPointOfInterestSupported, device.focusPointOfInterest != centre { device.focusPointOfInterest = centre }
-        if device.isExposurePointOfInterestSupported, device.exposurePointOfInterest != centre { device.exposurePointOfInterest = centre }
-        if device.isSubjectAreaChangeMonitoringEnabled { device.isSubjectAreaChangeMonitoringEnabled = false }
+        if device.isFocusPointOfInterestSupported { device.focusPointOfInterest = centre }
+        if device.isExposurePointOfInterestSupported { device.exposurePointOfInterest = centre }
+        device.isSubjectAreaChangeMonitoringEnabled = false
         removeSubjectAreaObserver()
     }
 

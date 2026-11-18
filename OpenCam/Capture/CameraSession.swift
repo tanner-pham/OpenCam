@@ -61,6 +61,8 @@ actor CameraSession: SessionConfigurator {
     var isRAWClipRecording = false
     /// Listens for a changed scene while a tap's watch is on; nil otherwise (`CameraSession+Focus`).
     var subjectAreaObserver: (any NSObjectProtocol)?
+    /// True from a tap or hold that moved the point or turned the watch on until the next reset; with no tap the device is not touched.
+    var didMoveFocusPoint = false
     /// Held here because the session does not keep its controls delegate alive.
     private let controlsDelegate: CameraControlsDelegate
     static let logger = Logger(subsystem: "local.opencam.app", category: "CameraSession")

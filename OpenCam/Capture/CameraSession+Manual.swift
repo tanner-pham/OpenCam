@@ -62,8 +62,10 @@ extension CameraSession {
             return
         }
         defer { device.unlockForConfiguration() }
-        _ = run(request, on: device)
+        // Before the modes: setting a point starts nothing, so the continuous modes `run` sets then apply the centre. A group the
+        // reset does not set a mode for (a mode the camera lacks) has no operation to start there either.
         resetFocusPoint(on: device)
+        _ = run(request, on: device)
         setExposureBiasControls(enabled: true)
     }
 
