@@ -181,4 +181,35 @@ actor FakeSessionConfigurator: SessionConfigurator {
         appliedManual = plan.applied
         return plan.applied
     }
+
+    // MARK: Focus
+
+    /// Every request `applyFocus` received, in order.
+    private(set) var focusRequests: [FocusRequest] = []
+    private var focusOutcome = FocusOutcome.focusAndExposure
+    private var isHoldingFocus = false
+    private var heldFocus: [CheckedContinuation<Void, Never>] = []
+
+    /// From now on `applyFocus` answers `outcome`.
+    func setFocusOutcome(_ outcome: FocusOutcome) {
+        focusOutcome = outcome
+    }
+
+    /// From now on a request is recorded ("focus"), then waits, until `resumeFocus`.
+    func holdFocus() {
+        isHoldingFocus = true
+    }
+
+    func resumeFocus() {
+        isHoldingFocus = false
+        for waiting in heldFocus { waiting.resume() }
+        heldFocus = []
+    }
+
+    func applyFocus(_ request: FocusRequest) async -> FocusOutcome {
+        focusRequests.append(request)
+        calls.append("focus")
+        if isHoldingFocus { await withCheckedContinuation { heldFocus.append($0) } }
+        return focusOutcome
+    }
 }

@@ -63,6 +63,7 @@ extension CameraSession {
         }
         defer { device.unlockForConfiguration() }
         _ = run(request, on: device)
+        resetFocusPoint(on: device)
         setExposureBiasControls(enabled: true)
     }
 

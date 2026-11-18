@@ -25,4 +25,6 @@ nonisolated protocol SessionConfigurator: Sendable {
     /// `reapplyingAll` sets every group. Never reconfigures the session; works while recording. Every value is clamped to
     /// the device's limits first, and the settings actually set are returned. A configure returns the camera to automatic.
     func applyManual(_ settings: ManualSettings, reapplyingAll: Bool) async throws(ManualControlError) -> ManualSettings
+    /// Runs `FocusPlan.make(request, manual: appliedManual, support:)` on the current camera. Never configures; works while recording.
+    func applyFocus(_ request: FocusRequest) async -> FocusOutcome
 }

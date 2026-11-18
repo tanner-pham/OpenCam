@@ -59,6 +59,8 @@ actor CameraSession: SessionConfigurator {
     var appliedManual: ManualSettings?
     /// True from the start of a ProRes RAW clip, which records with white balance locked, until `restoreWhiteBalance` runs.
     var isRAWClipRecording = false
+    /// Listens for a changed scene while a tap's watch is on; nil otherwise (`CameraSession+Focus`).
+    var subjectAreaObserver: (any NSObjectProtocol)?
     /// Held here because the session does not keep its controls delegate alive.
     private let controlsDelegate: CameraControlsDelegate
     static let logger = Logger(subsystem: "local.opencam.app", category: "CameraSession")
