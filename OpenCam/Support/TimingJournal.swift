@@ -37,6 +37,8 @@ nonisolated enum TimingJournal {
         var changed: [String] = []
         if previous.mode != configuration.mode { changed.append("mode") }
         if previous.lens.id != configuration.lens.id { changed.append("lens") }
+        // The same lens on another camera: the move between the combined camera and the lens's own, as for a manual shutter.
+        if previous.lens.id == configuration.lens.id, previous.cameraUniqueID != configuration.cameraUniqueID { changed.append("camera") }
         if previous.video != configuration.video || previous.photo != configuration.photo { changed.append("format") }
         if previous.includesAudio != configuration.includesAudio || previous.needsFrames != configuration.needsFrames {
             changed.append("outputs")
