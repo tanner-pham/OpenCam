@@ -19,19 +19,20 @@ nonisolated struct SessionConfiguration: Codable, Sendable, Equatable {
     /// The zoom on that camera.
     var zoomFactor: Double { combined?.zoomFactor ?? lens.zoomFactor }
 
-    /// True when both are video on the same combined camera with the same codec, size, rate, colour, sound, frame feed and
-    /// recorder, so at most the lens differs. `photo` and each option's `lensID` are not compared: video ignores the first and
-    /// the second only says which lens lists the option.
+    /// True when both are video on the same combined camera and everything but the lens is equal: the copy of this configuration
+    /// with `previous`'s lens, photo option and combined lens (zoom included) equals `previous`. `photo` is not compared (video
+    /// ignores it) and neither is each option's `lensID` (it only says which lens lists the option). Built by equality, with
+    /// the memberwise `VideoOption` initialiser, so a field added to either type is compared or stops the build here.
     func changesOnlyLens(from previous: SessionConfiguration) -> Bool {
         guard let combined, let before = previous.combined, combined.deviceUniqueID == before.deviceUniqueID,
               mode == .video, previous.mode == .video, let video, let previousVideo = previous.video else { return false }
-        return video.codec == previousVideo.codec
-            && video.resolution == previousVideo.resolution
-            && video.frameRate == previousVideo.frameRate
-            && video.colour == previousVideo.colour
-            && includesAudio == previous.includesAudio
-            && needsFrames == previous.needsFrames
-            && recorder == previous.recorder
+        var copy = self
+        copy.lens = previous.lens
+        copy.photo = previous.photo
+        copy.combined = previous.combined
+        copy.video = VideoOption(lensID: previousVideo.lensID, codec: video.codec, resolution: video.resolution,
+                                 frameRate: video.frameRate, colour: video.colour)
+        return copy == previous
     }
 
     /// A saved start written before recorder paths has no `recorder` and decodes as `.system`; one written before the combined
