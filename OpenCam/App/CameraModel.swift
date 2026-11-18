@@ -702,10 +702,6 @@ final class CameraModel {
         _ = await configureTask?.value
     }
 
-    /// Queues a configure behind any running one. A lens switch changes lens, record and photo in one turn;
-    /// only the last of those runs, because the earlier ones are superseded before the chain reaches them.
-    /// `keepsManual` is for the move to a lens's own camera for a manual shutter or ISO: the hand-set values are carried over
-    /// and sent again once the camera is attached, instead of returning to automatic.
     /// True when `wanted` is `requested` plus the combined camera. After a manual exposure moved the session to the lens's own
     /// camera, setting it back to Auto makes the combined camera servable again; nothing the user did asks for that move, so it
     /// waits for a change that configures anyway (the next lens tap), and the controls set by hand are kept.
@@ -716,6 +712,10 @@ final class CameraModel {
         return withoutCombined == requested
     }
 
+    /// Queues a configure behind any running one. A lens switch changes lens, record and photo in one turn;
+    /// only the last of those runs, because the earlier ones are superseded before the chain reaches them.
+    /// `keepsManual` is for the move to a lens's own camera for a manual shutter or ISO: the hand-set values are carried over
+    /// and sent again once the camera is attached, instead of returning to automatic.
     @discardableResult
     func enqueueConfigure(keepsManual: Bool = false) -> Task<CameraSessionError?, Never>? {
         guard !isScanningFormats, !isRecording, !isHeldForLibrary, let configurator, let wanted = sessionConfiguration,
