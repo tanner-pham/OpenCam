@@ -167,6 +167,12 @@ In video at up to 60 fps the 0.5x, 1x and 2x buttons run on the combined back ca
 - [ ] A Library visit, a phone call, and locking the phone on each lens: the camera returns on the same lens.
 - [ ] A look in video on the combined camera: the look stays across lens taps.
 - [ ] Ten minutes on 1x in video: note heat and battery against the build before.
+- [ ] The same lens taps at 1080p, at 720p and in P3: no blur, and a `[timing] lens` line each. Only 4K 30 and 60 in HLG and 1080p 30 in Rec. 709 were measured.
+- [ ] Run the format sweep (long-press the summary) on 0.5x, 1x and 2x. It now runs options at up to 60 fps on the combined camera. List every failed row: a row that fails here and passed before is the combined camera refusing a format.
+- [ ] If a format ever shows "That format could not be used." on a back lens, choose it again: the second try uses the lens's own camera and should work. Note the format and the journal line.
+- [ ] Tap a lens and drag the shutter slider straight away: one blur, the shutter holds, and no "That setting could not be applied." notice.
+- [ ] Set the shutter by hand, set white balance by hand, set the shutter back to Auto, record a clip and stop it: no blur at the stop, and the white balance is still the one set. The next lens tap blurs once.
+- [ ] The launch line's time to the `lenses` mark against the build before: the combined camera is read there.
 
 ## 9. Things to decide after holding it
 

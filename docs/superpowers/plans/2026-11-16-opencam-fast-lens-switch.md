@@ -355,3 +355,10 @@ private func restoreLens() {
 - `enqueueConfigure` returns nil when the configuration read after the reset is what the session already runs, and a failed move to a lens's own camera resets the controls only when no newer configure overtook it (Task 4 review).
 - The open shutter or ISO slider is closed in `startRecording()` where `isRecording` becomes true, not in `recordingBegan`, which runs only after the awaited start.
 - The new session members live in `OpenCam/Capture/CameraSession+Lens.swift`.
+- After the whole-branch review: `enqueueConfigure` does nothing when the selection differs from what the session runs only by the combined camera becoming possible again (a manual exposure returned to Auto), so the camera never moves, and the controls never reset, without a change the user made; the next lens tap blurs once and returns to the combined camera.
+- After the whole-branch review: an option whose configure failed on the combined camera is remembered for the run (`CameraModel.combinedRefusals`) and uses the lens's own camera from then on, so a format that worked before still works on the second try.
+- After the whole-branch review: the session takes the lens-only path only when the lens really differs and the active format reaches the new zoom; an identical configuration asked for again (recovery's restart) is a full configure.
+- After the whole-branch review: the movie output's recording switching flag is turned off after a configure's commits and checked again before each recording (`keepLensLockWhileRecording`), the measured sequence, not inside the configuration.
+- After the whole-branch review: `changesOnlyLens` compares a normalised copy for equality, and the 0.05 frame-rate tolerance is `StandardFrameRates.tolerance` in all three places.
+- The format sweep goes through `sessionConfiguration`, so on the back lenses it now tries options at up to 60 fps on the combined camera, which is what a recording uses. Its report does not say which camera ran a row.
+- The test fake refuses a manual exposure on a combined configuration, as the phone does, so any test in which the model sends one there fails.
