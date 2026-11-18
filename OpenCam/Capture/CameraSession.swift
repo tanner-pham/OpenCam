@@ -63,6 +63,8 @@ actor CameraSession: SessionConfigurator {
     var subjectAreaObserver: (any NSObjectProtocol)?
     /// True from a tap or hold that moved the point or turned the watch on until the next reset; with no tap the device is not touched.
     var didMoveFocusPoint = false
+    /// The pinch zoom on the current lens, 1 for none (`CameraSession+Zoom`): a factor on the configuration's own zoom.
+    var pinch = 1.0
     /// Held here because the session does not keep its controls delegate alive.
     private let controlsDelegate: CameraControlsDelegate
     static let logger = Logger(subsystem: "local.opencam.app", category: "CameraSession")
@@ -123,6 +125,7 @@ actor CameraSession: SessionConfigurator {
         guard !recorder.output.isRecording, writerRecorderStorage?.isClipInFlight != true else { throw .recordingInProgress }
         // A configure that fails with no restore leaves the camera in a state nothing tracks, so nothing is assumed to hold.
         appliedManual = nil
+        if !PinchZoom.keeps(from: lastWorkingConfiguration, to: configuration) { pinch = 1 }
         let timing = (start: ContinuousClock.now, previous: lastWorkingConfiguration)
         launchMarks?.mark("session configure")
         // The lens-only path writes its own `[timing] lens` line, so a `configure` line beside it would be false.
@@ -252,7 +255,7 @@ actor CameraSession: SessionConfigurator {
         guard zoom <= device.activeFormat.videoMaxZoomFactor else {
             throw .noMatchingFormat(option: "zoom \(configuration.lens.label)")
         }
-        device.videoZoomFactor = zoom
+        device.videoZoomFactor = targetZoom(for: configuration, on: device)
         try applyPhotoDimensions(configuration.photo, format: device.activeFormat)
     }
 
@@ -552,7 +555,7 @@ actor CameraSession: SessionConfigurator {
         if configuration.combined != nil {
             try lockLens(configuration, on: device)
         } else {
-            device.videoZoomFactor = zoom
+            device.videoZoomFactor = targetZoom(for: configuration, on: device)
         }
     }
 

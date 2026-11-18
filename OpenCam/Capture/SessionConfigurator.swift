@@ -27,4 +27,7 @@ nonisolated protocol SessionConfigurator: Sendable {
     func applyManual(_ settings: ManualSettings, reapplyingAll: Bool) async throws(ManualControlError) -> ManualSettings
     /// Runs `FocusPlan.make(request, manual: appliedManual, support:)` on the current camera. Never configures; works while recording.
     func applyFocus(_ request: FocusRequest) async -> FocusOutcome
+    /// Sets the lens-relative pinch on the current camera with a ramp and keeps it for every later re-apply. Returns the pinch the
+    /// camera can hold (its format may stop short of the cap). Never configures; works while recording.
+    func applyZoom(pinch: Double) async -> Double
 }

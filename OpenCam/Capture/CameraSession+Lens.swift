@@ -48,7 +48,7 @@ extension CameraSession {
         if device.primaryConstituentDeviceSwitchingBehavior != .locked || device.activePrimaryConstituent?.uniqueID != lensDevice.uniqueID {
             device.setPrimaryConstituentDeviceSwitchingBehaviorLockedWith(lensDevice)
         }
-        let zoom = CGFloat(configuration.zoomFactor)
+        let zoom = targetZoom(for: configuration, on: device)
         if zoom >= device.minAvailableVideoZoomFactor, zoom <= device.maxAvailableVideoZoomFactor {
             device.videoZoomFactor = zoom
         }
@@ -62,7 +62,7 @@ extension CameraSession {
     /// once the session has started. Callers hold no configuration lock: the range was measured to move after the lock was released.
     func settleZoom(_ configuration: SessionConfiguration, on device: AVCaptureDevice) {
         guard configuration.combined != nil else { return }
-        let zoom = CGFloat(configuration.zoomFactor)
+        let zoom = targetZoom(for: configuration, on: device)
         guard device.videoZoomFactor != zoom else { return }
         let isHeld = { zoom >= device.minAvailableVideoZoomFactor && zoom <= device.maxAvailableVideoZoomFactor }
         let deadline = ContinuousClock.now + .milliseconds(250)
@@ -124,5 +124,6 @@ extension CameraSession {
     func restoreLens() {
         guard let applied = lastWorkingConfiguration, let device = videoInput?.device else { return }
         confirmLens(applied, on: device)
+        restorePinch(applied, on: device)
     }
 }

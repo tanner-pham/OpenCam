@@ -13,7 +13,7 @@ actor FakeSessionConfigurator: SessionConfigurator {
     private(set) var releaseCount = 0
     /// True while a camera input is attached: from a configure until the session lets the camera go.
     private(set) var holdsCamera = true
-    /// Session calls in order: "configure", "start", "release", "manual".
+    /// Session calls in order: "configure", "start", "release", "manual", "focus", "zoom".
     private(set) var calls: [String] = []
     private(set) var recordingURLs: [URL] = []
     private(set) var stopRecordingCount = 0
@@ -61,6 +61,7 @@ actor FakeSessionConfigurator: SessionConfigurator {
         guard !failingLensIDs.contains(configuration.lens.id) else {
             throw .noMatchingFormat(option: "fake \(configuration.lens.id)")
         }
+        if !PinchZoom.keeps(from: applied.last, to: configuration) { storedPinch = 1 }
         applied.append(configuration)
         // A configure returns the camera to automatic, as the session does.
         appliedManual = nil
@@ -211,5 +212,26 @@ actor FakeSessionConfigurator: SessionConfigurator {
         calls.append("focus")
         if isHoldingFocus { await withCheckedContinuation { heldFocus.append($0) } }
         return focusOutcome
+    }
+
+    // MARK: Zoom
+
+    /// Every pinch `applyZoom` received, in order.
+    private(set) var zoomRequests: [Double] = []
+    /// The most the fake camera's format holds; `applyZoom` answers no more than this.
+    private(set) var zoomLimit = PinchZoom.cap
+    /// What the camera holds now; a configure resets it by the same rule as the session's (`PinchZoom.keeps`).
+    private var storedPinch = 1.0
+    var pinch: Double { storedPinch }
+
+    func setZoomLimit(_ limit: Double) {
+        zoomLimit = limit
+    }
+
+    func applyZoom(pinch: Double) async -> Double {
+        zoomRequests.append(pinch)
+        calls.append("zoom")
+        storedPinch = min(pinch, zoomLimit)
+        return storedPinch
     }
 }
