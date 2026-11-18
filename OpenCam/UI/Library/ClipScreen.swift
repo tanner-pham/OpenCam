@@ -1,4 +1,5 @@
 import AVKit
+import Combine
 import SwiftUI
 
 /// The Library's navigation destination for a clip: the system player over a line of its recording details, with Share and
@@ -9,7 +10,9 @@ struct ClipScreen: View {
     let onDone: () -> Void
 
     @State private var player: AVPlayer?
-    @State private var info = ClipInfo(sidecar: nil)
+    /// Nil until the sidecar has been read, so the line never says "no details" for a clip that has them.
+    @State private var info: ClipInfo?
+    @State private var isUnplayable = false
     @State private var isConfirmingDelete = false
     @State private var isShowingDeleteFailure = false
 
@@ -21,12 +24,24 @@ struct ClipScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let player {
+            if isUnplayable {
+                Color.black.overlay {
+                    Text(LibraryCopy.clipCannotOpen)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(Theme.Space.l)
+                }
+            } else if let player {
                 VideoPlayer(player: player)
             } else {
                 Color.black.overlay { ProgressView() }
             }
-            InfoLine(title: LibraryCopy.clipInfoTitle, summary: info.summary, rows: info.rows)
+            if let info {
+                InfoLine(title: LibraryCopy.clipInfoTitle, summary: info.summary, rows: info.rows)
+            } else {
+                InfoLine(title: LibraryCopy.clipInfoTitle, summary: " ", rows: [])
+                    .accessibilityHidden(true)
+            }
         }
         .navigationTitle(item.stem)
         .navigationBarTitleDisplayMode(.inline)
@@ -42,9 +57,15 @@ struct ClipScreen: View {
             }
         }
         .task(id: item.id) {
-            let player = AVPlayer(url: item.pictureURL)
+            isUnplayable = false
+            let playerItem = AVPlayerItem(url: item.pictureURL)
+            let player = AVPlayer(playerItem: playerItem)
             self.player = player
             player.play()
+            for await status in playerItem.publisher(for: \.status).values where status != .unknown {
+                isUnplayable = status == .failed
+                break
+            }
         }
         .task(id: item.id) { info = await ClipInfo.load(for: item) }
         .onDisappear { player?.pause() }

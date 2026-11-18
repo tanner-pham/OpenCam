@@ -42,18 +42,28 @@ nonisolated final class SampleClipWriter: ClipFrameWriting {
         if let reason = sink.begin() { throw failure(reason) }
         let base = CIImage(cgImage: image)
         let context = CIContext()
-        for index in 0..<frameCount {
-            while !sink.isReady() {
-                if let reason = sink.failure() { throw failure(reason) }
-                try? await Task.sleep(for: .milliseconds(5))
+        do throws(LibraryError) {
+            for index in 0..<frameCount {
+                while !sink.isReady() {
+                    if let reason = sink.failure() { throw failure(reason) }
+                    do {
+                        try await Task.sleep(for: .milliseconds(5))
+                    } catch {
+                        throw failure("The write was cancelled")
+                    }
+                }
+                let angle = 2 * Double.pi * Double(index) / Double(frameCount)
+                guard let frame = Self.frame(of: base, turnedBy: angle, at: index, with: context) else {
+                    throw failure("Frame \(index) could not be rendered")
+                }
+                guard sink.append(frame) else { throw failure(sink.failure() ?? "Frame \(index) was refused") }
             }
-            let angle = 2 * Double.pi * Double(index) / Double(frameCount)
-            guard let frame = Self.frame(of: base, turnedBy: angle, at: index, with: context) else {
-                throw failure("Frame \(index) could not be rendered")
-            }
-            guard sink.append(frame) else { throw failure(sink.failure() ?? "Frame \(index) was refused") }
+            if let reason = await sink.finish() { throw failure(reason) }
+        } catch {
+            // The writer must not be released while it is still writing; the seeder removes the files.
+            sink.cancel()
+            throw error
         }
-        if let reason = await sink.finish() { throw failure(reason) }
     }
 
     private static func frame(of base: CIImage, turnedBy angle: Double, at index: Int, with context: CIContext) -> CMSampleBuffer? {
@@ -101,6 +111,10 @@ nonisolated final class SampleClipWriter: ClipFrameWriting {
 
     func failure() -> String? {
         writer.status == .failed ? (writer.error?.localizedDescription ?? "The writer failed") : nil
+    }
+
+    func cancel() {
+        writer.cancelWriting()
     }
 
     func finish() async -> String? {

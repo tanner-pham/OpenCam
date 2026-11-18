@@ -10,6 +10,8 @@ nonisolated protocol ClipFrameWriting: AnyObject {
     func append(_ frame: CMSampleBuffer) -> Bool
     /// The writer's own error text, if it has failed.
     func failure() -> String?
+    /// Stops a writer that has begun and not finished; call on every failure after `begin()`.
+    func cancel()
     /// Finishes the file; the reason when it could not be finished.
     func finish() async -> String?
 }

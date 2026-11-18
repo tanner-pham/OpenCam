@@ -26,4 +26,13 @@ import Testing
         #expect(try await SampleSeeder.seedClipIfAbsent(captures) == 0)
         #expect(LibraryScanner.items(in: dir).count == 1)
     }
+
+    @Test func aFailedWriteLeavesNoClipAndNoSidecarBehind() async throws {
+        let dir = try TestFiles.directory(); let captures = try CaptureStore(directory: dir)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path(percentEncoded: false))
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path(percentEncoded: false)) }
+        await #expect(throws: LibraryError.self) { try await SampleSeeder.seedClipIfAbsent(captures) }
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path(percentEncoded: false))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path(percentEncoded: false)).isEmpty)
+    }
 }
