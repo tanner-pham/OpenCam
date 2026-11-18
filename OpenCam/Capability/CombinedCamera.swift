@@ -8,7 +8,7 @@ nonisolated struct CombinedCamera: Sendable, Equatable {
     let formats: [CombinedFormat]
 
     /// Nil unless this camera can record `video` through `lens`: video mode, a lens it holds, and a format with the option's
-    /// size, colour space and frame rate (the 0.05 tolerance `StandardFrameRates.collapse` uses) whose zoom reaches the lens's.
+    /// size, colour space and frame rate (within `StandardFrameRates.tolerance`, as `StandardFrameRates.collapse` does) whose zoom reaches the lens's.
     func lens(for lens: Lens, mode: CaptureMode, video: VideoOption?) -> CombinedLens? {
         guard mode == .video, let video, let base = baseZoomByDeviceID[lens.deviceUniqueID] else { return nil }
         let zoom = base * lens.zoomFactor
@@ -17,7 +17,7 @@ nonisolated struct CombinedCamera: Sendable, Equatable {
         let isServed = formats.contains { format in
             format.width == video.resolution.width && format.height == video.resolution.height
                 && format.colourSpaces.contains(colourSpace)
-                && format.frameRateRanges.contains { $0.lowerBound - 0.05 <= rate && rate <= $0.upperBound + 0.05 }
+                && format.frameRateRanges.contains { $0.lowerBound - StandardFrameRates.tolerance <= rate && rate <= $0.upperBound + StandardFrameRates.tolerance }
                 && format.maxZoomFactor >= zoom
         }
         return isServed ? CombinedLens(deviceUniqueID: deviceUniqueID, zoomFactor: zoom) : nil

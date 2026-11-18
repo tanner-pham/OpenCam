@@ -610,7 +610,7 @@ actor CameraSession: SessionConfigurator {
 
     /// The same 0.05 tolerance `StandardFrameRates.collapse` uses, so every offered rate finds its range.
     private static func range(_ range: AVFrameRateRange, contains rate: Double) -> Bool {
-        range.minFrameRate - 0.05 <= rate && rate <= range.maxFrameRate + 0.05
+        range.minFrameRate - StandardFrameRates.tolerance <= rate && rate <= range.maxFrameRate + StandardFrameRates.tolerance
     }
 
     /// 1/rate, clamped to the range so a 30 offered from a 29.97 maximum never sets an unsupported duration.
