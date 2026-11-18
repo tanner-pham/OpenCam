@@ -60,4 +60,9 @@ import Testing
         #expect(c.editorGroup == .curve); #expect(c.seedsStudyLook); #expect(c.editorLookName == "Colour study"); #expect(c.isScripted)
         #expect(LaunchConfig.parse(["app", "-editorLook", "X"]).isScripted); #expect(LaunchConfig.parse(["app", "-seedStudy", "on"]).isScripted)
     }
+    @Test func seedClipParsesAndIsScripted() {
+        let c = LaunchConfig.parse(["app", "-screen", "library", "-seedClip", "on"])
+        #expect(c.seedsClip); #expect(c.isScripted)
+        #expect(!LaunchConfig.parse(["app"]).seedsClip); #expect(!LaunchConfig.parse(["app", "-seedClip", "off"]).seedsClip)
+    }
 }

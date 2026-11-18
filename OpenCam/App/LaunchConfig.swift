@@ -16,6 +16,7 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
     var seedsLook = false                   // -seedLook on (honoured in the Simulator only)
     var seedsFormats = false                // -seedFormats on (honoured in the Simulator only)
     var seedsStudyLook = false              // -seedStudy on: saves the look "Colour study" (honoured in the Simulator only)
+    var seedsClip = false                   // -seedClip on: one sample clip with its sidecar (honoured in the Simulator only)
     var startsInSelectMode = false          // -librarySelect on
     var showsShutterDemo = false            // -shutterDemo on: the shutter blink runs once a second (honoured in the Simulator only)
     var cameraLookName: String?             // -cameraLook <name>: the look of that name is selected, or None when there is none
@@ -25,7 +26,7 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
     var droppedFrames = 0                   // -droppedFrames <n>: the simulated recording shows this count (honoured in the Simulator only, with -recording on)
     var usesPhoneFormats = false            // -formats phone: the fixture holds what the phone scans, plus the writer options (honoured in the Simulator only)
     /// True when -orientation, -mode, -screen, -recording, -state, -editorGroup, -cameraLook, -editorLook, -control, -sliderPlacement, -formats,
-    /// -droppedFrames or an "on" flag among -seedSamples, -seedLook, -seedFormats, -seedStudy, -librarySelect and -shutterDemo parsed to a
+    /// -droppedFrames or an "on" flag among -seedSamples, -seedLook, -seedFormats, -seedStudy, -seedClip, -librarySelect and -shutterDemo parsed to a
     /// valid value; such launches never restore or save selections.
     var isScripted = false
 
@@ -73,6 +74,10 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
         }
         if value("-seedStudy") == "on" {
             config.seedsStudyLook = true
+            config.isScripted = true
+        }
+        if value("-seedClip") == "on" {
+            config.seedsClip = true
             config.isScripted = true
         }
         if value("-librarySelect") == "on" {

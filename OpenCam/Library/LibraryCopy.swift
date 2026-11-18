@@ -12,6 +12,9 @@ nonisolated enum LibraryCopy {
     /// Shown for an edit file that exists but cannot be read; this build never overwrites or removes it.
     static let unreadableEdit = "This photo's edit could not be read."
     static let deleteMessage = "The files and their edits are removed from OpenCam. This cannot be undone."
+    static let noClipDetails = "No recording details for this clip.", clipInfoTitle = "Clip info"
+    static let deleteClipTitle = "Delete this clip?"
+    static let deleteClipMessage = "The clip and its recording details are removed from OpenCam. This cannot be undone."
 
     /// The sentence after an import; nil when nothing was chosen.
     static func importResult(imported: Int, failed: Int) -> String? {
