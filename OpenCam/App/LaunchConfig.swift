@@ -23,6 +23,7 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
     var forcesPictureSlider = false         // -sliderPlacement picture: the slider is drawn in the picture on the folded display (honoured in the Simulator only)
     var editorLookName: String?             // -editorLook <name>: the launch push applies the look of that name, unsaved
     var droppedFrames = 0                   // -droppedFrames <n>: the simulated recording shows this count (honoured in the Simulator only, with -recording on)
+    var runsRawSizeCheck = false            // -rawSizeCheck: the RAW size diagnostic replaces the camera (honoured on a device only; never makes the launch scripted)
     var usesPhoneFormats = false            // -formats phone: the fixture holds what the phone scans, plus the writer options (honoured in the Simulator only)
     /// True when -orientation, -mode, -screen, -recording, -state, -editorGroup, -cameraLook, -editorLook, -control, -sliderPlacement, -formats,
     /// -droppedFrames or an "on" flag among -seedSamples, -seedLook, -seedFormats, -seedStudy, -librarySelect and -shutterDemo parsed to a
@@ -108,6 +109,7 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
             config.isScripted = true
         }
         config.freeSpaceMarginMB = value("-freeSpaceMarginMB").flatMap { Int($0) }
+        config.runsRawSizeCheck = args.contains("-rawSizeCheck")
         config.keepsSweepClips = value("-keepSweepClips") == "on"
         config.hasWiredMicrophone = value("-wiredMic") == "on"
         config.hasHeadphones = value("-headphones") == "on"

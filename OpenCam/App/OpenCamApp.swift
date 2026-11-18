@@ -20,6 +20,8 @@ struct OpenCamApp: App {
     /// The fallback look renderer warm-up, once the camera has started (or could not).
     @State private var rendererWarmUp = RunOnce()
     private static let libraryLoadDeadline = Duration.seconds(1)
+    /// `-rawSizeCheck` on a device: the hidden RAW size diagnostic. Nil on every other launch.
+    @State private var rawSizeCheck: RawSizeCheckProgress?
 
     init() {
         let config = LaunchConfig.parse(ProcessInfo.processInfo.arguments)
@@ -49,6 +51,7 @@ struct OpenCamApp: App {
         let empty = CaptureCapabilities(lenses: [], videoOptions: [], photoOptions: [], osBuild: "", modelIdentifier: "")
         _model = State(initialValue: CameraModel(config: config, capabilities: empty, isSimulator: false, captureStore: captureStore,
                                                  isLibraryAvailable: library != nil, lookStore: looks))
+        if config.runsRawSizeCheck { _rawSizeCheck = State(initialValue: RawSizeCheckProgress()) }
         let session = CameraSession()
         _session = State(initialValue: session)
         _audio = State(initialValue: AudioModel(device: SystemAudioDevice(capture: session)))
@@ -58,7 +61,9 @@ struct OpenCamApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if let model {
+                if let rawSizeCheck {
+                    RawSizeCheckView(progress: rawSizeCheck)
+                } else if let model {
                     CameraRootView(model: model, library: library, launch: config)
                 } else {
                     Color.black
@@ -89,6 +94,11 @@ struct OpenCamApp: App {
             }
             .task {
                 guard let model, let session else { return }
+                // Diagnostic launch: the check needs the cameras to itself, so the camera is not started.
+                if let rawSizeCheck {
+                    await RawSizeCheck.runAndWrite(progress: rawSizeCheck)
+                    return
+                }
                 // The preview layer joins the session before it starts. Photo and file outputs defer their start by default
                 // (AVCaptureOutputBase.h) while a preview layer does not, and "every output having the same value is
                 // equivalent to not using deferred start" (AVCaptureVideoPreviewLayer.h). `CameraPreviewView` gets this view later.
