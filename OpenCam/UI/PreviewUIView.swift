@@ -122,12 +122,12 @@ final class PreviewUIView: UIView {
         frames.setAngle(angle)
     }
 
-    /// What a touch in the shared view needs to become a point on the sensor: the view's size, the preview connection's angle and
+    /// What a touch in the shared view needs to become a point on the sensor: the view's size (the gesture layer's, when given), the preview connection's angle and
     /// mirroring, and the camera's active format. Nil without a layer, a connection or a camera.
-    static func currentGeometry() -> PreviewGeometry? {
+    static func currentGeometry(viewSize: CGSize? = nil) -> PreviewGeometry? {
         guard let current, let layer = current.previewLayer, let connection = layer.connection, let device = videoDevice(of: layer) else { return nil }
         let dimensions = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
-        return PreviewGeometry(viewSize: current.bounds.size, sensorSize: CGSize(width: Int(dimensions.width), height: Int(dimensions.height)),
+        return PreviewGeometry(viewSize: viewSize ?? current.bounds.size, sensorSize: CGSize(width: Int(dimensions.width), height: Int(dimensions.height)),
                                rotation: Double(connection.videoRotationAngle), isMirrored: connection.isVideoMirrored)
     }
 

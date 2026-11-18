@@ -32,6 +32,18 @@ nonisolated struct FocusTapState: Sendable, Equatable {
         return .lock(point)
     }
 
+    /// The camera answered a hold: the lock is what it could do, and `.nothing` clears it and the marker. Ignored when the marker
+    /// it was for is gone or replaced, or is not a locked one.
+    mutating func lockAnswered(_ outcome: FocusOutcome, serial: Int) {
+        guard let marker, marker.serial == serial, marker.isLocked, lock != nil else { return }
+        if outcome == .nothing {
+            self.marker = nil
+            lock = nil
+        } else {
+            lock = outcome
+        }
+    }
+
     /// A slider moved: a lock ends and the camera goes back to the centre.
     mutating func manualChanged() -> FocusRequest? {
         guard lock != nil else { return nil }

@@ -107,4 +107,31 @@ import Testing
             #expect(state.lockText?.contains("\u{2014}") == false)
         }
     }
+
+    @Test func aLockAdoptsWhatTheCameraCouldDo() {
+        var state = FocusTapState()
+        _ = state.held(at: a, geometry: geometry, manual: automatic)
+        #expect(state.lockText == "AE/AF lock")
+        state.lockAnswered(.exposureOnly, serial: state.marker?.serial ?? 0)
+        #expect(state.lockText == "AE lock"); #expect(state.marker?.isLocked == true)
+    }
+
+    @Test func aLockTheCameraRefusedIsCleared() {
+        var state = FocusTapState()
+        _ = state.held(at: a, geometry: geometry, manual: automatic)
+        state.lockAnswered(.nothing, serial: state.marker?.serial ?? 0)
+        #expect(state.lock == nil); #expect(state.marker == nil)
+    }
+
+    @Test func anAnswerForAnOlderMarkerIsIgnored() {
+        var state = FocusTapState()
+        _ = state.held(at: a, geometry: geometry, manual: automatic)
+        let old = state.marker?.serial ?? 0
+        _ = state.held(at: b, geometry: geometry, manual: automatic)
+        state.lockAnswered(.nothing, serial: old)
+        #expect(state.lockText == "AE/AF lock"); #expect(state.marker?.viewPoint == b)
+        _ = state.tapped(at: a, geometry: geometry, manual: automatic)
+        state.lockAnswered(.exposureOnly, serial: state.marker?.serial ?? 0)
+        #expect(state.lock == nil)
+    }
 }

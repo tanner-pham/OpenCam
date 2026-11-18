@@ -28,7 +28,7 @@ extension CameraModel {
     /// A slider or Auto changed what is set by hand: a lock ends and the camera goes back to the centre.
     func manualChangedForFocus() {
         guard let request = focusTap.manualChanged() else { return }
-        sendFocus(request)
+        sendFocus(request, serial: nil)
     }
 
     /// `-focusLock on`: holds at the centre of the picture each time the layer settles on a size (a launch may rotate after the first layout).
@@ -51,22 +51,28 @@ extension CameraModel {
             case .recentre: break
             }
         }
-        sendFocus(request)
+        sendFocus(request, serial: focusTap.marker?.serial)
     }
 
     /// Starts a request when none runs; a running one leaves this one waiting in place of any earlier one. Without a session
     /// (the Simulator) only the state changes.
-    private func sendFocus(_ request: FocusRequest) {
-        guard let configurator, let job = focusRequests.request(request) else { return }
+    private func sendFocus(_ request: FocusRequest, serial: Int?) {
+        guard let configurator, let job = focusRequests.request(FocusJob(request: request, serial: serial, generation: focusGeneration)) else { return }
         Task { await runFocusRequests(from: job.value, on: configurator) }
     }
 
-    /// Sends the request, then the latest one that waited meanwhile, until none waits.
-    private func runFocusRequests(from first: FocusRequest, on configurator: any SessionConfigurator) async {
-        var request: FocusRequest? = first
-        while let current = request {
-            _ = await configurator.applyFocus(current)
-            request = focusRequests.finish()?.value
+    /// Sends the request, then the latest one that waited meanwhile, until none waits. A request made for an earlier camera is
+    /// not sent. A hold's answer sets the lock to what the camera could do.
+    private func runFocusRequests(from first: FocusJob, on configurator: any SessionConfigurator) async {
+        var job: FocusJob? = first
+        while let current = job {
+            if current.generation == focusGeneration {
+                let outcome = await configurator.applyFocus(current.request)
+                if current.generation == focusGeneration, case .lock = current.request, let serial = current.serial {
+                    focusTap.lockAnswered(outcome, serial: serial)
+                }
+            }
+            job = focusRequests.finish()?.value
         }
     }
 }

@@ -50,6 +50,9 @@ import Testing
         rig.model.toggleControl(.iso)
         rig.model.setControl(.iso, step: 5)
         await rig.model.manualApplyTask?.value
+        // Any focus work the model could have started has finished before the calls are read.
+        #expect(await eventually { rig.model.focusRequests.isIdle })
+        try await Task.sleep(for: .milliseconds(50))
         let calls = await rig.fake.calls
         #expect(!calls.contains("focus")); #expect(!calls.contains("zoom"))
         #expect(await rig.fake.focusRequests.isEmpty)
@@ -160,5 +163,31 @@ import Testing
         await rig.fake.resumeConfigures()
         await rig.model.waitForQueuedConfigures()
         #expect(await focusCount(rig.fake) == 0)
+    }
+
+    @Test func aHoldOnACameraThatCannotFocusReadsAELock() async throws {
+        let rig = try await rig()
+        await rig.fake.setFocusOutcome(.exposureOnly)
+        rig.model.focusHeld(at: CGPoint(x: 100, y: 100), in: Self.size)
+        #expect(rig.model.focusTap.lockText == "AE/AF lock")
+        #expect(await eventually { rig.model.focusTap.lockText == "AE lock" })
+        #expect(rig.model.focusTap.marker?.isLocked == true)
+        await rig.fake.setFocusOutcome(.nothing)
+        rig.model.focusHeld(at: CGPoint(x: 120, y: 100), in: Self.size)
+        #expect(await eventually { rig.model.focusTap.lock == nil })
+        #expect(rig.model.focusTap.marker == nil)
+    }
+
+    @Test func aRequestWaitingAcrossACameraChangeIsDropped() async throws {
+        let rig = try await rig()
+        await rig.fake.holdFocus()
+        rig.model.focusTapped(at: CGPoint(x: 40, y: 40), in: Self.size)
+        #expect(await until { await rig.fake.focusRequests.count == 1 })
+        rig.model.focusTapped(at: CGPoint(x: 300, y: 300), in: Self.size)
+        rig.model.selectLens("ultraWide")
+        await rig.fake.resumeFocus()
+        #expect(await eventually { rig.model.focusRequests.isIdle })
+        await rig.model.waitForQueuedConfigures()
+        #expect(await rig.fake.focusRequests == [.point(FocusPoint(x: 0.1, y: 0.1))])
     }
 }

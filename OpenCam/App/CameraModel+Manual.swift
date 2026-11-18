@@ -130,6 +130,7 @@ extension CameraModel {
         manualGeneration += 1
         openControl = nil
         focusTap.cameraChanged()
+        focusGeneration += 1
         appliedManual = .automatic
         reappliesAllManual = false
         if !seedSimulatedCamera() { manualRanges = nil }

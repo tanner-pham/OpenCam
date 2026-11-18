@@ -73,9 +73,11 @@ final class CameraModel {
     /// The marker and lock a tap or a hold left on the viewfinder (`CameraModel+Focus`).
     var focusTap = FocusTapState()
     /// Sends tap, hold and recentre requests to the session one at a time; the latest waiting one replaces earlier ones.
-    @ObservationIgnored var focusRequests = RenderCoalescer<FocusRequest>()
+    @ObservationIgnored var focusRequests = RenderCoalescer<FocusJob>()
+    /// Bumped when the camera changes, so a request that waited meanwhile is dropped.
+    @ObservationIgnored var focusGeneration = 0
     /// Where a touch lands on the sensor on the device. A test replaces it, because there is no preview view in a test.
-    @ObservationIgnored var focusGeometry: @MainActor (CGSize) -> PreviewGeometry? = { _ in PreviewUIView.currentGeometry() }
+    @ObservationIgnored var focusGeometry: @MainActor (CGSize) -> PreviewGeometry? = { size in PreviewUIView.currentGeometry(viewSize: size) }
     /// `-focusLock on`: the Simulator holds at the centre once the layer knows its size.
     @ObservationIgnored var holdsFocusOnLaunch = false
     /// The latest format sweep, kept after it ends so its result stays on screen.
