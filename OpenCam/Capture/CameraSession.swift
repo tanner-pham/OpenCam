@@ -175,6 +175,7 @@ actor CameraSession: SessionConfigurator {
         try preparePixelFormat(configuration)
         // After the commits: the combined camera's lens and zoom, read back from the camera itself.
         confirmLens(configuration, on: device)
+        keepLensLockWhileRecording(configuration)
         pressureObservation = Self.observePressure(of: device, continuation: continuation)
         // Every configure returns the camera to automatic, in step with the model, which does the same when it queues one.
         resetManual()
@@ -199,10 +200,6 @@ actor CameraSession: SessionConfigurator {
         detachOutputs(SessionOutputPlan.make(attached: attachedOutputs(), wanted: wantedOutputs).removals)
         try attachPhotoOutput(wantedOutputs.contains(.photo))
         try attachMovieOutput(wantedOutputs.contains(.movie))
-        // The movie output replaces the lock while it records unless this is off ("Read first" 7 of the fast lens switch plan).
-        if configuration.combined != nil, wantedOutputs.contains(.movie) {
-            recorder.output.isPrimaryConstituentDeviceSwitchingBehaviorForRecordingEnabled = false
-        }
         try attachWriterOutputs(wantedOutputs.contains(.writerVideo))
         attachFrameOutput(wantedOutputs.contains(.lookFrames))
         // Photo mode takes the photo preset when the session allows it: only there does the Duo offer Bayer RAW (measured
@@ -608,7 +605,7 @@ actor CameraSession: SessionConfigurator {
         device.activeVideoMaxFrameDuration = .invalid
     }
 
-    /// The same 0.05 tolerance `StandardFrameRates.collapse` uses, so every offered rate finds its range.
+    /// The same tolerance `StandardFrameRates.collapse` uses, so every offered rate finds its range.
     private static func range(_ range: AVFrameRateRange, contains rate: Double) -> Bool {
         range.minFrameRate - StandardFrameRates.tolerance <= rate && rate <= range.maxFrameRate + StandardFrameRates.tolerance
     }
@@ -738,6 +735,7 @@ extension CameraSession {
             isRAWClipRecording = true
         }
         allowHapticsWhileRecording()
+        if let applied = lastWorkingConfiguration { keepLensLockWhileRecording(applied) }
         do throws(RecordingError) {
             try recorder.start(option: option, url: url, minFreeBytes: minFreeBytes, device: device) { [weak self] in
                 guard let self else { return }

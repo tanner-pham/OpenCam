@@ -2,9 +2,15 @@ import AVFoundation
 
 /// The combined back camera's lens changes: a lens lock and a zoom on the camera the session already runs.
 extension CameraSession {
-    /// A lens button inside the combined camera is a lock and a zoom when the session runs it already and nothing else differs.
+    /// A lens button inside the combined camera is a lock and a zoom when the session runs it already, nothing else differs, the
+    /// lens does (an identical configuration asked for again, as by a restart, is a full configure and writes no false lens
+    /// line), and the active format reaches the new zoom (a format picked for another lens's zoom falls back to the full
+    /// configure, which picks a format by zoom).
     func canChangeLensOnly(to configuration: SessionConfiguration, from previous: SessionConfiguration) -> Bool {
-        session.isRunning && videoInput?.device.uniqueID == configuration.combined?.deviceUniqueID && configuration.changesOnlyLens(from: previous)
+        guard session.isRunning, let device = videoInput?.device, device.uniqueID == configuration.combined?.deviceUniqueID,
+              configuration.lens != previous.lens, configuration.changesOnlyLens(from: previous),
+              CGFloat(configuration.zoomFactor) <= device.activeFormat.videoMaxZoomFactor else { return false }
+        return true
     }
 
     /// Changes lens with no session configuration, so no frame is missed (measured 2026-11-16: the longest gap is one frame; the
@@ -64,6 +70,8 @@ extension CameraSession {
             Thread.sleep(forTimeInterval: 0.002)
         }
         guard isHeld() else {
+            // Before the session runs the range cannot open; `restoreLens` sets the zoom once it has started (a launch on 0.5x).
+            guard session.isRunning else { return }
             Self.logger.error("[CameraSession:settleZoom] The zoom range does not hold the lens's zoom — {lens: \(configuration.lens.id, privacy: .public), zoom: \(Double(zoom)), min: \(Double(device.minAvailableVideoZoomFactor)), running: \(self.session.isRunning)}")
             return
         }
@@ -99,6 +107,16 @@ extension CameraSession {
         }
         device.unlockForConfiguration()
         settleZoom(configuration, on: device)
+    }
+
+    /// On the combined camera the movie output would replace the lens lock with its own switching rule while it records unless
+    /// this is off (AVCaptureFileOutput.h:538; measured 2026-11-16: left on, the active behaviour while recording was "restricted").
+    /// The output turns it on when it connects to such a camera, so it is turned off after a configure's commits, on the
+    /// connected output, as measured, and checked again before each recording.
+    func keepLensLockWhileRecording(_ configuration: SessionConfiguration) {
+        guard configuration.combined != nil, session.outputs.contains(recorder.output),
+              recorder.output.isPrimaryConstituentDeviceSwitchingBehaviorForRecordingEnabled else { return }
+        recorder.output.isPrimaryConstituentDeviceSwitchingBehaviorForRecordingEnabled = false
     }
 
     /// `confirmLens` for the applied configuration: after a start, when the zoom could not be set before the session ran, and
