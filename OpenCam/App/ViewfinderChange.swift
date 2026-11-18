@@ -11,12 +11,13 @@ nonisolated enum ViewfinderChange {
     /// How long a change takes in the Simulator, which has no session.
     static let simulated: Duration = .milliseconds(400)
 
-    /// True when `next` pauses the picture: another mode, camera, format, sound or frame feed. Only a different zoom on the
-    /// same camera does not. The first configure (`previous` nil) happens behind the scanning screen.
+    /// True when `next` pauses the picture: another mode, camera, format, sound or frame feed. A different zoom on the same
+    /// camera does not, and neither does a change of lens inside the combined camera (`changesOnlyLens`). The first configure
+    /// (`previous` nil) happens behind the scanning screen.
     static func pausesPicture(from previous: SessionConfiguration?, to next: SessionConfiguration) -> Bool {
-        guard let previous else { return false }
+        guard let previous, !next.changesOnlyLens(from: previous) else { return false }
         return previous.mode != next.mode
-            || previous.lens.deviceUniqueID != next.lens.deviceUniqueID
+            || previous.cameraUniqueID != next.cameraUniqueID
             || previous.video != next.video
             || previous.photo != next.photo
             || previous.includesAudio != next.includesAudio

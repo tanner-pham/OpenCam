@@ -97,6 +97,64 @@ import Testing
         #expect(!ViewfinderChange.pausesPicture(from: nil, to: onWide))
     }
 
+    /// The fixture's video configuration on a lens of the combined camera, at that lens's zoom.
+    private func combinedConfiguration(_ model: CameraModel, lensID: String, zoom: Double) throws -> SessionConfiguration {
+        var result = try configuration(of: model)
+        let lens = try #require(model.capabilities.lenses.first { $0.id == lensID })
+        let video = try #require(result.video)
+        result.lens = lens
+        result.video = VideoOption(lensID: lensID, codec: video.codec, resolution: video.resolution, frameRate: video.frameRate, colour: video.colour)
+        result.photo = model.capabilities.photoOptions(forLens: lensID).first
+        result.combined = CombinedLens(deviceUniqueID: "fixture-dual", zoomFactor: zoom)
+        return result
+    }
+
+    @Test func aLensChangeInsideTheCombinedCameraDoesNotBlur() async throws {
+        let model = try deviceModel(FakeSessionConfigurator(failingLensIDs: []))
+        let onUltra = try combinedConfiguration(model, lensID: "ultraWide", zoom: 1)
+        let onWide = try combinedConfiguration(model, lensID: "wide", zoom: 2)
+        let onZoomed = try combinedConfiguration(model, lensID: "wide@2", zoom: 4)
+        #expect(onUltra.video != onWide.video)
+        for previous in [onUltra, onWide, onZoomed] {
+            for next in [onUltra, onWide, onZoomed] {
+                #expect(!ViewfinderChange.pausesPicture(from: previous, to: next))
+                #expect(next.changesOnlyLens(from: previous))
+            }
+        }
+        #expect(onZoomed.cameraUniqueID == "fixture-dual"); #expect(onZoomed.zoomFactor == 4)
+    }
+
+    @Test func everyOtherChangeOnTheCombinedCameraStillBlurs() async throws {
+        let model = try deviceModel(FakeSessionConfigurator(failingLensIDs: []))
+        let onWide = try combinedConfiguration(model, lensID: "wide", zoom: 2)
+        let video = try #require(onWide.video)
+        func expectBlur(_ next: SessionConfiguration) {
+            #expect(ViewfinderChange.pausesPicture(from: onWide, to: next))
+            #expect(!next.changesOnlyLens(from: onWide))
+        }
+        var ownCamera = onWide; ownCamera.combined = nil
+        expectBlur(ownCamera)
+        var otherDevice = onWide; otherDevice.combined = CombinedLens(deviceUniqueID: "another", zoomFactor: 2)
+        expectBlur(otherDevice)
+        var photo = onWide; photo.mode = .photo
+        expectBlur(photo)
+        var rate = onWide
+        rate.video = VideoOption(lensID: video.lensID, codec: video.codec, resolution: video.resolution, frameRate: video.frameRate + 1, colour: video.colour)
+        expectBlur(rate)
+        var colour = onWide
+        let otherColour = ColourMode.allCases.first { $0 != video.colour } ?? video.colour
+        colour.video = VideoOption(lensID: video.lensID, codec: video.codec, resolution: video.resolution, frameRate: video.frameRate, colour: otherColour)
+        #expect(otherColour != video.colour)
+        expectBlur(colour)
+        var sound = onWide; sound.includesAudio.toggle()
+        expectBlur(sound)
+        var frames = onWide; frames.needsFrames.toggle()
+        expectBlur(frames)
+        var writer = onWide; writer.recorder = .writer
+        #expect(!writer.changesOnlyLens(from: onWide))
+        #expect(ViewfinderChange.pausesPicture(from: ownCamera, to: onWide))
+    }
+
     @Test func aRefusedChangeDoesNotBlur() async throws {
         let fake = FakeSessionConfigurator(failingLensIDs: [])
         let model = try deviceModel(fake)

@@ -7,11 +7,14 @@ nonisolated struct CapabilitySource: Sendable {
     let documentsDirectory: URL?
     let discoverLenses: @Sendable () -> [Lens]
     let scan: @Sendable ([Lens]) async throws(CameraSessionError) -> [FormatDescriptor]
+    /// The combined back camera, if the device has one; nil leaves every lens on its own camera.
+    var combinedCamera: @Sendable () -> CombinedCamera? = { nil }
 
     static let device = CapabilitySource(
         cacheDirectory: URL.applicationSupportDirectory.appending(path: "OpenCam"),
         documentsDirectory: URL.documentsDirectory,
         discoverLenses: { LensDiscovery.lenses() },
-        scan: { lenses throws(CameraSessionError) in try await CapabilityScanner.scan(lenses: lenses) }
+        scan: { lenses throws(CameraSessionError) in try await CapabilityScanner.scan(lenses: lenses) },
+        combinedCamera: { CombinedCameraDiscovery.camera() }
     )
 }
