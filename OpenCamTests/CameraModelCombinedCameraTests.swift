@@ -244,10 +244,11 @@ import Testing
     @Test func anOptionTheCombinedCameraFailsUsesTheLensesOwnCameraNextTime() async throws {
         let rig = try await readyRig()
         await rig.fake.setFailsCombined(true)
+        let appliedBefore = await rig.fake.applied.count
         rig.model.selectLens("ultraWide")
-        let error = await rig.model.enqueueConfigure()?.value
-        #expect(error == nil)
         await rig.model.waitForQueuedConfigures()
+        // The configure failed: nothing was applied and the selection is back on the lens that works.
+        #expect(await rig.fake.applied.count == appliedBefore)
         #expect(rig.model.lensID == "wide")
         rig.model.selectLens("ultraWide")
         await rig.model.waitForQueuedConfigures()
