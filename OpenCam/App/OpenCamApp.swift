@@ -18,6 +18,8 @@ struct OpenCamApp: App {
     /// The fallback look renderer warm-up, once the camera has started (or could not).
     @State private var rendererWarmUp = RunOnce()
     private static let libraryLoadDeadline = Duration.seconds(1)
+    /// `-lensRun`: the scripted lens run drives the real camera. Nil on every other launch.
+    @State private var lensRun: LensRunProgress?
 
     init() {
         let config = LaunchConfig.parse(ProcessInfo.processInfo.arguments)
@@ -29,6 +31,7 @@ struct OpenCamApp: App {
         let looks = Self.makeLookStore(config: config)
         let library = captureStore.flatMap { captures in looks.flatMap { Self.makeLibrary(captures: captures, looks: $0, config: config) } }
         _library = State(initialValue: library)
+        if LensRun.isRequested { _lensRun = State(initialValue: LensRunProgress()) }
         #if targetEnvironment(simulator)
         // The fixture stands in for the scan in the Simulator only.
         do {
@@ -62,6 +65,14 @@ struct OpenCamApp: App {
                 }
             }
             .preferredColorScheme(.dark)
+            .overlay(alignment: .top) {
+                if let lensRun { LensRunBanner(progress: lensRun) }
+            }
+            .task {
+                // The scripted run waits for the camera the app starts as always, then drives the model.
+                guard let lensRun, let model, let session else { return }
+                await LensRun.run(model: model, session: session, progress: lensRun)
+            }
             .environment(\.previewSource, session?.previewSource)
             .task { forceOrientation() }
             // Nothing the first camera frame does not need runs before it. The Library's first read of the Captures folder
