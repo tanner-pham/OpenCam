@@ -21,12 +21,24 @@ nonisolated enum TimingJournal {
         record(describe(configuration, after: previous), since: start, over: configureThreshold)
     }
 
+    /// A lens change on the combined camera, always written (not only when slow): the line is the proof on the phone that no
+    /// configure ran, so a change with no `configure` line before it is the fast path.
+    static func lensChange(to configuration: SessionConfiguration, from previous: SessionConfiguration, since start: ContinuousClock.Instant) {
+        ErrorJournal.record("[timing] \(describeLensChange(to: configuration, from: previous)) \(milliseconds(ContinuousClock.now - start)) ms")
+    }
+
+    static func describeLensChange(to configuration: SessionConfiguration, from previous: SessionConfiguration) -> String {
+        "lens \(previous.lens.label) to \(configuration.lens.label) on the combined camera"
+    }
+
     static func describe(_ configuration: SessionConfiguration, after previous: SessionConfiguration?) -> String {
         let base = "configure \(configuration.mode.rawValue) \(configuration.lens.label)"
         guard let previous else { return base + " (first)" }
         var changed: [String] = []
         if previous.mode != configuration.mode { changed.append("mode") }
         if previous.lens.id != configuration.lens.id { changed.append("lens") }
+        // The same lens on another camera: the move between the combined camera and the lens's own, as for a manual shutter.
+        if previous.lens.id == configuration.lens.id, previous.cameraUniqueID != configuration.cameraUniqueID { changed.append("camera") }
         if previous.video != configuration.video || previous.photo != configuration.photo { changed.append("format") }
         if previous.includesAudio != configuration.includesAudio || previous.needsFrames != configuration.needsFrames {
             changed.append("outputs")

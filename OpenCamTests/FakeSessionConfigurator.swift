@@ -13,7 +13,7 @@ actor FakeSessionConfigurator: SessionConfigurator {
     private(set) var releaseCount = 0
     /// True while a camera input is attached: from a configure until the session lets the camera go.
     private(set) var holdsCamera = true
-    /// Session calls in order: "configure", "start", "release", "manual".
+    /// Session calls in order: "configure", "start", "release", "manual", "focus", "zoom".
     private(set) var calls: [String] = []
     private(set) var recordingURLs: [URL] = []
     private(set) var stopRecordingCount = 0
@@ -32,6 +32,13 @@ actor FakeSessionConfigurator: SessionConfigurator {
         failingLensIDs = ids
     }
 
+    private var failsCombined = false
+
+    /// From now on a configuration on the combined camera fails to configure; false stops that.
+    func setFailsCombined(_ fails: Bool) {
+        failsCombined = fails
+    }
+
     private var isHolding = false
     private var held: [CheckedContinuation<Void, Never>] = []
 
@@ -48,9 +55,13 @@ actor FakeSessionConfigurator: SessionConfigurator {
 
     func configure(_ configuration: SessionConfiguration) async throws(CameraSessionError) {
         if isHolding { await withCheckedContinuation { held.append($0) } }
+        guard !(failsCombined && configuration.combined != nil) else {
+            throw .noMatchingFormat(option: "fake combined")
+        }
         guard !failingLensIDs.contains(configuration.lens.id) else {
             throw .noMatchingFormat(option: "fake \(configuration.lens.id)")
         }
+        if !PinchZoom.keeps(from: applied.last, to: configuration) { storedPinch = 1 }
         applied.append(configuration)
         // A configure returns the camera to automatic, as the session does.
         appliedManual = nil
@@ -162,9 +173,80 @@ actor FakeSessionConfigurator: SessionConfigurator {
         guard isRunning, holdsCamera, let ranges else { throw .noCamera }
         if isHoldingManual { await withCheckedContinuation { heldManual.append($0) } }
         if let manualError { throw manualError }
+        // The phone refuses a custom exposure on the combined camera (measured 2026-11-16).
+        if let last = applied.last, last.combined != nil, settings.exposure != .automatic {
+            throw .notSupported(control: "exposure", lens: last.lens.id)
+        }
         let plan = try ManualApplyPlan.make(settings, applied: reapplyingAll ? nil : appliedManual, limits: ranges, lens: "fake",
                                             isRAWClipRecording: false)
         appliedManual = plan.applied
         return plan.applied
+    }
+
+    // MARK: Focus
+
+    /// Every request `applyFocus` received, in order.
+    private(set) var focusRequests: [FocusRequest] = []
+    private var focusOutcome = FocusOutcome.focusAndExposure
+    private var isHoldingFocus = false
+    private var heldFocus: [CheckedContinuation<Void, Never>] = []
+
+    /// From now on `applyFocus` answers `outcome`.
+    func setFocusOutcome(_ outcome: FocusOutcome) {
+        focusOutcome = outcome
+    }
+
+    /// From now on a request is recorded ("focus"), then waits, until `resumeFocus`.
+    func holdFocus() {
+        isHoldingFocus = true
+    }
+
+    func resumeFocus() {
+        isHoldingFocus = false
+        for waiting in heldFocus { waiting.resume() }
+        heldFocus = []
+    }
+
+    func applyFocus(_ request: FocusRequest) async -> FocusOutcome {
+        focusRequests.append(request)
+        calls.append("focus")
+        if isHoldingFocus { await withCheckedContinuation { heldFocus.append($0) } }
+        return focusOutcome
+    }
+
+    // MARK: Zoom
+
+    /// Every pinch `applyZoom` received, in order.
+    private(set) var zoomRequests: [Double] = []
+    /// The most the fake camera's format holds; `applyZoom` answers no more than this.
+    private(set) var zoomLimit = PinchZoom.cap
+    /// What the camera holds now; a configure resets it by the same rule as the session's (`PinchZoom.keeps`).
+    private var storedPinch = 1.0
+    var pinch: Double { storedPinch }
+
+    func setZoomLimit(_ limit: Double) {
+        zoomLimit = limit
+    }
+
+    private var isHoldingZoom = false
+    private var heldZoom: [CheckedContinuation<Void, Never>] = []
+
+    /// From now on an apply is recorded ("zoom"), then waits, until `resumeZoom`.
+    func holdZoom() {
+        isHoldingZoom = true
+    }
+
+    func resumeZoom() {
+        isHoldingZoom = false
+        for waiting in heldZoom { waiting.resume() }
+        heldZoom = []
+    }
+
+    func applyZoom(pinch: Double) async -> Double {
+        zoomRequests.append(pinch)
+        calls.append("zoom")
+        if isHoldingZoom { await withCheckedContinuation { heldZoom.append($0) } }
+        storedPinch = min(pinch, zoomLimit)
+        return storedPinch
     }
 }

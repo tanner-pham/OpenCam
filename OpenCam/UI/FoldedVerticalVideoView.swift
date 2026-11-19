@@ -12,6 +12,7 @@ struct FoldedVerticalVideoView: View {
         ZStack {
             ViewfinderArea(phase: model.phase, look: model.viewfinderLook, captionTopInset: insets.top + Theme.Space.l + Theme.Size.minTarget + Theme.Space.s,
                            onRetry: model.isCameraStopped ? { model.retryCamera() } : nil)
+                .overlay { ViewfinderGestureLayer(model: model, topInset: insets.top + Theme.Space.l + Theme.Size.minTarget) }
             VStack(spacing: 0) {
                 TopReadoutBar(model: model, isCompact: true)
                     .padding(.horizontal, Theme.Space.s)

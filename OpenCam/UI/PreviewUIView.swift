@@ -122,6 +122,26 @@ final class PreviewUIView: UIView {
         frames.setAngle(angle)
     }
 
+    /// What a touch in the shared view needs to become a point on the sensor: the view's size (the gesture layer's, when given), the preview connection's angle and
+    /// mirroring, and the camera's active format. Nil without a layer, a connection or a camera.
+    static func currentGeometry(viewSize: CGSize? = nil) -> PreviewGeometry? {
+        guard let current, let layer = current.previewLayer, let connection = layer.connection, let device = videoDevice(of: layer) else { return nil }
+        let dimensions = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+        return PreviewGeometry(viewSize: viewSize ?? current.bounds.size, sensorSize: CGSize(width: Int(dimensions.width), height: Int(dimensions.height)),
+                               rotation: Double(connection.videoRotationAngle), isMirrored: connection.isVideoMirrored)
+    }
+
+    /// Asks the layer for the point it would give for the same touch and journals a difference above 0.02, so a wrong turn or
+    /// mirror in `PreviewGeometry` shows up in the journal on the device. The layer's answer is never used.
+    static func journalConverterDisagreement(viewPoint: CGPoint, computed: FocusPoint) {
+        guard let current, let layer = current.previewLayer else { return }
+        let reference = layer.captureDevicePointConverted(fromLayerPoint: viewPoint)
+        guard abs(reference.x - computed.x) > 0.02 || abs(reference.y - computed.y) > 0.02 else { return }
+        let angle = layer.connection?.videoRotationAngle ?? -1
+        let mirrored = layer.connection?.isVideoMirrored ?? false
+        ErrorJournal.record("[Focus:convert] The preview layer disagrees — {view: \(viewPoint.x), \(viewPoint.y), computed: \(computed.x), \(computed.y), layer: \(reference.x), \(reference.y), angle: \(angle), mirrored: \(mirrored)}")
+    }
+
     private static func videoDevice(of layer: AVCaptureVideoPreviewLayer) -> AVCaptureDevice? {
         let inputs = layer.connection?.inputPorts.map(\.input) ?? []
         return inputs.lazy.compactMap { $0 as? AVCaptureDeviceInput }.first { $0.device.hasMediaType(.video) }?.device

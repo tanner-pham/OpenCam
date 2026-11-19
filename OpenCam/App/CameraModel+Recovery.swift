@@ -141,6 +141,7 @@ extension CameraModel {
     /// throws leaves the stopped state. A newer selection or runtime error overtakes it.
     private func restart(_ configuration: SessionConfiguration?) {
         guard let configurator, let configuration else { return }
+        resetPinchIfNeeded(for: configuration)
         requestedConfiguration = configuration
         configureGeneration += 1
         let generation = configureGeneration

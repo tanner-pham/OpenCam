@@ -59,6 +59,14 @@ actor CameraSession: SessionConfigurator {
     var appliedManual: ManualSettings?
     /// True from the start of a ProRes RAW clip, which records with white balance locked, until `restoreWhiteBalance` runs.
     var isRAWClipRecording = false
+    /// Listens for a changed scene while a tap's watch is on; nil otherwise (`CameraSession+Focus`).
+    var subjectAreaObserver: (any NSObjectProtocol)?
+    /// True from a tap or hold that moved the point or turned the watch on until the next reset; with no tap the device is not touched.
+    var didMoveFocusPoint = false
+    /// The pinch zoom on the current lens, 1 for none (`CameraSession+Zoom`): a factor on the configuration's own zoom.
+    var pinch = 1.0
+    /// The configuration the pinch was last decided for. `releaseCameras` leaves it, so a Library visit keeps the pinch.
+    var pinchConfiguration: SessionConfiguration?
     /// Held here because the session does not keep its controls delegate alive.
     private let controlsDelegate: CameraControlsDelegate
     static let logger = Logger(subsystem: "local.opencam.app", category: "CameraSession")
@@ -119,17 +127,26 @@ actor CameraSession: SessionConfigurator {
         guard !recorder.output.isRecording, writerRecorderStorage?.isClipInFlight != true else { throw .recordingInProgress }
         // A configure that fails with no restore leaves the camera in a state nothing tracks, so nothing is assumed to hold.
         appliedManual = nil
+        settlePinch(for: configuration)
         let timing = (start: ContinuousClock.now, previous: lastWorkingConfiguration)
         launchMarks?.mark("session configure")
+        // The lens-only path writes its own `[timing] lens` line, so a `configure` line beside it would be false.
+        var isLensOnly = false
         defer {
             launchMarks?.mark("session configured")
-            TimingJournal.configure(configuration, after: timing.previous, since: timing.start)
+            if !isLensOnly { TimingJournal.configure(configuration, after: timing.previous, since: timing.start) }
         }
         didPixelFormatStepFail = false
         do throws(CameraSessionError) {
-            try apply(configuration)
-            lastWorkingConfiguration = configuration
-            installSystemControls(CameraControlPlan.kinds(supportsControls: session.supportsControls, mode: configuration.mode, photoFormat: configuration.photo?.format ?? .heif))
+            if let previous = lastWorkingConfiguration, canChangeLensOnly(to: configuration, from: previous) {
+                isLensOnly = true
+                try changeLens(configuration, from: previous)
+                lastWorkingConfiguration = configuration
+            } else {
+                try apply(configuration)
+                lastWorkingConfiguration = configuration
+                installSystemControls(CameraControlPlan.kinds(supportsControls: session.supportsControls, mode: configuration.mode, photoFormat: configuration.photo?.format ?? .heif))
+            }
         } catch {
             var isHalfApplied = didPixelFormatStepFail
             if let lastWorkingConfiguration, lastWorkingConfiguration != configuration {
@@ -154,7 +171,7 @@ actor CameraSession: SessionConfigurator {
 
     private func apply(_ configuration: SessionConfiguration) throws(CameraSessionError) {
         let lens = configuration.lens
-        guard let device = AVCaptureDevice(uniqueID: lens.deviceUniqueID) else {
+        guard let device = AVCaptureDevice(uniqueID: configuration.cameraUniqueID) else {
             throw .deviceMissing(lensID: lens.id)
         }
         // Declared first so it runs after the commit below, also when configuring throws and the old input is restored.
@@ -165,6 +182,9 @@ actor CameraSession: SessionConfigurator {
             try applyPresetPhoto(configuration, to: device)
         }
         try preparePixelFormat(configuration)
+        // After the commits: the combined camera's lens and zoom, read back from the camera itself.
+        confirmLens(configuration, on: device)
+        keepLensLockWhileRecording(configuration)
         pressureObservation = Self.observePressure(of: device, continuation: continuation)
         // Every configure returns the camera to automatic, in step with the model, which does the same when it queues one.
         resetManual()
@@ -237,7 +257,7 @@ actor CameraSession: SessionConfigurator {
         guard zoom <= device.activeFormat.videoMaxZoomFactor else {
             throw .noMatchingFormat(option: "zoom \(configuration.lens.label)")
         }
-        device.videoZoomFactor = zoom
+        device.videoZoomFactor = targetZoom(for: configuration, on: device)
         try applyPhotoDimensions(configuration.photo, format: device.activeFormat)
     }
 
@@ -249,6 +269,7 @@ actor CameraSession: SessionConfigurator {
         guard !session.isRunning else { return }
         launchMarks?.mark("session startRunning")
         session.startRunning()
+        restoreLens()
         launchMarks?.mark("session running")
         allowHapticsWhileRecording()
         writeLaunchLine()
@@ -280,6 +301,7 @@ actor CameraSession: SessionConfigurator {
             return
         }
         // The device may have come back with settings of its own, so manual values are not assumed to hold.
+        restoreLens()
         resetManual()
         continuation.yield(.restarted)
     }
@@ -520,7 +542,7 @@ actor CameraSession: SessionConfigurator {
         }
         defer { device.unlockForConfiguration() }
 
-        let zoom = CGFloat(configuration.lens.zoomFactor)
+        let zoom = CGFloat(configuration.zoomFactor)
         switch configuration.mode {
         case .video:
             if let option = configuration.video {
@@ -532,7 +554,11 @@ actor CameraSession: SessionConfigurator {
         guard zoom <= device.activeFormat.videoMaxZoomFactor else {
             throw .noMatchingFormat(option: "zoom \(configuration.lens.label)")
         }
-        device.videoZoomFactor = zoom
+        if configuration.combined != nil {
+            try lockLens(configuration, on: device)
+        } else {
+            device.videoZoomFactor = targetZoom(for: configuration, on: device)
+        }
     }
 
     /// Caller holds the configuration lock.
@@ -588,9 +614,9 @@ actor CameraSession: SessionConfigurator {
         device.activeVideoMaxFrameDuration = .invalid
     }
 
-    /// The same 0.05 tolerance `StandardFrameRates.collapse` uses, so every offered rate finds its range.
+    /// The same tolerance `StandardFrameRates.collapse` uses, so every offered rate finds its range.
     private static func range(_ range: AVFrameRateRange, contains rate: Double) -> Bool {
-        range.minFrameRate - 0.05 <= rate && rate <= range.maxFrameRate + 0.05
+        range.minFrameRate - StandardFrameRates.tolerance <= rate && rate <= range.maxFrameRate + StandardFrameRates.tolerance
     }
 
     /// 1/rate, clamped to the range so a 30 offered from a 29.97 maximum never sets an unsupported duration.
@@ -718,6 +744,7 @@ extension CameraSession {
             isRAWClipRecording = true
         }
         allowHapticsWhileRecording()
+        if let applied = lastWorkingConfiguration { keepLensLockWhileRecording(applied) }
         do throws(RecordingError) {
             try recorder.start(option: option, url: url, minFreeBytes: minFreeBytes, device: device) { [weak self] in
                 guard let self else { return }

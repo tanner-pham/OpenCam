@@ -15,4 +15,6 @@ nonisolated struct StoppedSessionStandIn: SessionConfigurator {
     func currentReadouts() async -> LiveReadouts { LiveReadouts() }
     func manualRanges() async -> ManualRanges? { nil }
     func applyManual(_ settings: ManualSettings, reapplyingAll: Bool) async throws(ManualControlError) -> ManualSettings { settings }
+    func applyFocus(_ request: FocusRequest) async -> FocusOutcome { .nothing }
+    func applyZoom(pinch: Double) async -> Double { pinch }
 }

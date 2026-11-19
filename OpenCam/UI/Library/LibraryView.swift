@@ -1,6 +1,5 @@
 import PhotosUI
 import OSLog
-import QuickLook
 import SwiftUI
 
 /// Everything in the Captures folder as a grid, drawn with each photo's edit.
@@ -14,7 +13,6 @@ struct LibraryView: View {
     @State private var isSelecting: Bool
     @State private var selectedIDs: Set<String> = []
     @State private var hasAppliedLaunch = false
-    @State private var previewURL: URL?
     @State private var isConfirmingDelete = false
     @State private var alertTitle: String?
     /// The look waiting for "Replace edits on N photos?", and N when it was asked.
@@ -43,7 +41,12 @@ struct LibraryView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbar }
                 .navigationDestination(for: LibraryItem.self) { item in
-                    EditorScreen(item: item, library: library, group: editorGroup, lookName: editorLookName) { path.removeAll() }
+                    switch item.kind {
+                    case .photo:
+                        EditorScreen(item: item, library: library, group: editorGroup, lookName: editorLookName) { path.removeAll() }
+                    case .clip:
+                        ClipScreen(item: item, library: library) { path.removeAll() }
+                    }
                 }
         }
         .tint(Theme.accent)
@@ -57,7 +60,6 @@ struct LibraryView: View {
             library.reload()
         }
         .onChange(of: pickedItems) { _, items in importPicked(items) }
-        .quickLookPreview($previewURL)
         .confirmationDialog(LibraryCopy.deleteTitle(count: selectedIDs.count), isPresented: $isConfirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive, action: deleteSelected)
         } message: {
@@ -136,7 +138,7 @@ struct LibraryView: View {
         if isSelecting {
             if selectedIDs.contains(item.id) { selectedIDs.remove(item.id) } else { selectedIDs.insert(item.id) }
         } else if item.kind == .clip {
-            previewURL = item.pictureURL
+            path = [item]
         } else {
             openEditor(item, group: .light, lookName: nil)
         }
@@ -178,6 +180,16 @@ struct LibraryView: View {
         }
         if launch.seedsFormats || launch.seedsStudyLook {
             library.reload()
+        }
+        if launch.seedsClip {
+            Task {
+                do throws(LibraryError) {
+                    _ = try await SampleSeeder.seedClipIfAbsent(library.captures)
+                } catch {
+                    Self.logger.error("\(error.description, privacy: .public)")
+                }
+                library.reload()
+            }
         }
         #endif
         if launch.startsInSelectMode, let first = library.items.first {

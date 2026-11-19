@@ -15,6 +15,7 @@ struct FoldedHorizontalView: View {
                 .frame(height: Theme.Size.topBar)
             ViewfinderArea(phase: model.phase, look: model.viewfinderLook, onRetry: model.isCameraStopped ? { model.retryCamera() } : nil)
                 .frame(width: size.width, height: size.width * 9 / 16)
+                .overlay { ViewfinderGestureLayer(model: model) }
                 .clipped()
                 .overlay(alignment: .topTrailing) { DroppedFramesBadge(model: model).padding(Theme.Space.s) }
             BottomBar(model: model, stripEdge: stripEdge)

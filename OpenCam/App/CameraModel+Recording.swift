@@ -14,6 +14,7 @@ extension CameraModel {
         let minFreeBytes = recordingReserveBytes()
         let pendingConfigure = configureTask
         isRecording = true
+        if let control = openControl, waitsForRecordingToEnd(control) { closeControl() }
         recordingClip = (url, option)
         resetDroppedFrames()
         let dropPolicy = dropPolicy

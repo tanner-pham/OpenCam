@@ -14,7 +14,8 @@ extension CameraModel {
             pending = nil
             await discardSavedStart(task, on: configurator, reason: reason)
         }
-        let lenses = await Self.discoverLenses(with: capabilitySource)
+        let (lenses, combinedCamera) = await Self.discoverLenses(with: capabilitySource)
+        self.combinedCamera = combinedCamera
         launchTimeline.mark("lenses")
         guard !lenses.isEmpty else {
             await discard("no camera found")
@@ -97,8 +98,8 @@ extension CameraModel {
         ErrorJournal.record(message)
     }
 
-    /// The discovery sessions are created off the main actor.
-    @concurrent nonisolated private static func discoverLenses(with source: CapabilitySource) async -> [Lens] {
-        source.discoverLenses()
+    /// The discovery sessions are created off the main actor. Returns the lenses and the combined back camera, if there is one.
+    @concurrent nonisolated private static func discoverLenses(with source: CapabilitySource) async -> ([Lens], CombinedCamera?) {
+        (source.discoverLenses(), source.combinedCamera())
     }
 }

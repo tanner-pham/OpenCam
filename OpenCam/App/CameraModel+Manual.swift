@@ -37,8 +37,8 @@ extension CameraModel {
             spoken: control.spoken(value),
             isSet: isMarkedSet(control, value: value),
             isOpen: openControl == control,
-            isAvailable: canAdjustControls && manual.isAdjustable(control) && scale(for: control) != nil,
-            isDimmed: !manual.isAdjustable(control) || (manualRanges != nil && scale(for: control) == nil),
+            isAvailable: canAdjustControls && manual.isAdjustable(control) && !waitsForRecordingToEnd(control) && scale(for: control) != nil,
+            isDimmed: !manual.isAdjustable(control) || waitsForRecordingToEnd(control) || (manualRanges != nil && scale(for: control) == nil),
             accessibilityValue: accessibilityValue(of: control, value: value)
         )
     }
@@ -47,6 +47,7 @@ extension CameraModel {
     /// a plain reason while exposure is manual.
     private func accessibilityValue(of control: ManualControl, value: Double?) -> String {
         guard manual.isAdjustable(control) else { return "Not available while exposure is manual" }
+        if waitsForRecordingToEnd(control) { return "Not available while recording" }
         let spoken = control.spoken(value)
         let isSet = isMarkedSet(control, value: value)
         if !control.hasAutomatic { return isSet ? "\(spoken), set by hand" : spoken }
@@ -54,7 +55,7 @@ extension CameraModel {
     }
 
     var openSlider: OpenSlider? {
-        guard let control = openControl, manual.isAdjustable(control), let scale = scale(for: control) else { return nil }
+        guard let control = openControl, manual.isAdjustable(control), !waitsForRecordingToEnd(control), let scale = scale(for: control) else { return nil }
         let value = shownValue(of: control)
         return OpenSlider(
             control: control,
@@ -78,7 +79,7 @@ extension CameraModel {
             closeControl()
             return
         }
-        guard canAdjustControls, manual.isAdjustable(control), scale(for: control) != nil else { return }
+        guard canAdjustControls, manual.isAdjustable(control), !waitsForRecordingToEnd(control), scale(for: control) != nil else { return }
         openControl = control
     }
 
@@ -89,13 +90,27 @@ extension CameraModel {
 
     /// Moves `control` to `step` of its scale (clamped to it) and sends the whole setting to the session.
     func setControl(_ control: ManualControl, step: Int) {
-        guard canAdjustControls, manual.isAdjustable(control), let scale = scale(for: control) else { return }
+        guard canAdjustControls, manual.isAdjustable(control), !waitsForRecordingToEnd(control), let scale = scale(for: control) else { return }
         let target = scale.step(step, movedBy: 0)
         if let value = shownValue(of: control), scale.crossesDetent(from: scale.step(nearest: value), to: target) {
             controlStepped()
         }
         manual = manual.setting(control, to: scale.values[target], live: shownReadouts)
-        sendManual()
+        if !movesToOwnCameraForExposure() { sendManual() }
+        manualChangedForFocus()
+    }
+
+    /// Shutter and ISO cannot be set on the combined camera (measured 2026-11-16), so the first one set by hand moves the
+    /// session to the lens's own camera, behind the blur; the values are sent once it is attached.
+    private func movesToOwnCameraForExposure() -> Bool {
+        guard requestedConfiguration?.combined != nil, manual.exposure != .automatic else { return false }
+        return enqueueConfigure(keepsManual: true) != nil
+    }
+
+    /// Shutter and ISO need the lens's own camera, and a recording cannot change camera: on the combined camera they wait
+    /// for the clip to end.
+    func waitsForRecordingToEnd(_ control: ManualControl) -> Bool {
+        isRecording && manual.exposure == .automatic && requestedConfiguration?.combined != nil && (control == .shutter || control == .iso)
     }
 
     /// Hands `control` (and the one it is locked with) back to the camera. EV has no Auto.
@@ -105,6 +120,7 @@ extension CameraModel {
         guard next != manual else { return }
         manual = next
         sendManual()
+        manualChangedForFocus()
     }
 
     /// The camera is changing, or is not usable: the slider closes, the values return to automatic and are sent, and an apply
@@ -113,6 +129,8 @@ extension CameraModel {
     func resetManual() {
         manualGeneration += 1
         openControl = nil
+        focusTap.cameraChanged()
+        focusGeneration += 1
         appliedManual = .automatic
         reappliesAllManual = false
         if !seedSimulatedCamera() { manualRanges = nil }
