@@ -215,6 +215,11 @@ Clip screen in the Library, tap to focus and hold to lock, and pinch to zoom wit
 - [ ] Pinch, then a manual shutter (moves to the lens's own camera): the zoom stays the same framing.
 - [ ] Pinch with two fingers starting on the picture: no marker and no lock appear.
 - [ ] A long press held first, then a second finger: the lock stays and the pinch zooms. The Simulator cannot show this: its scripted pinch puts both fingers down together.
+- [ ] Pinch to 5x or more, then tap an object near the edge of the picture: that object sharpens. Repeat on the 2x lens with no pinch. The headers do not say whether the focus point is relative to the zoomed picture or the whole sensor.
+- [ ] Right after a launch, pinch, then open the Library and come back, and toggle a look: the zoom is kept.
+- [ ] Tap, then pinch: note whether focus jumps back to the centre.
+- [ ] Hold right after a lens tap: the capsule matches what the camera does.
+- [ ] Open a clip right after opening the Library: it plays; note the audio route.
 
 ## 9. Things to decide after holding it
 
