@@ -4,31 +4,31 @@ nonisolated extension RawSizeCheckRun {
     /// Photo size cap for route C.
     private static let chosenFormatLimit = 12
 
-    nonisolated(nonsending) func check(_ camera: RawSizeCheckCamera) async {
-        await checkPhotoPreset(camera)
-        await checkChosenFormats(camera)
-    }
-
     /// Routes A, D and B, on one session with the photo preset.
-    nonisolated(nonsending) private func checkPhotoPreset(_ camera: RawSizeCheckCamera) async {
+    nonisolated(nonsending) func checkPhotoPreset(_ camera: RawSizeCheckCamera) async {
+        await plan(1)
+        if isOverBudget {
+            await budgetTrial(.photoPreset, camera: camera, size: nil)
+            return
+        }
         var rig: RawSizeCheckRig
         do throws(RawSizeCheckFailure) {
             rig = try RawSizeCheckRig(device: camera.device, format: nil)
             try await rig.start()
         } catch {
             addError("checkPhotoPreset", "The photo preset session could not start", context: error.message)
-            await plan(1)
-            await skippedTrial(.photoPreset, camera: camera, size: nil, reason: error.message)
+            await skippedTrial(.photoPreset, camera: camera, size: nil, outcome: error.outcome, reason: error.message)
             return
         }
         let sizes = Self.ascending(camera.device.activeFormat.supportedMaxPhotoDimensions)
         guard let largest = sizes.last else {
             rig.stop()
-            await plan(1)
-            await skippedTrial(.photoPreset, camera: camera, size: nil, reason: "[RawSizeCheck:checkPhotoPreset] The active format lists no photo size — {camera: \(camera.name)}")
+            await skippedTrial(.photoPreset, camera: camera, size: nil, outcome: .refused,
+                               reason: "[RawSizeCheck:checkPhotoPreset] The active format lists no photo size — {camera: \(camera.name)}")
             return
         }
-        await plan(sizes.count + 1)
+        // The trial planned above stands for route D; these are route A's.
+        await plan(sizes.count)
         let firstOfCamera = report.trials.count
         for size in sizes {
             if await trial(.photoPreset, camera: camera, rig: rig, kind: .bayerRAW, size: size) {
@@ -52,8 +52,9 @@ nonisolated extension RawSizeCheckRun {
         rig.stop()
     }
 
-    /// Route C: every format with a photo size above 12 megapixels, largest first, one session that changes format.
-    nonisolated(nonsending) private func checkChosenFormats(_ camera: RawSizeCheckCamera) async {
+    /// Route C: every format with a photo size above 12 megapixels, largest first, one session that changes format. Where a format
+    /// reports ProRAW support, a ProRAW trial follows its Bayer trial, with the same checks as route B.
+    nonisolated(nonsending) func checkChosenFormats(_ camera: RawSizeCheckCamera) async {
         let large = camera.device.formats.filter { format in
             format.supportedMaxPhotoDimensions.contains { Int($0.width) * Int($0.height) > RawSizeCheckSize.twelveMegapixel.pixels }
         }
@@ -66,6 +67,12 @@ nonisolated extension RawSizeCheckRun {
         for format in chosen {
             let size = RawSizeCheckFormatFacts(format).supportedMaxPhotoDimensions.max { $0.pixels < $1.pixels }
             guard let size else { continue }
+            if isOverBudget {
+                rig?.stop()
+                rig = nil
+                await budgetTrial(.chosenFormat, camera: camera, size: size)
+                continue
+            }
             var isSwitched = false
             if let current = rig { isSwitched = await current.switchFormat(to: format) }
             if !isSwitched {
@@ -77,7 +84,7 @@ nonisolated extension RawSizeCheckRun {
                     rig = fresh
                 } catch {
                     addError("checkChosenFormats", "The session for a chosen format could not start", context: error.message)
-                    await skippedTrial(.chosenFormat, camera: camera, size: size, reason: error.message)
+                    await skippedTrial(.chosenFormat, camera: camera, size: size, outcome: error.outcome, reason: error.message)
                     continue
                 }
             }
@@ -85,14 +92,23 @@ nonisolated extension RawSizeCheckRun {
             if await trial(.chosenFormat, camera: camera, rig: active, kind: .bayerRAW, size: size) {
                 active.stop()
                 rig = nil
+                continue
+            }
+            if report.trials.last?.availability?.isAppleProRAWSupported == true {
+                await plan(1)
+                if await trial(.chosenFormat, camera: camera, rig: active, kind: .proRAW, size: size, enablesProRAW: true) {
+                    active.stop()
+                    rig = nil
+                }
             }
         }
         rig?.stop()
     }
 
-    /// After a timeout: a new photo-preset session, or nil when it cannot be made (the trials left then fail on their own).
+    /// After a timeout: a new photo-preset session, or nil when it cannot be made or the budget is used up.
     nonisolated(nonsending) private func replacement(for camera: RawSizeCheckCamera, after old: RawSizeCheckRig) async -> RawSizeCheckRig? {
         old.stop()
+        guard !isOverBudget else { return nil }
         do throws(RawSizeCheckFailure) {
             let fresh = try RawSizeCheckRig(device: camera.device, format: nil)
             try await fresh.start()

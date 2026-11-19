@@ -14,15 +14,22 @@ nonisolated enum RawSizeCheck {
                                         buildConfiguration: buildConfiguration, notes: notes)
         let run = RawSizeCheckRun(report: report, progress: progress)
         run.save()
-        if await hasCameraAccess() {
-            let cameras = RawSizeCheckCamera.discover()
-            run.report.camerasChecked = cameras.map(\.name)
-            if cameras.isEmpty { run.addError("runAndWrite", "The phone has no back camera of the kinds the check tries", context: "kinds: wide, ultra wide, dual wide") }
-            for camera in cameras {
-                await run.check(camera)
-            }
-        } else {
+        guard await hasCameraAccess() else {
             run.addError("runAndWrite", "No camera access", context: "status: \(AVCaptureDevice.authorizationStatus(for: .video).rawValue)")
+            run.report.isComplete = true
+            run.save()
+            await progress.stop(because: "No camera access.")
+            return
+        }
+        let cameras = RawSizeCheckCamera.discover()
+        run.report.camerasChecked = cameras.map(\.name)
+        if cameras.isEmpty { run.addError("runAndWrite", "The phone has no back camera of the kinds the check tries", context: "kinds: wide, ultra wide, dual wide") }
+        for step in RawSizeCheckStep.plan(cameraCount: cameras.count) {
+            let camera = cameras[step.cameraIndex]
+            switch step.phase {
+            case .photoPreset: await run.checkPhotoPreset(camera)
+            case .chosenFormats: await run.checkChosenFormats(camera)
+            }
         }
         run.report.isComplete = true
         run.save()
@@ -53,6 +60,10 @@ nonisolated enum RawSizeCheck {
         "A DNG's size is the largest image ImageIO finds in its data (size); imageSizes lists every image found. resolvedRawPhotoDimensions and resolvedPhotoDimensions come from the resolved settings.",
         "A photo is measured in memory and dropped; no photo is written to disk or saved to the library.",
         "A capture waits at most 6 seconds; a timeout is recorded as such and the session is rebuilt. When the 110 second time budget is used up, the trials left are recorded as skipped.",
+        "AVCapturePhotoOutput.h says the 24 MP size is only serviced through deferred photo delivery, so a smaller result at 5712 x 4284 is expected for that reason.",
+        "Order: routes A, D and B run on every camera first, then route C camera by camera. Route C also runs a ProRAW trial after a format's Bayer trial where the output reports ProRAW support.",
+        "Each trial has an outcome: ran (a request was made), refused (the phone did not offer it), unsafe (a precondition of a safe request did not hold; failedPrecondition names it) or budget (the time budget ran out first).",
+        "A RAW counts in the summary with the size ImageIO read from the DNG, or with the resolved settings' RAW size when ImageIO could not read the DNG; the sentence names both when they differ.",
         "The progress total grows as cameras and routes are planned, so the count of trials ahead is not known at the start.",
     ]
 }

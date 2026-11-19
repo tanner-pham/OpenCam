@@ -32,7 +32,7 @@ nonisolated extension RawSizeCheckRig {
     private func makeSettings(kind: RawSizeCheckKind, size: RawSizeCheckSize) throws(RawSizeCheckFailure) -> (AVCapturePhotoSettings, OSType) {
         let context = "camera: \(device.localizedName), kind: \(kind.rawValue), size: \(size.label)"
         guard let connection = output.connection(with: .video), connection.isActive else {
-            throw RawSizeCheckFailure("Rig.makeSettings", "The photo output has no active camera connection", context: context)
+            throw RawSizeCheckFailure("Rig.makeSettings", "The photo output has no active camera connection", context: context, outcome: .refused)
         }
         // Bayer RAW needs both the device zoom and the connection's scale-and-crop at exactly 1.0 (PhotoCapturer does the same).
         guard device.videoZoomFactor == 1, connection.videoScaleAndCropFactor == 1 else {
@@ -51,16 +51,16 @@ nonisolated extension RawSizeCheckRig {
             rawFormat = output.isAppleProRAWEnabled ? available.first(where: AVCapturePhotoOutput.isAppleProRAWPixelFormat) : nil
         }
         guard let rawFormat, available.contains(rawFormat) else {
-            throw RawSizeCheckFailure("Rig.makeSettings", "No matching RAW pixel format is offered", context: "\(context), available: \(available.map(RawSizeCheckFourCC.string))")
+            throw RawSizeCheckFailure("Rig.makeSettings", "No matching RAW pixel format is offered", context: "\(context), available: \(available.map(RawSizeCheckFourCC.string))", outcome: .refused)
         }
         guard output.availableRawPhotoFileTypes.contains(.dng), output.supportedRawPhotoPixelFormatTypes(for: .dng).contains(rawFormat) else {
-            throw RawSizeCheckFailure("Rig.makeSettings", "DNG is not offered for the RAW pixel format", context: "\(context), format: \(RawSizeCheckFourCC.string(rawFormat))")
+            throw RawSizeCheckFailure("Rig.makeSettings", "DNG is not offered for the RAW pixel format", context: "\(context), format: \(RawSizeCheckFourCC.string(rawFormat))", outcome: .refused)
         }
         let wantsHEIF = kind == .bayerRAWWithHEIF
         if wantsHEIF {
             guard output.availablePhotoCodecTypes.contains(.hevc), output.availablePhotoFileTypes.contains(.heic),
                   output.supportedPhotoCodecTypes(for: .heic).contains(.hevc) else {
-                throw RawSizeCheckFailure("Rig.makeSettings", "HEVC in HEIC is not offered", context: context)
+                throw RawSizeCheckFailure("Rig.makeSettings", "HEVC in HEIC is not offered", context: context, outcome: .refused)
             }
         }
         let prioritization = AVCapturePhotoOutput.QualityPrioritization.speed

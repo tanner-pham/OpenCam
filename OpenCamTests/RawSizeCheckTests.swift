@@ -11,9 +11,11 @@ import Testing
                                 isHighestPhotoQualitySupported: true, maxFramesPerSecond: 30)
     }
 
-    static func trial(_ route: RawSizeCheckRoute, camera: String = "wide", rawSize: RawSizeCheckSize?, skipReason: String? = nil) -> RawSizeCheckTrial {
+    static func trial(_ route: RawSizeCheckRoute, camera: String = "wide", rawSize: RawSizeCheckSize?, skipReason: String? = nil,
+                      outcome: RawSizeCheckOutcome = .ran) -> RawSizeCheckTrial {
         var trial = RawSizeCheckTrial(route: route, camera: camera, deviceType: "type", format: format([small, large]),
-                                      sessionPreset: "AVCaptureSessionPresetPhoto", requestedMaxPhotoDimensions: large, skipReason: skipReason)
+                                      sessionPreset: "AVCaptureSessionPresetPhoto", requestedMaxPhotoDimensions: large,
+                                      outcome: outcome, skipReason: skipReason)
         if let rawSize {
             trial.capture = RawSizeCheckCapture(kind: .bayerRAW, rawPixelFormat: "bgg4", requestedMaxPhotoDimensions: large,
                                                 resolvedRawPhotoDimensions: rawSize, resolvedPhotoDimensions: rawSize,
@@ -26,20 +28,20 @@ import Testing
     @Test func noTrialsMeansNoRaw() {
         let summary = RawSizeCheckSummary.make(from: [])
         #expect(summary.largestRawSize == nil)
-        #expect(summary.sentence == "No trial delivered a RAW photo.")
+        #expect(summary.sentence.hasPrefix("No trial delivered a RAW photo. 0 trials ran,"))
     }
 
     @Test func skippedTrialsDeliverNothing() {
-        let summary = RawSizeCheckSummary.make(from: [Self.trial(.photoPreset, rawSize: nil, skipReason: "no Bayer")])
+        let summary = RawSizeCheckSummary.make(from: [Self.trial(.photoPreset, rawSize: nil, skipReason: "no Bayer", outcome: .refused)])
         #expect(summary.largestRawSize == nil)
-        #expect(summary.skippedCount == 1)
+        #expect(summary.refusedCount == 1)
         #expect(summary.trialCount == 1)
     }
 
     @Test func nothingAboveTwelveMegapixelsSaysSo() {
         let summary = RawSizeCheckSummary.make(from: [Self.trial(.photoPreset, rawSize: Self.small), Self.trial(.chosenFormat, rawSize: Self.small)])
         #expect(summary.largestRawSize == Self.small)
-        #expect(summary.sentence == "No route delivered a RAW larger than 4032 x 3024.")
+        #expect(summary.sentence.hasPrefix("No route delivered a RAW larger than 4032 x 3024. 2 trials ran,"))
         #expect(summary.rawDeliveredCount == 2)
     }
 
@@ -50,6 +52,46 @@ import Testing
         #expect(summary.route == .chosenFormat)
         #expect(summary.camera == "ultra wide")
         #expect(summary.sentence.hasPrefix("Route C on the ultra wide camera delivered 8064 x 6048 with format 4032x3024 420f"))
+    }
+
+    @Test func anUnreadableDNGCountsWithTheResolvedSize() {
+        var trial = Self.trial(.chosenFormat, rawSize: Self.large)
+        trial.capture?.photos = [RawSizeCheckPhoto(isRaw: true, size: nil, imageSizes: [], bytes: 1)]
+        let summary = RawSizeCheckSummary.make(from: [trial])
+        #expect(summary.largestRawSize == Self.large)
+        #expect(summary.sentence.contains("(DNG data: unreadable; resolved settings: 8064 x 6048)"))
+    }
+
+    @Test func aDisagreementBetweenFileAndSettingsIsSaid() {
+        var trial = Self.trial(.photoPreset, rawSize: Self.small)
+        trial.capture?.resolvedRawPhotoDimensions = Self.large
+        let summary = RawSizeCheckSummary.make(from: [trial])
+        #expect(summary.largestRawSize == Self.small)
+        #expect(summary.sentence.contains("(DNG data: 4032 x 3024; resolved settings: 8064 x 6048)"))
+    }
+
+    @Test func aTimedOutCaptureDeliversNothingEvenWithResolvedSizes() {
+        var trial = Self.trial(.photoPreset, rawSize: Self.large)
+        trial.capture?.photos = []
+        trial.capture?.isTimedOut = true
+        #expect(RawSizeCheckSummary.make(from: [trial]).largestRawSize == nil)
+    }
+
+    @Test func outcomesAreCountedAndNamedInTheSentence() {
+        let trials = [Self.trial(.photoPreset, rawSize: Self.small), Self.trial(.proRAW, rawSize: nil, skipReason: "x", outcome: .refused),
+                      Self.trial(.chosenFormat, rawSize: nil, skipReason: "y", outcome: .unsafe),
+                      Self.trial(.chosenFormat, rawSize: nil, skipReason: "z", outcome: .budget),
+                      Self.trial(.chosenFormat, rawSize: nil, skipReason: "z", outcome: .budget)]
+        let summary = RawSizeCheckSummary.make(from: trials)
+        #expect((summary.ranCount, summary.refusedCount, summary.unsafeCount, summary.budgetCount) == (1, 1, 1, 2))
+        #expect(summary.sentence == "No route delivered a RAW larger than 4032 x 3024. 1 trials ran, 1 were refused by the phone, 1 were held back as unsafe, 2 were cut by the time budget.")
+    }
+
+    @Test func routesAToBRunOnEveryCameraBeforeRouteC() {
+        let plan = RawSizeCheckStep.plan(cameraCount: 3)
+        #expect(plan.map(\.phase) == [.photoPreset, .photoPreset, .photoPreset, .chosenFormats, .chosenFormats, .chosenFormats])
+        #expect(plan.map(\.cameraIndex) == [0, 1, 2, 0, 1, 2])
+        #expect(RawSizeCheckStep.plan(cameraCount: 0).isEmpty)
     }
 
     @Test func theFirstTrialWinsATie() {

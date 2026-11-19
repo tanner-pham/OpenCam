@@ -25,6 +25,16 @@ nonisolated final class RawSizeCheckDelegate: NSObject, AVCapturePhotoCaptureDel
         state.withLock { $0.continuation = continuation }
     }
 
+    /// The resolved sizes are known when the capture begins, so a capture that later times out still reports them.
+    func photoOutput(_ output: AVCapturePhotoOutput, willBeginCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings) {
+        let raw = Self.nonEmpty(resolvedSettings.rawPhotoDimensions)
+        let processed = Self.nonEmpty(resolvedSettings.photoDimensions)
+        state.withLock { state in
+            state.outcome.rawDimensions = raw ?? state.outcome.rawDimensions
+            state.outcome.photoDimensions = processed ?? state.outcome.photoDimensions
+        }
+    }
+
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: (any Error)?) {
         if let error {
             state.withLock { $0.outcome.error = $0.outcome.error ?? "Processing failed: \(Self.describe(error))" }

@@ -17,20 +17,20 @@ nonisolated final class RawSizeCheckRig {
         do {
             input = try AVCaptureDeviceInput(device: device)
         } catch {
-            throw RawSizeCheckFailure("Rig.init", "The camera input could not be made", context: "\(context), reason: \(error.localizedDescription)")
+            throw RawSizeCheckFailure("Rig.init", "The camera input could not be made", context: "\(context), reason: \(error.localizedDescription)", outcome: .refused)
         }
         session.beginConfiguration()
         defer { session.commitConfiguration() }
         if format == nil {
             guard session.canSetSessionPreset(.photo) else {
-                throw RawSizeCheckFailure("Rig.init", "The session cannot take the photo preset", context: context)
+                throw RawSizeCheckFailure("Rig.init", "The session cannot take the photo preset", context: context, outcome: .refused)
             }
             session.sessionPreset = .photo
         } else {
             session.sessionPreset = .inputPriority
         }
         guard session.canAddInput(input), session.canAddOutput(output) else {
-            throw RawSizeCheckFailure("Rig.init", "The session cannot take the camera with a photo output", context: context)
+            throw RawSizeCheckFailure("Rig.init", "The session cannot take the camera with a photo output", context: context, outcome: .refused)
         }
         session.addInput(input)
         session.addOutput(output)
@@ -44,7 +44,7 @@ nonisolated final class RawSizeCheckRig {
         session.startRunning()
         try? await Task.sleep(for: .milliseconds(1_200))
         guard session.isRunning else {
-            throw RawSizeCheckFailure("Rig.start", "The session did not start", context: "camera: \(device.localizedName)")
+            throw RawSizeCheckFailure("Rig.start", "The session did not start", context: "camera: \(device.localizedName)", outcome: .refused)
         }
     }
 
@@ -69,7 +69,7 @@ nonisolated final class RawSizeCheckRig {
     /// Turns Apple ProRAW on or off, only where the output says it is supported.
     nonisolated(nonsending) func setProRAW(_ isEnabled: Bool) async throws(RawSizeCheckFailure) {
         guard output.isAppleProRAWSupported else {
-            throw RawSizeCheckFailure("Rig.setProRAW", "Apple ProRAW is not supported by the output", context: "camera: \(device.localizedName)")
+            throw RawSizeCheckFailure("Rig.setProRAW", "Apple ProRAW is not supported by the output", context: "camera: \(device.localizedName)", outcome: .refused)
         }
         session.beginConfiguration()
         output.isAppleProRAWEnabled = isEnabled
@@ -112,7 +112,7 @@ nonisolated final class RawSizeCheckRig {
         do {
             try device.lockForConfiguration()
         } catch {
-            throw RawSizeCheckFailure("Rig.select", "The camera could not be locked", context: "camera: \(device.localizedName), reason: \(error.localizedDescription)")
+            throw RawSizeCheckFailure("Rig.select", "The camera could not be locked", context: "camera: \(device.localizedName), reason: \(error.localizedDescription)", outcome: .refused)
         }
         device.activeFormat = format
         device.unlockForConfiguration()

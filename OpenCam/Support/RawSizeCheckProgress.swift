@@ -15,4 +15,10 @@ final class RawSizeCheckProgress {
         isFinished = true
         line = "RAW size check finished."
     }
+
+    /// The check could not run; the screen says why instead of "finished".
+    func stop(because reason: String) {
+        isFinished = true
+        line = reason
+    }
 }
