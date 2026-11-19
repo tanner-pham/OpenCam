@@ -65,6 +65,8 @@ actor CameraSession: SessionConfigurator {
     var didMoveFocusPoint = false
     /// The pinch zoom on the current lens, 1 for none (`CameraSession+Zoom`): a factor on the configuration's own zoom.
     var pinch = 1.0
+    /// The configuration the pinch was last decided for. `releaseCameras` leaves it, so a Library visit keeps the pinch.
+    var pinchConfiguration: SessionConfiguration?
     /// Held here because the session does not keep its controls delegate alive.
     private let controlsDelegate: CameraControlsDelegate
     static let logger = Logger(subsystem: "local.opencam.app", category: "CameraSession")
@@ -125,7 +127,7 @@ actor CameraSession: SessionConfigurator {
         guard !recorder.output.isRecording, writerRecorderStorage?.isClipInFlight != true else { throw .recordingInProgress }
         // A configure that fails with no restore leaves the camera in a state nothing tracks, so nothing is assumed to hold.
         appliedManual = nil
-        if !PinchZoom.keeps(from: lastWorkingConfiguration, to: configuration) { pinch = 1 }
+        settlePinch(for: configuration)
         let timing = (start: ContinuousClock.now, previous: lastWorkingConfiguration)
         launchMarks?.mark("session configure")
         // The lens-only path writes its own `[timing] lens` line, so a `configure` line beside it would be false.

@@ -20,6 +20,12 @@ nonisolated enum PinchZoom {
         return max(base, min(wanted, formatMax))
     }
 
+    /// The zoom a camera can hold for `target` when its available range is `availableMin...availableMax`: the target stopped at the
+    /// range's top, or nil when the target lies below the range (a lens lock's range still moving: nothing is changed then).
+    static func held(target: Double, availableMin: Double, availableMax: Double) -> Double? {
+        target < availableMin ? nil : min(target, availableMax)
+    }
+
     /// The strip's text: the lens's own factor (0.5 ultra wide, `zoomFactor` for wide, 1 for the front cameras) × pinch, to one
     /// decimal with ".0" dropped and "x" after; nil when that rounds to the lens's own text.
     static func label(for lens: Lens, pinch: Double) -> String? {

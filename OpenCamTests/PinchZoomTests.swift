@@ -32,6 +32,18 @@ import Testing
         #expect(PinchZoom.target(base: 4, pinch: 3, formatMax: 3) == 4)
     }
 
+    @Test func theHeldPinchStopsAtTheAvailableMaximum() {
+        #expect(PinchZoom.held(target: 3, availableMin: 1, availableMax: 8) == 3)
+        #expect(PinchZoom.held(target: 5, availableMin: 1, availableMax: 4) == 4)
+        #expect(PinchZoom.held(target: 4, availableMin: 1, availableMax: 4) == 4)
+    }
+
+    @Test func belowTheAvailableRangeThePinchIsLeftAsItWas() {
+        #expect(PinchZoom.held(target: 1, availableMin: 2, availableMax: 8) == nil)
+        #expect(PinchZoom.held(target: 1.9, availableMin: 2, availableMax: 8) == nil)
+        #expect(PinchZoom.held(target: 2, availableMin: 2, availableMax: 8) == 2)
+    }
+
     @Test func labelReadsTheLiveFactor() {
         #expect(PinchZoom.label(for: Self.wide, pinch: 1.6) == "1.6x")
         #expect(PinchZoom.label(for: Self.wide, pinch: 10) == "10x")

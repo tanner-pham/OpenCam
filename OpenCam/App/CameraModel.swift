@@ -84,6 +84,10 @@ final class CameraModel {
     var pinch = 1.0
     /// Sends `pinch` to the session one at a time; the latest waiting one replaces earlier ones.
     @ObservationIgnored var zoomApplies = RenderCoalescer<Double>()
+    /// The configuration the pinch was last decided for; the Library's release and return leave it, so the pinch survives a visit.
+    @ObservationIgnored var pinchConfiguration: SessionConfiguration?
+    /// The most the session said the camera holds for the current configuration, once a pinch went past it.
+    @ObservationIgnored var pinchLimit: Double?
     /// The latest format sweep, kept after it ends so its result stays on screen.
     var sweep: FormatSweep?
     /// The saved looks, read at launch and whenever the Library closes.
@@ -643,7 +647,7 @@ final class CameraModel {
         defer { simulatedConfiguration = configuration }
         // The configuration changed, which on the device is a configure: the controls return to automatic.
         if configuration != simulatedConfiguration { resetManual() }
-        if !PinchZoom.keeps(from: simulatedConfiguration, to: configuration) { pinch = 1 }
+        resetPinchIfNeeded(for: configuration)
         guard ViewfinderChange.pausesPicture(from: simulatedConfiguration, to: configuration) else { return }
         isViewfinderChanging = true
         viewfinderChangeCount += 1
@@ -756,7 +760,7 @@ final class CameraModel {
         // Read again: with exposure automatic the combined camera may serve the selection.
         // With exposure automatic the selection may be what the session already runs: nothing to configure.
         guard let configuration = sessionConfiguration, configuration != requestedConfiguration else { return nil }
-        if !PinchZoom.keeps(from: requestedConfiguration, to: configuration) { pinch = 1 }
+        resetPinchIfNeeded(for: configuration)
         // Raised before the configure runs, so the pause is never seen bare; only the newest change's end lowers it.
         if ViewfinderChange.pausesPicture(from: requestedConfiguration, to: configuration) { isViewfinderChanging = true }
         viewfinderChangeCount += 1
