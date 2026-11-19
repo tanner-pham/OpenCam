@@ -193,6 +193,29 @@ A scripted run on the phone covered the list's machine-checkable half on 2026-11
 - [ ] Set the shutter by hand, set white balance by hand, set the shutter back to Auto, record a clip and stop it: no blur at the stop, and the white balance is still the one set. The next lens tap blurs once.
 - [ ] The launch line's time to the `lenses` mark against the build before: the combined camera is read there.
 
+## 12. Camera basics
+
+Clip screen in the Library, tap to focus and hold to lock, and pinch to zoom within the lens. None of this has run on the phone: the Simulator has no camera, and a scripted pinch there only moves the model and the label.
+
+- [ ] Clip: tap a clip; it plays at once with sound from the speaker, not the earpiece (note which, with and without headphones). The info line and "Clip info" match the `.json`. Share to Files and AirDrop. Delete removes the MOV and the `.json`. A ProRes 4K clip and a Log clip play (Log looks flat). Return to the camera: it runs on the same lens.
+- [ ] Tap: on the back 1x, 0.5x and 2x and both front cameras, in all four orientations, tap a near object at the screen's edge: that object sharpens and exposes. Then copy `opencam-errors.log`: no `[Focus:convert]` line. If there is one, note the angle and mirror it names.
+- [ ] Front cameras: exposure only, the marker still shows. After a tap on a front camera, a long press reads "AE lock", not "AE/AF lock".
+- [ ] Manual focus set, tap: focus does not move, exposure does. Manual shutter set, tap: only focus moves. Both set: nothing shows.
+- [ ] Move the camera to a new scene after a tap: focus and exposure return to the centre within a second or two. After a hold: they stay, the capsule stays, until the next tap.
+- [ ] During a recording: a tap and a hold work, no blur, no dropped frames, `drops.total` 0. Note whether the focus change is smooth in the clip.
+- [ ] A lens tap on the combined camera after a hold: the capsule goes, the new lens focuses at the centre.
+- [ ] With a look on: the marker lands where the finger was.
+- [ ] Pinch: smooth from 1x up to the cap on 0.5x, 1x and 2x, on the combined camera (video up to 60 fps) and on a lens's own camera (photo, 120 fps). Note where each stops short of 10x.
+- [ ] Pinch on 1x of the combined camera: the picture stays the wide lens (never the ultra wide cropped) up to the cap.
+- [ ] On the combined camera locked to the ultra wide, pinch to the top: note the highest factor the label reaches and whether the picture matches it. This tells us whether the lens lock caps the maximum zoom.
+- [ ] Tap 0.5x while a pinch is still ramping on 1x: the picture settles on the ultra wide at its own 1.0, not at the old zoom.
+- [ ] Pinch during a recording: smooth in the clip, no blur, no dropped frames, sound in sync.
+- [ ] Pinch, then a phone call, the Library and back, a look on and off, and backgrounding: the zoom and the "1.6x" label are kept. A lens tap, a mode switch and a format change return it to the lens.
+- [ ] Pinch in HEIF photo, then pick a RAW format: the label returns to the lens and a RAW photo saves. With a RAW format chosen, a pinch does nothing.
+- [ ] Pinch, then a manual shutter (moves to the lens's own camera): the zoom stays the same framing.
+- [ ] Pinch with two fingers starting on the picture: no marker and no lock appear.
+- [ ] A long press held first, then a second finger: the lock stays and the pinch zooms. The Simulator cannot show this: its scripted pinch puts both fingers down together.
+
 ## 9. Things to decide after holding it
 
 - [ ] Where should the look's name live? The summary grows a line: a four-line pill in vertical video, and the open phone's photo picture shrinks a few points.
