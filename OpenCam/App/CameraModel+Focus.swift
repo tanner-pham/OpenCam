@@ -66,6 +66,8 @@ extension CameraModel {
     private func runFocusRequests(from first: FocusJob, on configurator: any SessionConfigurator) async {
         var job: FocusJob? = first
         while let current = job {
+            // After the configure in flight: a request that reached the old lens would be undone by the lens change.
+            await waitForConfigureChain()
             if current.generation == focusGeneration {
                 let outcome = await configurator.applyFocus(current.request)
                 if current.generation == focusGeneration, case .lock = current.request, let serial = current.serial {

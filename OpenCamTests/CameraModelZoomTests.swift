@@ -241,6 +241,81 @@ import Testing
         #expect(await rig.fake.pinch == 1.6)
     }
 
+    @Test func aPinchRightAfterLaunchSurvivesTheLibrary() async throws {
+        let rig = try await rig()
+        await pinch(rig, to: 1.6)
+        rig.model.openLibrary()
+        await rig.model.libraryHandoff?.value
+        rig.model.isLibraryPresented = false
+        await rig.model.closeLibrary()
+        #expect(rig.model.pinch == 1.6)
+        // Only the pinch itself was ever sent: no reset reached the session.
+        #expect(await rig.fake.zoomRequests == [1.6])
+    }
+
+    @Test func aPinchRightAfterLaunchSurvivesALookChange() async throws {
+        let rig = try await rig()
+        rig.model.looks = [Look(id: UUID(), name: "Warm", adjustments: Adjustments().setting(.temperature, to: 20), createdAt: .now)]
+        await pinch(rig, to: 1.6)
+        rig.model.selectLook(rig.model.looks[0].id)
+        await settle(rig)
+        #expect(await rig.fake.applied.last?.needsFrames == true)
+        #expect(rig.model.pinch == 1.6)
+        #expect(await rig.fake.zoomRequests == [1.6])
+    }
+
+    @Test func aRecoveryToAnotherFormatResetsThePinchOnBothSides() async throws {
+        let rig = try await rig()
+        rig.model.confirmationDelay = .milliseconds(40)
+        rig.model.confirmWhenRunning(try #require(rig.model.sessionConfiguration), since: rig.model.runtimeErrorCount)
+        #expect(await eventually { rig.model.confirmed?.selection == rig.model.currentSelection })
+        let uhd = Resolution.named(width: 3840, height: 2160)
+        rig.model.record = RecordSelection(family: .proRes, quality: "422 HQ", resolution: uhd, frameRate: 30, colour: .rec709)
+        await settle(rig)
+        await pinch(rig, to: 2)
+        #expect(rig.model.pinch == 2)
+        rig.model.apply(.runtimeError("[CameraSession:runtimeError] Session stopped — {domain: AVFoundationErrorDomain, code: -11800, The operation could not be completed}"))
+        await rig.model.waitForQueuedConfigures()
+        #expect(await eventually { rig.model.zoomApplies.isIdle })
+        #expect(rig.model.pinch == 1)
+        #expect(rig.model.zoomLabel == nil)
+        #expect(await rig.fake.pinch == 1)
+    }
+
+    @Test func aQueuedPinchIsNotSentStaleAfterALensTap() async throws {
+        let rig = try await rig(combined: Self.combined)
+        rig.model.selectLens(lens(rig, .ultraWide))
+        await settle(rig)
+        await rig.fake.holdConfigures()
+        rig.model.selectLens(lens(rig, .wide))
+        rig.model.setPinch(magnification: 3, from: 1)
+        rig.model.selectLens(lens(rig, .ultraWide))
+        await rig.fake.resumeConfigures()
+        await rig.model.waitForQueuedConfigures()
+        #expect(await eventually { rig.model.zoomApplies.isIdle })
+        #expect(!(await rig.fake.zoomRequests.contains(3)))
+        #expect(rig.model.pinch == 1)
+        #expect(await rig.fake.pinch == 1)
+    }
+
+    @Test func aHoldRightAfterALensTapIsAppliedAfterItsConfigure() async throws {
+        let rig = try await rig(combined: Self.combined)
+        rig.model.focusGeometry = { .filling($0) }
+        rig.model.selectLens(lens(rig, .ultraWide))
+        await settle(rig)
+        await rig.fake.holdConfigures()
+        rig.model.selectLens(lens(rig, .wide))
+        #expect(rig.model.canAim)
+        rig.model.focusHeld(at: CGPoint(x: 100, y: 100), in: CGSize(width: 400, height: 400))
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(await rig.fake.focusRequests.isEmpty)
+        await rig.fake.resumeConfigures()
+        await rig.model.waitForQueuedConfigures()
+        #expect(await eventually { rig.model.focusRequests.isIdle })
+        let calls = await rig.fake.calls
+        #expect(try #require(calls.lastIndex(of: "focus")) > (try #require(calls.lastIndex(of: "configure"))))
+    }
+
     @Test func pastTheLimitTheLabelDoesNotMove() async throws {
         let rig = try await rig()
         rig.model.selectLens(lens(rig, .wide))

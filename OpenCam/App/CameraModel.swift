@@ -714,6 +714,7 @@ final class CameraModel {
     func attachSession(_ configurator: any SessionConfigurator, configuredWith configuration: SessionConfiguration, selection: SavedSelections) {
         self.configurator = configurator
         requestedConfiguration = configuration
+        pinchConfiguration = configuration
         lastWorking = (configuration, selection)
         // A change made while the first configure was awaited could not queue yet; apply it now.
         enqueueConfigure()

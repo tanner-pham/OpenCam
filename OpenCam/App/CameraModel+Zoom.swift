@@ -32,6 +32,8 @@ extension CameraModel {
     /// or combined-camera difference separates it from the one the pinch was last decided for. That one survives the Library's
     /// release and return, which clear `requestedConfiguration`, so a visit keeps the pinch.
     func resetPinchIfNeeded(for configuration: SessionConfiguration) {
+        // Any other configuration may have another active format, so the limit the session reported no longer holds.
+        if configuration != pinchConfiguration { pinchLimit = nil }
         if !PinchZoom.keeps(from: pinchConfiguration, to: configuration) { resetPinch() }
         pinchConfiguration = configuration
     }
@@ -64,7 +66,7 @@ extension CameraModel {
     }
 
     /// Returns once the newest queued configure has ended, also when another was queued while one was awaited.
-    private func waitForConfigureChain() async {
+    func waitForConfigureChain() async {
         var waiting = configureTask
         while let task = waiting {
             _ = await task.value
@@ -80,11 +82,13 @@ extension CameraModel {
     /// session is told the model's pinch.
     private func runZoomApplies(from first: Double, on configurator: any SessionConfigurator) async {
         var factor: Double? = first
-        while let current = factor {
+        while factor != nil {
             await waitForConfigureChain()
+            // Read after the wait: what was asked while a configure ran, or the 1 a configure's reset left, is what counts.
+            let current = pinch
             let held = await configurator.applyZoom(pinch: current)
-            if let waiting = zoomApplies.finish() {
-                factor = waiting.value
+            if zoomApplies.finish() != nil {
+                factor = pinch
             } else if pinch == current {
                 if held < current { pinchLimit = held }
                 pinch = held
