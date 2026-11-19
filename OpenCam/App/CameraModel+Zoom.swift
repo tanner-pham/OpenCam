@@ -49,7 +49,7 @@ extension CameraModel {
     /// `-zoom <factor>`: the Simulator starts with a pinch on when a pinch could start, for screenshots and tap checks. Only the
     /// model and the label change.
     func applyLaunchPinch(_ factor: Double?) {
-        guard isSimulator, let factor else { return }
+        guard isSimulator, let factor, canPinch else { return }
         pinchConfiguration = sessionConfiguration
         pinch = factor
     }

@@ -12,21 +12,21 @@ nonisolated struct LaunchConfig: Equatable, Sendable {
     var hasWiredMicrophone = false          // -wiredMic on: the Simulator's audio route lists a wired headset microphone (does not make the launch scripted)
     var hasHeadphones = false               // -headphones on: the Simulator's audio route plays to wired headphones (does not make the launch scripted)
     var editorGroup: EditorGroup = .light   // -editorGroup light|colour|curve|mix|grading|detail|effects|looks
-    var seedsSamples = false                // -seedSamples on (honoured in the Simulator only)
-    var seedsLook = false                   // -seedLook on (honoured in the Simulator only)
-    var seedsFormats = false                // -seedFormats on (honoured in the Simulator only)
-    var seedsStudyLook = false              // -seedStudy on: saves the look "Colour study" (honoured in the Simulator only)
-    var seedsClip = false                   // -seedClip on: one sample clip with its sidecar (honoured in the Simulator only)
+    var seedsSamples = false                // -seedSamples on (honoured in the Simulator only, and only where a pinch could start)
+    var seedsLook = false                   // -seedLook on (honoured in the Simulator only, and only where a pinch could start)
+    var seedsFormats = false                // -seedFormats on (honoured in the Simulator only, and only where a pinch could start)
+    var seedsStudyLook = false              // -seedStudy on: saves the look "Colour study" (honoured in the Simulator only, and only where a pinch could start)
+    var seedsClip = false                   // -seedClip on: one sample clip with its sidecar (honoured in the Simulator only, and only where a pinch could start)
     var startsInSelectMode = false          // -librarySelect on
-    var showsShutterDemo = false            // -shutterDemo on: the shutter blink runs once a second (honoured in the Simulator only)
+    var showsShutterDemo = false            // -shutterDemo on: the shutter blink runs once a second (honoured in the Simulator only, and only where a pinch could start)
     var cameraLookName: String?             // -cameraLook <name>: the look of that name is selected, or None when there is none
-    var openControl: ManualControl?         // -control shutter|iso|ev|wb|tint|focus: that slider starts open (honoured in the Simulator only)
-    var forcesPictureSlider = false         // -sliderPlacement picture: the slider is drawn in the picture on the folded display (honoured in the Simulator only)
+    var openControl: ManualControl?         // -control shutter|iso|ev|wb|tint|focus: that slider starts open (honoured in the Simulator only, and only where a pinch could start)
+    var forcesPictureSlider = false         // -sliderPlacement picture: the slider is drawn in the picture on the folded display (honoured in the Simulator only, and only where a pinch could start)
     var editorLookName: String?             // -editorLook <name>: the launch push applies the look of that name, unsaved
     var droppedFrames = 0                   // -droppedFrames <n>: the simulated recording shows this count (honoured in the Simulator only, with -recording on)
-    var usesPhoneFormats = false            // -formats phone: the fixture holds what the phone scans, plus the writer options (honoured in the Simulator only)
-    var focusLock = false                   // -focusLock on: the picture holds focus and exposure at its centre (honoured in the Simulator only)
-    var pinch: Double?                      // -zoom <factor, 1 to 10>: the camera starts with this pinch zoom (honoured in the Simulator only)
+    var usesPhoneFormats = false            // -formats phone: the fixture holds what the phone scans, plus the writer options (honoured in the Simulator only, and only where a pinch could start)
+    var focusLock = false                   // -focusLock on: the picture holds focus and exposure at its centre (honoured in the Simulator only, and only where a pinch could start)
+    var pinch: Double?                      // -zoom <factor, 1 to 10>: the camera starts with this pinch zoom (honoured in the Simulator only, and only where a pinch could start)
     /// True when -orientation, -mode, -screen, -recording, -state, -editorGroup, -cameraLook, -editorLook, -control, -sliderPlacement, -formats,
     /// -droppedFrames or an "on" flag among -seedSamples, -seedLook, -seedFormats, -seedStudy, -seedClip, -librarySelect, -shutterDemo, -focusLock and -zoom parsed to a
     /// valid value; such launches never restore or save selections.
