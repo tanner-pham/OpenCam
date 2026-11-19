@@ -29,13 +29,15 @@ struct StripControl: View {
                     }
                 }
             } label: {
-                if let symbol = current?.symbol {
+                if let zoom = model.zoomLabel {
+                    Text(zoom)
+                } else if let symbol = current?.symbol {
                     Image(systemName: symbol)
                 } else {
                     Text(current?.shortText ?? "Lens")
                 }
             }
-            .accessibilityLabel("Lens, \(current?.rowTitle ?? "none")")
+            .accessibilityLabel("Lens, \(current?.rowTitle ?? "none")\(model.zoomLabel.map { ", zoom \($0)" } ?? "")")
             .disabled(!model.canChangeLensOrMode)
         case .library:
             LibraryThumbnail(model: model, library: library)

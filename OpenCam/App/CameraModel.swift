@@ -80,6 +80,10 @@ final class CameraModel {
     @ObservationIgnored var focusGeometry: @MainActor (CGSize) -> PreviewGeometry? = { size in PreviewUIView.currentGeometry(viewSize: size) }
     /// `-focusLock on`: the Simulator holds at the centre once the layer knows its size.
     @ObservationIgnored var holdsFocusOnLaunch = false
+    /// The pinch zoom on the current lens, 1 for none (`CameraModel+Zoom`). Reset by every configure that changes lens, mode or format.
+    var pinch = 1.0
+    /// Sends `pinch` to the session one at a time; the latest waiting one replaces earlier ones.
+    @ObservationIgnored var zoomApplies = RenderCoalescer<Double>()
     /// The latest format sweep, kept after it ends so its result stays on screen.
     var sweep: FormatSweep?
     /// The saved looks, read at launch and whenever the Library closes.
@@ -266,6 +270,7 @@ final class CameraModel {
         if isSimulator { simulate(config.simulatedState) }
         if seedSimulatedCamera(), let control = config.openControl, scale(for: control) != nil { openControl = control }
         holdsFocusOnLaunch = isSimulator && config.focusLock
+        applyLaunchPinch(config.pinch)
         if isSimulator { simulatedConfiguration = sessionConfiguration }
         launchTimeline.mark("model")
     }
@@ -638,6 +643,7 @@ final class CameraModel {
         defer { simulatedConfiguration = configuration }
         // The configuration changed, which on the device is a configure: the controls return to automatic.
         if configuration != simulatedConfiguration { resetManual() }
+        if !PinchZoom.keeps(from: simulatedConfiguration, to: configuration) { pinch = 1 }
         guard ViewfinderChange.pausesPicture(from: simulatedConfiguration, to: configuration) else { return }
         isViewfinderChanging = true
         viewfinderChangeCount += 1
@@ -750,6 +756,7 @@ final class CameraModel {
         // Read again: with exposure automatic the combined camera may serve the selection.
         // With exposure automatic the selection may be what the session already runs: nothing to configure.
         guard let configuration = sessionConfiguration, configuration != requestedConfiguration else { return nil }
+        if !PinchZoom.keeps(from: requestedConfiguration, to: configuration) { pinch = 1 }
         // Raised before the configure runs, so the pause is never seen bare; only the newest change's end lowers it.
         if ViewfinderChange.pausesPicture(from: requestedConfiguration, to: configuration) { isViewfinderChanging = true }
         viewfinderChangeCount += 1

@@ -228,9 +228,24 @@ actor FakeSessionConfigurator: SessionConfigurator {
         zoomLimit = limit
     }
 
+    private var isHoldingZoom = false
+    private var heldZoom: [CheckedContinuation<Void, Never>] = []
+
+    /// From now on an apply is recorded ("zoom"), then waits, until `resumeZoom`.
+    func holdZoom() {
+        isHoldingZoom = true
+    }
+
+    func resumeZoom() {
+        isHoldingZoom = false
+        for waiting in heldZoom { waiting.resume() }
+        heldZoom = []
+    }
+
     func applyZoom(pinch: Double) async -> Double {
         zoomRequests.append(pinch)
         calls.append("zoom")
+        if isHoldingZoom { await withCheckedContinuation { heldZoom.append($0) } }
         storedPinch = min(pinch, zoomLimit)
         return storedPinch
     }

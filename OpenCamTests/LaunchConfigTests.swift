@@ -65,6 +65,15 @@ import Testing
         #expect(c.seedsClip); #expect(c.isScripted)
         #expect(!LaunchConfig.parse(["app"]).seedsClip); #expect(!LaunchConfig.parse(["app", "-seedClip", "off"]).seedsClip)
     }
+    @Test func zoomParsesInsideItsRangeOnly() {
+        let c = LaunchConfig.parse(["app", "-zoom", "1.6"])
+        #expect(c.pinch == 1.6); #expect(c.isScripted)
+        for bad in ["0.5", "11", "abc", "nan", "inf"] {
+            let ignored = LaunchConfig.parse(["app", "-zoom", bad])
+            #expect(ignored.pinch == nil); #expect(!ignored.isScripted)
+        }
+        #expect(LaunchConfig.parse(["app"]).pinch == nil)
+    }
     @Test func focusLockParsesAndIsScripted() {
         let c = LaunchConfig.parse(["app", "-focusLock", "on"])
         #expect(c.focusLock); #expect(c.isScripted)

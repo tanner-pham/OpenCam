@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Over the picture: a tap sets the focus and exposure point, a hold locks both. Draws nothing and takes no touch unless the
+/// Over the picture: a tap sets the focus and exposure point, a hold locks both, a pinch zooms within the lens. Draws nothing and takes no touch unless the
 /// camera can be aimed. `topInset` keeps the lock capsule clear of a readout bar drawn over the top of the picture.
 struct ViewfinderGestureLayer: View {
     let model: CameraModel
@@ -14,6 +14,7 @@ struct ViewfinderGestureLayer: View {
                 .contentShape(.rect)
                 .gesture(FocusTapRecognizer { model.focusTapped(at: $0, in: size) })
                 .gesture(FocusHoldRecognizer { model.focusHeld(at: $0, in: size) })
+                .gesture(ZoomPinchRecognizer(model: model))
                 .overlay {
                     if let marker = model.focusTap.marker {
                         FocusMarkerView(marker: marker) { model.focusMarkerFaded(serial: $0) }
