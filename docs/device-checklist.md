@@ -221,6 +221,15 @@ Clip screen in the Library, tap to focus and hold to lock, and pinch to zoom wit
 - [ ] Hold right after a lens tap: the capsule matches what the camera does.
 - [ ] Open a clip right after opening the Library: it plays; note the audio route.
 
+## 12a. After the camera service resets
+
+The system's camera service crashed by itself on 18 and 21 Nov 2026 (iOS 27.3 beta). The app cannot cause a reset, so this check waits for the next one, or for Settings > Developer > Reset Media Services if that also resets the camera on this phone (not known).
+
+- [ ] After a reset with OpenCam in front: "The camera stopped." shows for at most about 8 s, then the picture comes back with no tap.
+- [ ] `opencam-errors.log` then holds the `-11819` line and either `The session started again — {tries: N}` or no further line (the first try ran). Note N.
+- [ ] If "Try again" does show, leave the app and come back: the picture returns with no tap.
+- [ ] Known gap: a Try again made while the service is still down can leave a black picture with no message. Note it if seen.
+
 ## 9. Things to decide after holding it
 
 - [ ] Where should the look's name live? The summary grows a line: a four-line pill in vertical video, and the open phone's photo picture shrinks a few points.
