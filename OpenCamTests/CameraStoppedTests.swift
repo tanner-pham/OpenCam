@@ -325,6 +325,26 @@ import Testing
         #expect(await eventually { model.phase == .ready })
     }
 
+    /// Coming back to the app with the camera stopped tries it again, as Try again does. With the camera running, or while a
+    /// reset's own restart is still being tried, it does nothing.
+    @Test func comingBackToTheAppTriesAStoppedCameraAgain() async throws {
+        let (model, fake, _) = try attachedModel()
+        #expect(await confirmed(model))
+        model.appBecameActive()
+        await model.waitForQueuedConfigures()
+        #expect(await fake.calls.isEmpty)
+        model.apply(.runtimeError(RuntimeErrorText.message(for: NSError(domain: AVFoundationErrorDomain, code: -11819), applied: nil)))
+        model.appBecameActive()
+        await model.waitForQueuedConfigures()
+        #expect(await fake.calls.isEmpty)
+        model.apply(.runtimeError(RuntimeErrorText.restartFailedMessage(applied: "lens: wide, mode: photo")))
+        #expect(model.isCameraStopped)
+        model.appBecameActive()
+        await model.waitForQueuedConfigures()
+        #expect(await fake.calls == ["configure", "start"])
+        #expect(await eventually { model.phase == .ready })
+    }
+
     /// A restart after a reset during a rescan leaves the rescan's phase; the rescan's own start makes the camera ready.
     @Test func aRestartDuringARescanLeavesItsPhase() throws {
         let (model, _, _) = try attachedModel()

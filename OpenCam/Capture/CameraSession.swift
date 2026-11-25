@@ -42,7 +42,11 @@ actor CameraSession: SessionConfigurator {
     private var isRestartingAfterReset = false
     /// Set by `start()` and cleared by `stop()`; a media-services reset restarts the session only while it is set,
     /// so a session stopped on purpose (during a rescan, say) stays stopped.
-    private var isMeantToRun = false
+    private var isMeantToRun = false {
+        didSet { runChanges += 1 }
+    }
+    /// Counts every `start()` and `stop()`, so a restart waiting between tries can tell that another flow took the session over.
+    private var runChanges = 0
     /// Set when the writer path's pixel-format step of the apply in progress failed: the camera's format and outputs are then
     /// applied but the output's pixel format is not, so the configuration is half applied.
     private var didPixelFormatStepFail = false
@@ -287,18 +291,43 @@ actor CameraSession: SessionConfigurator {
         ErrorJournal.record(marks.line)
     }
 
-    /// After `AVError.Code.mediaServicesWereReset` the session is restarted once, if it is meant to run; `.restarted`
-    /// follows when it runs again. A restart that fails leaves the session failed, and a later reset tries again.
-    private func restartAfterMediaServicesReset() {
+    /// The waits before the second and later tries of a restart after a media-services reset, 7.5 s in all. The system's
+    /// camera service takes time to come back after it crashes: on 21 Nov 2026 one try made within a second of the crash
+    /// failed, and a launch 84 s later ran. How long it really takes is not measured, so this is a setting to tune.
+    static let resetRestartPauses: [Duration] = [.milliseconds(500), .seconds(1), .seconds(2), .seconds(4)]
+
+    /// After `AVError.Code.mediaServicesWereReset` the session is restarted, if it is meant to run, and tried again after
+    /// each of `resetRestartPauses` while it still does not run; `.restarted` follows when it runs again. A restart that
+    /// never runs leaves the session failed, and a later reset tries again. A `start()` or `stop()` during a wait means
+    /// another flow (the Library, a rescan, Try again) has taken the session over, so the restart ends without a word.
+    private func restartAfterMediaServicesReset() async {
         guard isMeantToRun, !isRestartingAfterReset else { return }
         isRestartingAfterReset = true
         defer { isRestartingAfterReset = false }
+        let changes = runChanges
         session.startRunning()
+        var tries = 1
+        for pause in Self.resetRestartPauses {
+            guard !session.isRunning else { break }
+            do {
+                try await Task.sleep(for: pause)
+            } catch {
+                break
+            }
+            guard changes == runChanges else { return }
+            guard !session.isRunning else { break }
+            session.startRunning()
+            tries += 1
+        }
         guard session.isRunning else {
-            Self.logger.error("[CameraSession:restartAfterMediaServicesReset] The session did not start again — {isRunning: false}")
+            Self.logger.error("[CameraSession:restartAfterMediaServicesReset] The session did not start again — {isRunning: false, tries: \(tries)}")
             // A plain runtime error, not a reset, so the model leaves the reset and offers Try again.
             continuation.yield(.runtimeError(RuntimeErrorText.restartFailedMessage(applied: appliedConfiguration.withLock { $0 })))
             return
+        }
+        // For the next reading of the phone's log: how many tries the camera service needed.
+        if tries > 1 {
+            ErrorJournal.record("[CameraSession:restartAfterMediaServicesReset] The session started again — {tries: \(tries)}")
         }
         // The device may have come back with settings of its own, so manual values are not assumed to hold.
         restoreLens()

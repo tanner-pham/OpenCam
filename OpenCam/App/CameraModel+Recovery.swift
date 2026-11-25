@@ -67,6 +67,12 @@ extension CameraModel {
         enqueueConfigure()
     }
 
+    /// The scene became active again: a stopped camera is tried once more, as Try again does. Coming back is a user action,
+    /// so it happens once per return and cannot loop.
+    func appBecameActive() {
+        retryCamera()
+    }
+
     /// Runs a recovery held back by a recording or a sweep, once neither runs.
     func resumeDeferredRecovery() {
         guard isRecoveryDeferred, !isRecording, !isSweeping else { return }
