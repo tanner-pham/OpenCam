@@ -1032,8 +1032,10 @@ extension CameraModel {
             // The camera may have dropped what was set while interrupted.
             reapplyAllManual()
         case .runtimeError(let message) where Self.isMediaServicesReset(message):
-            // Sets no notice; the phase says the camera stopped. The session restarts itself and `.restarted` follows, so no
-            // pending confirmation may mark the camera ready and nothing here starts it meanwhile.
+            // Sets no notice; the phase says the camera stopped. The session restarts itself, trying for several seconds:
+            // `.restarted` follows, or a plain runtime error when no try runs. So no pending confirmation may mark the camera
+            // ready and nothing here starts it meanwhile. A flow that starts the session itself ends those tries and clears
+            // the reset on its own.
             Self.logger.error("\(message, privacy: .public)")
             ErrorJournal.record(message)
             runtimeErrorCount += 1
